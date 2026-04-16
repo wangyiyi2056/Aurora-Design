@@ -25,14 +25,20 @@ def create_app() -> FastAPI:
         from chatbi_serve.chat.service import ChatService
         from chatbi_serve.datasource.schema import DBConfig
         from chatbi_serve.datasource.service import DatasourceService
+        from chatbi_serve.skills.anomaly_detection_skill import AnomalyDetectionSkill
         from chatbi_serve.skills.csv_skill import CSVAnalysisSkill
         from chatbi_serve.skills.chart_skill import SQLChartSkill, SQLDashboardSkill
+        from chatbi_serve.skills.data_analysis_skill import DataAnalysisSkill
         from chatbi_serve.skills.data_skills import (
             DatabaseSchemaSkill,
             PythonAnalysisSkill,
             SQLExecuteSkill,
         )
         from chatbi_serve.skills.excel_skill import Excel2TableSkill
+        from chatbi_serve.skills.indicator_skill import IndicatorSkill
+        from chatbi_serve.skills.metric_info_skill import MetricInfoSkill
+        from chatbi_serve.skills.report_skill import ReportSkill
+        from chatbi_serve.skills.volatility_analysis_skill import VolatilityAnalysisSkill
         from chatbi_serve.skills.web_search_skill import WebSearchSkill
 
         config_path = Path("configs/chatbi.toml")
@@ -114,6 +120,12 @@ def create_app() -> FastAPI:
                 datasource_name=default_ds,
             )
         )
+        skill_registry.register(IndicatorSkill())
+        skill_registry.register(AnomalyDetectionSkill())
+        skill_registry.register(MetricInfoSkill())
+        skill_registry.register(VolatilityAnalysisSkill())
+        skill_registry.register(ReportSkill())
+        skill_registry.register(DataAnalysisSkill())
         app.state.skill_registry = skill_registry
 
         app.state.chat_service = ChatService(registry, sql_agent, skill_registry)
