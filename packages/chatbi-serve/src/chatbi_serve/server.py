@@ -27,6 +27,11 @@ def create_app() -> FastAPI:
         from chatbi_serve.datasource.service import DatasourceService
         from chatbi_serve.skills.csv_skill import CSVAnalysisSkill
         from chatbi_serve.skills.chart_skill import SQLChartSkill, SQLDashboardSkill
+        from chatbi_serve.skills.data_skills import (
+            DatabaseSchemaSkill,
+            PythonAnalysisSkill,
+            SQLExecuteSkill,
+        )
 
         config_path = Path("configs/chatbi.toml")
         if not config_path.exists():
@@ -69,6 +74,19 @@ def create_app() -> FastAPI:
 
         skill_registry = SkillRegistry()
         skill_registry.register(CSVAnalysisSkill())
+        skill_registry.register(
+            SQLExecuteSkill(
+                datasource_service=datasource_service,
+                datasource_name=default_ds,
+            )
+        )
+        skill_registry.register(
+            DatabaseSchemaSkill(
+                datasource_service=datasource_service,
+                datasource_name=default_ds,
+            )
+        )
+        skill_registry.register(PythonAnalysisSkill())
         try:
             default_llm = registry.get_llm()
         except RuntimeError:
