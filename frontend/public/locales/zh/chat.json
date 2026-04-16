@@ -1,0 +1,38 @@
+{
+  "chat": {
+    "title": "聊天",
+    "placeholder": "输入消息...",
+    "send": "发送",
+    "thinking": "思考中...",
+    "attachFile": "从本地文件添加",
+    "useSkill": "使用技能",
+    "useKnowledge": "使用知识库",
+    "useDatabase": "使用数据库",
+    "selectSkill": "选择技能",
+    "selectKnowledge": "选择知识库",
+    "selectDatabase": "选择数据库",
+    "knowledgeQueryFailed": "知识库查询失败",
+    "welcomeTitle": "欢迎使用 ChatBI",
+    "welcomeDesc": "向数据提问，或进行自由对话。",
+    "copy": "复制",
+    "copied": "已复制"
+  },
+  "explore": {
+    "title": "ChatBI",
+    "subtitle": "由 AI 驱动的智能数据助手",
+    "newChat": "新对话",
+    "newChatDesc": "开始一段新对话",
+    "datasource": "数据源",
+    "datasourceDesc": "管理数据库连接",
+    "knowledge": "知识库",
+    "knowledgeDesc": "上传并查询文档",
+    "agent": "智能体",
+    "agentDesc": "浏览已注册技能",
+    "awel": "工作流",
+    "awelDesc": "运行 AWEL 工作流"
+  },
+  "share": {
+    "title": "分享的对话",
+    "readonly": "只读视图"
+  }
+}

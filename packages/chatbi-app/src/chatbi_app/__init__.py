@@ -1,0 +1,1 @@
+"""ChatBI application entrypoint."""

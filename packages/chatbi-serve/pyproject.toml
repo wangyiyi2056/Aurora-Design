@@ -1,0 +1,19 @@
+[project]
+name = "chatbi-serve"
+version = "0.1.0"
+description = "ChatBI serve layer"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "chatbi-core",
+    "chatbi-ext",
+    "python-multipart>=0.0.26",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chatbi_serve"]

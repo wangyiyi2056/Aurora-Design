@@ -1,0 +1,28 @@
+{
+  "appName": "ChatBI",
+  "nav": {
+    "explore": "Explore",
+    "chat": "Chat",
+    "construct": "Construct",
+    "datasource": "Datasource",
+    "knowledge": "Knowledge",
+    "agent": "Agent",
+    "awel": "AWEL"
+  },
+  "sidebar": {
+    "expand": "Expand sidebar",
+    "collapse": "Collapse sidebar",
+    "toggleLanguage": "Toggle language",
+    "toggleTheme": "Toggle theme",
+    "lightMode": "Light mode",
+    "darkMode": "Dark mode"
+  },
+  "actions": {
+    "add": "Add",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "run": "Run",
+    "upload": "Upload",
+    "ask": "Ask"
+  }
+}

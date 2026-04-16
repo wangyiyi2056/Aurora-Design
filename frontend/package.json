@@ -1,0 +1,50 @@
+{
+  "name": "chatbi-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 3000",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.1.1",
+    "@tanstack/react-query": "^5.99.0",
+    "@tanstack/react-virtual": "^3.13.23",
+    "antd": "^6.3.5",
+    "autoprefixer": "^10.4.21",
+    "axios": "^1.15.0",
+    "clsx": "^2.1.1",
+    "i18next": "^26.0.5",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "postcss": "^8.5.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-i18next": "^17.0.3",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^6.22.0",
+    "react-syntax-highlighter": "^16.1.1",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^3.4.17",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "@vitejs/plugin-react": "^4.2.1",
+    "jsdom": "^29.0.2",
+    "typescript": "^5.3.3",
+    "vite": "^5.1.0",
+    "vitest": "^4.1.4"
+  }
+}

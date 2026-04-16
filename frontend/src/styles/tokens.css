@@ -1,0 +1,65 @@
+:root {
+  /* Brand Colors */
+  --color-primary: #0069fe;
+  --color-success: #52c41a;
+  --color-error: #ff4d4f;
+  --color-warning: #faad14;
+
+  /* Background & Surface (Dark default for ChatBI) */
+  --color-bg: #0f1115;
+  --color-bg-elevated: #151622;
+  --color-surface: #161b22;
+  --color-surface-elevated: #1f2937;
+  --color-surface-hover: #232734;
+
+  /* Text */
+  --color-text: #e6edf3;
+  --color-text-secondary: #8b949e;
+
+  /* Accent */
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2563eb;
+
+  /* Border */
+  --color-border: #30363d;
+  --color-border-subtle: #21262d;
+
+  /* Shadow */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.25);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.35), 0 2px 4px -2px rgb(0 0 0 / 0.25);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.45), 0 4px 6px -4px rgb(0 0 0 / 0.35);
+
+  /* Radius */
+  --radius-base: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+
+  /* Duration */
+  --duration-fast: 150ms;
+  --duration-normal: 300ms;
+}
+
+[data-theme="light"] {
+  --color-bg: #f7f7f7;
+  --color-bg-elevated: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #f3f4f6;
+  --color-surface-hover: #e5e7eb;
+
+  --color-text: #111827;
+  --color-text-secondary: #6b7280;
+
+  --color-border: #e5e7eb;
+  --color-border-subtle: #f3f4f6;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+}

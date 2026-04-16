@@ -1,0 +1,28 @@
+{
+  "appName": "ChatBI",
+  "nav": {
+    "explore": "探索",
+    "chat": "聊天",
+    "construct": "构建",
+    "datasource": "数据源",
+    "knowledge": "知识库",
+    "agent": "智能体",
+    "awel": "工作流"
+  },
+  "sidebar": {
+    "expand": "展开侧边栏",
+    "collapse": "收起侧边栏",
+    "toggleLanguage": "切换语言",
+    "toggleTheme": "切换主题",
+    "lightMode": "浅色模式",
+    "darkMode": "深色模式"
+  },
+  "actions": {
+    "add": "添加",
+    "cancel": "取消",
+    "delete": "删除",
+    "run": "运行",
+    "upload": "上传",
+    "ask": "提问"
+  }
+}
