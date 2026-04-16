@@ -151,7 +151,7 @@ class ChatService:
                     )
                 break
 
-        has_skill = req.select_param or (req.ext_info and req.ext_info.get("skill_name"))
+        skill_name = req.select_param or (req.ext_info and req.ext_info.get("skill_name"))
         has_file = any(
             isinstance(m.content, list)
             and any(
@@ -160,7 +160,30 @@ class ChatService:
             )
             for m in messages
         )
-        skip_sql = bool(has_skill or has_file)
+        skip_sql = bool(skill_name or has_file)
+
+        # Direct-return skills (visualization skills should not go through extra LLM)
+        direct_return_skills = {"sql_chart", "sql_dashboard"}
+        if skill_name in direct_return_skills and self.skill_registry:
+            try:
+                skill = self.skill_registry.get(skill_name)
+            except KeyError:
+                pass
+            else:
+                # Re-run skill with the original question text
+                kwargs: Dict[str, Any] = {"question": user_text}
+                result = await skill.execute(**kwargs)
+                return ChatResponse(
+                    id=f"chatbi-{int(time.time() * 1000)}",
+                    created=int(time.time()),
+                    model=skill_name,
+                    choices=[
+                        ChatChoice(
+                            message=ChatMessage(role="assistant", content=result),
+                            finish_reason="stop",
+                        )
+                    ],
+                )
 
         if not skip_sql and self.sql_agent and self.sql_agent.is_sql_question(user_text):
             success, result = await self.sql_agent.run(user_text)
@@ -195,6 +218,45 @@ class ChatService:
     async def chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
         messages = self._build_messages(req)
         messages = await self._inject_skill_result(req, messages)
+
+        # Direct-return skills for streaming (return single chunk)
+        direct_return_skills = {"sql_chart", "sql_dashboard"}
+        skill_name = req.select_param or (req.ext_info and req.ext_info.get("skill_name"))
+        if skill_name in direct_return_skills and self.skill_registry:
+            try:
+                skill = self.skill_registry.get(skill_name)
+            except KeyError:
+                pass
+            else:
+                user_text = ""
+                for m in reversed(messages):
+                    if m.role == "user":
+                        content = m.content
+                        if isinstance(content, str):
+                            user_text = content
+                        elif isinstance(content, list):
+                            user_text = "\n".join(
+                                item.get("text", "")
+                                for item in content
+                                if isinstance(item, dict) and item.get("type") == "text"
+                            )
+                        break
+                kwargs: Dict[str, Any] = {"question": user_text}
+                result = await skill.execute(**kwargs)
+                resp = ChatResponse(
+                    id=f"chatbi-{int(time.time() * 1000)}",
+                    created=int(time.time()),
+                    model=skill_name,
+                    choices=[
+                        ChatChoice(
+                            message=ChatMessage(role="assistant", content=result),
+                            finish_reason="stop",
+                        )
+                    ],
+                )
+                yield f"data: {resp.model_dump_json()}\n\n"
+                yield "data: [DONE]\n\n"
+                return
 
         llm = self._get_llm(req)
         created = int(time.time())

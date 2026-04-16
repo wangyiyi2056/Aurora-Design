@@ -1,8 +1,10 @@
+import base64
 import subprocess
 import tempfile
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Dict, List
 
 
 @dataclass
@@ -11,6 +13,7 @@ class ExecutionResult:
     stdout: str
     stderr: str
     exit_code: int
+    files: Dict[str, str] = field(default_factory=dict)
 
 
 class DockerCodeExecutor:
@@ -26,7 +29,12 @@ class DockerCodeExecutor:
         self.memory = memory
         self.network = network
 
-    async def execute(self, code: str, language: str = "python") -> ExecutionResult:
+    async def execute(
+        self,
+        code: str,
+        language: str = "python",
+        output_files: List[str] | None = None,
+    ) -> ExecutionResult:
         if language != "python":
             return ExecutionResult(
                 success=False,
@@ -38,6 +46,9 @@ class DockerCodeExecutor:
         with tempfile.TemporaryDirectory() as tmpdir:
             script_path = Path(tmpdir) / "script.py"
             script_path.write_text(code, encoding="utf-8")
+            output_dir = Path(tmpdir) / "output"
+            output_dir.mkdir(exist_ok=True)
+
             container_name = f"chatbi-sandbox-{uuid.uuid4().hex[:8]}"
             cmd = [
                 "docker",
@@ -51,6 +62,8 @@ class DockerCodeExecutor:
                 container_name,
                 "-v",
                 f"{tmpdir}:/workspace:ro",
+                "-v",
+                f"{output_dir}:/workspace/output",
                 self.image,
                 "python",
                 "/workspace/script.py",
@@ -62,11 +75,22 @@ class DockerCodeExecutor:
                     text=True,
                     timeout=self.timeout,
                 )
+
+                files: Dict[str, str] = {}
+                if output_files and proc.returncode == 0:
+                    for fname in output_files:
+                        fpath = output_dir / fname
+                        if fpath.exists():
+                            files[fname] = base64.b64encode(fpath.read_bytes()).decode(
+                                "utf-8"
+                            )
+
                 return ExecutionResult(
                     success=proc.returncode == 0,
                     stdout=proc.stdout,
                     stderr=proc.stderr,
                     exit_code=proc.returncode,
+                    files=files,
                 )
             except subprocess.TimeoutExpired:
                 # Force kill container if timed out

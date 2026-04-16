@@ -26,6 +26,7 @@ def create_app() -> FastAPI:
         from chatbi_serve.datasource.schema import DBConfig
         from chatbi_serve.datasource.service import DatasourceService
         from chatbi_serve.skills.csv_skill import CSVAnalysisSkill
+        from chatbi_serve.skills.chart_skill import SQLChartSkill, SQLDashboardSkill
 
         config_path = Path("configs/chatbi.toml")
         if not config_path.exists():
@@ -68,6 +69,24 @@ def create_app() -> FastAPI:
 
         skill_registry = SkillRegistry()
         skill_registry.register(CSVAnalysisSkill())
+        try:
+            default_llm = registry.get_llm()
+        except RuntimeError:
+            default_llm = None
+        skill_registry.register(
+            SQLChartSkill(
+                llm=default_llm,
+                datasource_service=datasource_service,
+                datasource_name=default_ds,
+            )
+        )
+        skill_registry.register(
+            SQLDashboardSkill(
+                llm=default_llm,
+                datasource_service=datasource_service,
+                datasource_name=default_ds,
+            )
+        )
         app.state.skill_registry = skill_registry
 
         app.state.chat_service = ChatService(registry, sql_agent, skill_registry)
