@@ -1,3 +1,4 @@
+import json
 import time
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional, Union
@@ -5,7 +6,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Union
 from chatbi_core.agent.skill.base import SkillRegistry
 from chatbi_core.model.adapter.openai_adapter import OpenAILLM
 from chatbi_core.model.registry import ModelRegistry
-from chatbi_core.schema.message import Message
+from chatbi_core.schema.message import Message, ToolCall
 from chatbi_core.schema.model import LLMConfig
 from chatbi_serve.chat.schema import (
     ChatChoice,
@@ -14,6 +15,9 @@ from chatbi_serve.chat.schema import (
     ChatResponse,
     ContentPart,
 )
+
+
+SYSTEM_TOOL_PROMPT = """You are ChatBI, an intelligent data assistant. You have access to the following tools. Use them when appropriate to answer user questions accurately."""
 
 
 class ChatService:
@@ -72,193 +76,201 @@ class ChatService:
             messages.append(Message(role=m.role, content=resolved))
         return messages
 
-    async def _inject_skill_result(
-        self, req: ChatRequest, messages: List[Message]
+    def _build_tools(self) -> List[Dict[str, Any]] | None:
+        if not self.skill_registry:
+            return None
+        skills = self.skill_registry.list_skills()
+        if not skills:
+            return None
+        tools: List[Dict[str, Any]] = []
+        for name in skills:
+            skill = self.skill_registry.get(name)
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": skill.name,
+                        "description": skill.description,
+                        "parameters": skill.parameters,
+                    },
+                }
+            )
+        return tools
+
+    async def _execute_tool_calls(
+        self, tool_calls: List[ToolCall]
     ) -> List[Message]:
-        if self.skill_registry is None:
-            return messages
-        skill_name = req.select_param or (
-            req.ext_info.get("skill_name") if req.ext_info else None
-        )
-        if not skill_name:
-            return messages
-        try:
-            skill = self.skill_registry.get(skill_name)
-        except KeyError:
-            return messages
-
-        # Build context for skill execution
-        # Try to find the last user message text
-        user_text = ""
-        for m in reversed(messages):
-            if m.role == "user":
-                content = m.content
-                if isinstance(content, str):
-                    user_text = content
-                elif isinstance(content, list):
-                    texts = [
-                        item.get("text", "")
-                        for item in content
-                        if isinstance(item, dict) and item.get("type") == "text"
-                    ]
-                    user_text = "\n".join(texts)
-                break
-
-        # Try to find any attached file content in messages
-        file_text = ""
-        for m in messages:
-            content = m.content
-            if isinstance(content, list):
-                for item in content:
-                    if (
-                        isinstance(item, dict)
-                        and item.get("type") == "text"
-                        and isinstance(item.get("text"), str)
-                        and item["text"].startswith("[Attached file:")
-                    ):
-                        file_text += "\n" + item["text"]
-
-        # CSV skill expects csv_content if available
-        kwargs: Dict[str, Any] = {}
-        if file_text:
-            kwargs["csv_content"] = file_text
-        try:
-            result = await skill.execute(**kwargs)
-        except Exception as e:
-            result = f"Skill execution failed: {e}"
-
-        system_msg = Message(
-            role="system",
-            content=f"You are using the skill '{skill_name}'. Here is the skill execution result:\n{result}",
-        )
-        return [system_msg] + messages
+        if not self.skill_registry:
+            return []
+        tool_messages: List[Message] = []
+        for tc in tool_calls:
+            if tc.type != "function":
+                continue
+            fn_name = tc.function.get("name", "")
+            fn_args = tc.function.get("arguments", "{}")
+            try:
+                skill = self.skill_registry.get(fn_name)
+            except KeyError:
+                result = f"Tool '{fn_name}' not found."
+            else:
+                try:
+                    args = json.loads(fn_args) if fn_args else {}
+                    result = await skill.execute(**args)
+                except Exception as e:
+                    result = f"Tool execution failed: {e}"
+            tool_messages.append(
+                Message(
+                    role="tool",
+                    content=str(result),
+                    tool_call_id=tc.id,
+                    name=fn_name,
+                )
+            )
+        return tool_messages
 
     async def chat(self, req: ChatRequest) -> ChatResponse:
         messages = self._build_messages(req)
-        messages = await self._inject_skill_result(req, messages)
 
-        user_text = ""
-        for m in reversed(messages):
-            if m.role == "user":
-                content = m.content
-                if isinstance(content, str):
-                    user_text = content
-                elif isinstance(content, list):
-                    user_text = "\n".join(
-                        item.get("text", "")
-                        for item in content
-                        if isinstance(item, dict) and item.get("type") == "text"
-                    )
-                break
-
-        skill_name = req.select_param or (req.ext_info and req.ext_info.get("skill_name"))
-        has_file = any(
-            isinstance(m.content, list)
-            and any(
-                isinstance(item, dict) and item.get("type") == "file_url"
-                for item in m.content
-            )
-            for m in messages
-        )
-        skip_sql = bool(skill_name or has_file)
-
-        # Direct-return skills (visualization skills should not go through extra LLM)
-        direct_return_skills = {"sql_chart", "sql_dashboard"}
-        if skill_name in direct_return_skills and self.skill_registry:
-            try:
-                skill = self.skill_registry.get(skill_name)
-            except KeyError:
-                pass
-            else:
-                # Re-run skill with the original question text
-                kwargs: Dict[str, Any] = {"question": user_text}
-                result = await skill.execute(**kwargs)
-                return ChatResponse(
-                    id=f"chatbi-{int(time.time() * 1000)}",
-                    created=int(time.time()),
-                    model=skill_name,
-                    choices=[
-                        ChatChoice(
-                            message=ChatMessage(role="assistant", content=result),
-                            finish_reason="stop",
-                        )
-                    ],
-                )
-
-        if not skip_sql and self.sql_agent and self.sql_agent.is_sql_question(user_text):
-            success, result = await self.sql_agent.run(user_text)
-            content = result if success else f"SQL execution failed: {result}"
-            return ChatResponse(
-                id=f"chatbi-{int(time.time() * 1000)}",
-                created=int(time.time()),
-                model="sql-agent",
-                choices=[
-                    ChatChoice(
-                        message=ChatMessage(role="assistant", content=content),
-                        finish_reason="stop",
-                    )
-                ],
+        # Inject system prompt with tool instructions if tools are available
+        tools = self._build_tools()
+        if tools and (not messages or messages[0].role != "system"):
+            messages.insert(
+                0,
+                Message(
+                    role="system",
+                    content=SYSTEM_TOOL_PROMPT,
+                ),
             )
 
         llm = self._get_llm(req)
-        output = await llm.achat(messages)
+        max_tool_rounds = 5
+
+        for _ in range(max_tool_rounds):
+            output = await llm.achat(
+                messages,
+                tools=tools,
+                tool_choice="auto",
+            )
+
+            if output.finish_reason == "tool_calls" and output.tool_calls:
+                # Append assistant message with tool_calls
+                messages.append(
+                    Message(
+                        role="assistant",
+                        content=output.text,
+                        tool_calls=output.tool_calls,
+                    )
+                )
+                # Execute tools and append results
+                tool_results = await self._execute_tool_calls(output.tool_calls)
+                messages.extend(tool_results)
+                continue
+
+            # Final answer
+            return ChatResponse(
+                id=f"chatbi-{int(time.time() * 1000)}",
+                created=int(time.time()),
+                model=llm.config.model_name,
+                choices=[
+                    ChatChoice(
+                        message=ChatMessage(
+                            role="assistant", content=output.text
+                        ),
+                        finish_reason=output.finish_reason,
+                    )
+                ],
+                usage=output.usage,
+            )
+
+        # Fallback if too many rounds
         return ChatResponse(
             id=f"chatbi-{int(time.time() * 1000)}",
             created=int(time.time()),
             model=llm.config.model_name,
             choices=[
                 ChatChoice(
-                    message=ChatMessage(role="assistant", content=output.text),
-                    finish_reason=output.finish_reason,
+                    message=ChatMessage(
+                        role="assistant",
+                        content="Reached maximum tool calling rounds.",
+                    ),
+                    finish_reason="stop",
                 )
             ],
-            usage=output.usage,
         )
 
     async def chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
         messages = self._build_messages(req)
-        messages = await self._inject_skill_result(req, messages)
+        tools = self._build_tools()
 
-        # Direct-return skills for streaming (return single chunk)
-        direct_return_skills = {"sql_chart", "sql_dashboard"}
-        skill_name = req.select_param or (req.ext_info and req.ext_info.get("skill_name"))
-        if skill_name in direct_return_skills and self.skill_registry:
-            try:
-                skill = self.skill_registry.get(skill_name)
-            except KeyError:
-                pass
-            else:
-                user_text = ""
-                for m in reversed(messages):
-                    if m.role == "user":
-                        content = m.content
-                        if isinstance(content, str):
-                            user_text = content
-                        elif isinstance(content, list):
-                            user_text = "\n".join(
-                                item.get("text", "")
-                                for item in content
-                                if isinstance(item, dict) and item.get("type") == "text"
-                            )
-                        break
-                kwargs: Dict[str, Any] = {"question": user_text}
-                result = await skill.execute(**kwargs)
+        if tools and (not messages or messages[0].role != "system"):
+            messages.insert(
+                0,
+                Message(
+                    role="system",
+                    content=SYSTEM_TOOL_PROMPT,
+                ),
+            )
+
+        llm = self._get_llm(req)
+
+        # Fallback to non-streaming when tools are involved
+        # because aggregating streaming tool_calls is complex
+        if tools:
+            max_tool_rounds = 5
+            for _ in range(max_tool_rounds):
+                output = await llm.achat(
+                    messages,
+                    tools=tools,
+                    tool_choice="auto",
+                )
+                if output.finish_reason == "tool_calls" and output.tool_calls:
+                    messages.append(
+                        Message(
+                            role="assistant",
+                            content=output.text,
+                            tool_calls=output.tool_calls,
+                        )
+                    )
+                    tool_results = await self._execute_tool_calls(output.tool_calls)
+                    messages.extend(tool_results)
+                    continue
+
                 resp = ChatResponse(
                     id=f"chatbi-{int(time.time() * 1000)}",
                     created=int(time.time()),
-                    model=skill_name,
+                    model=llm.config.model_name,
                     choices=[
                         ChatChoice(
-                            message=ChatMessage(role="assistant", content=result),
-                            finish_reason="stop",
+                            message=ChatMessage(
+                                role="assistant", content=output.text
+                            ),
+                            finish_reason=output.finish_reason,
                         )
                     ],
+                    usage=output.usage,
                 )
                 yield f"data: {resp.model_dump_json()}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
-        llm = self._get_llm(req)
+            resp = ChatResponse(
+                id=f"chatbi-{int(time.time() * 1000)}",
+                created=int(time.time()),
+                model=llm.config.model_name,
+                choices=[
+                    ChatChoice(
+                        message=ChatMessage(
+                            role="assistant",
+                            content="Reached maximum tool calling rounds.",
+                        ),
+                        finish_reason="stop",
+                    )
+                ],
+            )
+            yield f"data: {resp.model_dump_json()}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
         created = int(time.time())
         model_name = llm.config.model_name
 
@@ -269,7 +281,9 @@ class ChatService:
                 model=model_name,
                 choices=[
                     ChatChoice(
-                        message=ChatMessage(role="assistant", content=chunk.text),
+                        message=ChatMessage(
+                            role="assistant", content=chunk.text
+                        ),
                         finish_reason=chunk.finish_reason,
                     )
                 ],

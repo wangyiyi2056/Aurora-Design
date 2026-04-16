@@ -44,6 +44,19 @@ class SQLChartSkill(BaseSkill):
             "Outputs a vis-db-chart block with SQL result data."
         )
 
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The natural language question describing what chart to generate.",
+                }
+            },
+            "required": ["question"],
+        }
+
     async def execute(self, question: str = "", **kwargs: Any) -> str:
         if not question:
             return "No question provided."
@@ -158,6 +171,19 @@ class SQLDashboardSkill(BaseSkill):
             "Generate a dashboard from a natural language question. "
             "Outputs a vis-dashboard block with multiple chart data."
         )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The natural language question describing what dashboard to generate.",
+                }
+            },
+            "required": ["question"],
+        }
 
     async def execute(self, question: str = "", **kwargs: Any) -> str:
         if not question:

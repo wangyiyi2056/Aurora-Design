@@ -13,6 +13,15 @@ class BaseSkill(ABC):
     def description(self) -> str:
         ...
 
+    @property
+    def parameters(self) -> Dict[str, Any]:
+        """Return JSON Schema for the skill's parameters (OpenAI function style)."""
+        return {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
+
     @abstractmethod
     async def execute(self, **kwargs) -> str:
         ...

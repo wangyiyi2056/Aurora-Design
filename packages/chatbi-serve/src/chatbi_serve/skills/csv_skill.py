@@ -14,6 +14,19 @@ class CSVAnalysisSkill(BaseSkill):
     def description(self) -> str:
         return "Analyze a CSV string and return basic statistics (row count, column names, first 5 rows)."
 
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "csv_content": {
+                    "type": "string",
+                    "description": "The raw CSV content to analyze.",
+                }
+            },
+            "required": ["csv_content"],
+        }
+
     async def execute(self, csv_content: str, **kwargs: Any) -> str:
         try:
             reader = csv.DictReader(io.StringIO(csv_content))

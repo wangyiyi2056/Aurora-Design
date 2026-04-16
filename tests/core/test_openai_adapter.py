@@ -25,7 +25,9 @@ async def test_openai_llm_achat_mock(monkeypatch):
 
     class FakeChoice:
         def __init__(self):
-            self.message = type("obj", (object,), {"content": "hello"})()
+            self.message = type(
+                "obj", (object,), {"content": "hello", "tool_calls": None}
+            )()
             self.finish_reason = "stop"
 
     class FakeUsage:
