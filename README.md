@@ -1,12 +1,24 @@
 # ChatBI
 
+<p align="center">
+  <strong>Agentic AI Data Platform</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/wangyiyi2056/chatBI">
+    <img src="https://img.shields.io/badge/visibility-private-black?style=flat-square" alt="private repo">
+  </a>
+</p>
+
 > **Visibility**: This repository is currently **private** and visible only to the owner. Open-sourcing may be considered in the future.
->
-> **可见性**：本仓库目前为**私有**，仅所有者可见。后续将视情况考虑是否开源。
 
 ---
 
-## English
+<!-- English (default open) -->
+<details open>
+<summary><strong>English</strong> (click to collapse)</summary>
+
+<br>
 
 **ChatBI** is an agentic AI data platform that lets you chat with your data, build knowledge bases, orchestrate workflows, and run sandboxed code — all through a unified API and modern web interface.
 
@@ -212,9 +224,15 @@ uv run pytest tests/ -v
 - [x] Phase 3: RAG & Agent framework — knowledge base + multi-agent collaboration
 - [x] Phase 4: Workflow orchestration & sandbox safety — AWEL + Sandbox
 
+</details>
+
 ---
 
-## 中文
+<!-- Chinese (default closed) -->
+<details>
+<summary><strong>中文</strong>（点击展开）</summary>
+
+<br>
 
 **ChatBI** 是一个智能 AI 数据平台，让你能够通过统一的 API 和现代化的 Web 界面与数据对话、构建知识库、编排工作流，并在安全沙箱中执行代码。
 
@@ -419,3 +437,5 @@ uv run pytest tests/ -v
 - [x] Phase 2：数据连接 — 数据源抽象 + SQL 生成与执行
 - [x] Phase 3：RAG 与 Agent 框架 — 知识库 + 多 Agent 协作
 - [x] Phase 4：工作流编排与沙箱安全 — AWEL + Sandbox
+
+</details>
