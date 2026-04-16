@@ -32,6 +32,8 @@ def create_app() -> FastAPI:
             PythonAnalysisSkill,
             SQLExecuteSkill,
         )
+        from chatbi_serve.skills.excel_skill import Excel2TableSkill
+        from chatbi_serve.skills.web_search_skill import WebSearchSkill
 
         config_path = Path("configs/chatbi.toml")
         if not config_path.exists():
@@ -87,6 +89,13 @@ def create_app() -> FastAPI:
             )
         )
         skill_registry.register(PythonAnalysisSkill())
+        skill_registry.register(WebSearchSkill())
+        skill_registry.register(
+            Excel2TableSkill(
+                datasource_service=datasource_service,
+                datasource_name=default_ds,
+            )
+        )
         try:
             default_llm = registry.get_llm()
         except RuntimeError:

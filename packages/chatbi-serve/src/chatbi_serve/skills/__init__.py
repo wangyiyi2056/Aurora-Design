@@ -5,6 +5,8 @@ from chatbi_serve.skills.data_skills import (
     PythonAnalysisSkill,
     SQLExecuteSkill,
 )
+from chatbi_serve.skills.excel_skill import Excel2TableSkill
+from chatbi_serve.skills.web_search_skill import WebSearchSkill
 
 __all__ = [
     "CSVAnalysisSkill",
@@ -13,4 +15,6 @@ __all__ = [
     "SQLExecuteSkill",
     "DatabaseSchemaSkill",
     "PythonAnalysisSkill",
+    "Excel2TableSkill",
+    "WebSearchSkill",
 ]
