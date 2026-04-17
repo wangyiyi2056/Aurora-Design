@@ -151,7 +151,8 @@ class Excel2TableSkill(BaseSkill):
 
         # Build CREATE TABLE
         col_defs = [f'"{h}" {type_map[h]}' for h in headers]
-        create_sql = f'CREATE TABLE IF NOT EXISTS "{table_name}" ({', '.join(col_defs)});'
+        col_defs_str = ", ".join(col_defs)
+        create_sql = f'CREATE TABLE IF NOT EXISTS "{table_name}" ({col_defs_str});'
 
         # Execute CREATE TABLE
         success, result = connector.run(create_sql)
@@ -163,7 +164,6 @@ class Excel2TableSkill(BaseSkill):
         total_inserted = 0
         for i in range(0, len(rows), batch_size):
             batch = rows[i : i + batch_size]
-            placeholders = ", ".join([f"({', '.join(['?' for _ in headers])})" for _ in batch])
             # Use parameterized style compatible with most engines via text()
             # But our connector.run() doesn't support params, so we do value escaping
             values_clauses = []
@@ -176,11 +176,14 @@ class Excel2TableSkill(BaseSkill):
                     else:
                         escaped = str(v).replace("'", "''")
                         vals.append(f"'{escaped}'")
-                values_clauses.append(f"({', '.join(vals)})")
+                vals_str = ", ".join(vals)
+                values_clauses.append(f"({vals_str})")
 
+            headers_str = ", ".join([f'"{h}"' for h in headers])
+            values_str = ", ".join(values_clauses)
             insert_sql = (
-                f'INSERT INTO "{table_name}" ({', '.join([f'"{h}"' for h in headers])}) '
-                f'VALUES {', '.join(values_clauses)};'
+                f'INSERT INTO "{table_name}" ({headers_str}) '
+                f'VALUES {values_str};'
             )
             success, result = connector.run(insert_sql)
             if not success:

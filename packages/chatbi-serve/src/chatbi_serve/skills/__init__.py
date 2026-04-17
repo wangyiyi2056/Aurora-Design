@@ -7,6 +7,7 @@ from chatbi_serve.skills.data_skills import (
     PythonAnalysisSkill,
     SQLExecuteSkill,
 )
+from chatbi_serve.skills.database_summary_skill import DatabaseSummarySkill
 from chatbi_serve.skills.excel_skill import Excel2TableSkill
 from chatbi_serve.skills.indicator_skill import IndicatorSkill
 from chatbi_serve.skills.metric_info_skill import MetricInfoSkill
@@ -20,6 +21,7 @@ __all__ = [
     "SQLDashboardSkill",
     "SQLExecuteSkill",
     "DatabaseSchemaSkill",
+    "DatabaseSummarySkill",
     "PythonAnalysisSkill",
     "Excel2TableSkill",
     "WebSearchSkill",

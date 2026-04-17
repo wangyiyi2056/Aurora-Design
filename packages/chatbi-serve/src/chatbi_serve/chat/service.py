@@ -19,6 +19,28 @@ from chatbi_serve.chat.schema import (
 
 SYSTEM_TOOL_PROMPT = """You are ChatBI, an intelligent data assistant. You have access to the following tools. Use them when appropriate to answer user questions accurately."""
 
+CSV_CHART_PROMPT = """
+When you have analyzed CSV data and want to present a visualization, you MUST output a ```vis-db-chart code block with the following JSON structure:
+
+```vis-db-chart
+{"type": "response_bar_chart", "title": "Chart Title", "data": [{"column1": "value1", "column2": 123}, ...]}
+```
+
+Available chart types:
+- response_table: suitable for display with many columns or non-numeric columns
+- response_bar_chart: used to compare values across categories
+- response_line_chart: used to display trend analysis over time or sequence
+- response_pie_chart: suitable for proportion and distribution (few categories, 2-8)
+- response_scatter_chart: suitable for exploring relationships between variables
+- response_area_chart: suitable for time series data with filled areas
+
+Important:
+1. Use the actual column names from the CSV data as keys in the data array
+2. Choose the chart type based on data characteristics (time series → line, comparison → bar, proportion → pie)
+3. For pie charts, use {"name": "category", "value": number} format in data
+4. Always include a meaningful title that describes what the chart shows
+"""
+
 
 class ChatService:
     def __init__(
@@ -99,15 +121,19 @@ class ChatService:
 
     async def _execute_tool_calls(
         self, tool_calls: List[ToolCall]
-    ) -> List[Message]:
+    ) -> tuple[List[Message], bool]:
+        """Execute tool calls and return messages plus flag indicating if csv_analysis was used."""
         if not self.skill_registry:
-            return []
+            return [], False
         tool_messages: List[Message] = []
+        used_csv_analysis = False
         for tc in tool_calls:
             if tc.type != "function":
                 continue
             fn_name = tc.function.get("name", "")
             fn_args = tc.function.get("arguments", "{}")
+            if fn_name == "csv_analysis":
+                used_csv_analysis = True
             try:
                 skill = self.skill_registry.get(fn_name)
             except KeyError:
@@ -126,7 +152,7 @@ class ChatService:
                     name=fn_name,
                 )
             )
-        return tool_messages
+        return tool_messages, used_csv_analysis
 
     async def chat(self, req: ChatRequest) -> ChatResponse:
         messages = self._build_messages(req)
@@ -162,8 +188,16 @@ class ChatService:
                     )
                 )
                 # Execute tools and append results
-                tool_results = await self._execute_tool_calls(output.tool_calls)
+                tool_results, used_csv_analysis = await self._execute_tool_calls(output.tool_calls)
                 messages.extend(tool_results)
+                # If csv_analysis was used, append chart prompt to guide LLM
+                if used_csv_analysis:
+                    messages.append(
+                        Message(
+                            role="system",
+                            content=CSV_CHART_PROMPT,
+                        )
+                    )
                 continue
 
             # Final answer
@@ -231,8 +265,15 @@ class ChatService:
                             tool_calls=output.tool_calls,
                         )
                     )
-                    tool_results = await self._execute_tool_calls(output.tool_calls)
+                    tool_results, used_csv_analysis = await self._execute_tool_calls(output.tool_calls)
                     messages.extend(tool_results)
+                    if used_csv_analysis:
+                        messages.append(
+                            Message(
+                                role="system",
+                                content=CSV_CHART_PROMPT,
+                            )
+                        )
                     continue
 
                 resp = ChatResponse(

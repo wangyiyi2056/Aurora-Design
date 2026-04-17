@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
             PythonAnalysisSkill,
             SQLExecuteSkill,
         )
+        from chatbi_serve.skills.database_summary_skill import DatabaseSummarySkill
         from chatbi_serve.skills.excel_skill import Excel2TableSkill
         from chatbi_serve.skills.indicator_skill import IndicatorSkill
         from chatbi_serve.skills.metric_info_skill import MetricInfoSkill
@@ -126,6 +127,12 @@ def create_app() -> FastAPI:
         skill_registry.register(VolatilityAnalysisSkill())
         skill_registry.register(ReportSkill())
         skill_registry.register(DataAnalysisSkill())
+        skill_registry.register(
+            DatabaseSummarySkill(
+                datasource_service=datasource_service,
+                datasource_name=default_ds,
+            )
+        )
         app.state.skill_registry = skill_registry
 
         app.state.chat_service = ChatService(registry, sql_agent, skill_registry)
