@@ -16,6 +16,7 @@ export interface ModelConfig {
   model_name: string
   base_url: string
   api_key: string
+  model_type?: string
 }
 
 export interface ChatCompleteOptions {

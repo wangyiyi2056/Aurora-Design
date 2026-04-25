@@ -30,6 +30,10 @@ class SQLExecuteSkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "执行SQL查询并返回结果，用于数据探索、验证或响应用户的SQL执行请求。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
@@ -87,6 +91,10 @@ class DatabaseSchemaSkill(BaseSkill):
             "Get the database schema (tables, columns, types) and sample data. "
             "Use this before writing SQL to understand the data structure."
         )
+
+    @property
+    def description_cn(self) -> str:
+        return "获取数据库表结构、字段类型和示例数据，在编写SQL前了解数据结构。"
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -158,6 +166,10 @@ class PythonAnalysisSkill(BaseSkill):
             "If generating files like images or HTML, save them to /workspace/output/ and "
             "request them in output_files."
         )
+
+    @property
+    def description_cn(self) -> str:
+        return "在安全沙箱中执行Python代码进行复杂数据分析、统计计算，支持pandas/numpy。"
 
     @property
     def parameters(self) -> dict[str, Any]:

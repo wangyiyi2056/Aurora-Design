@@ -20,6 +20,10 @@ class MetricInfoSkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "获取指标的结构化元数据信息，包括定义、计算规则和建议维度。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",

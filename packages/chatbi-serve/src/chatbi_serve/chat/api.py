@@ -17,7 +17,7 @@ async def chat_completions(
 ) -> ChatResponse | StreamingResponse:
     if req.stream:
         return StreamingResponse(
-            service.chat_stream(req),
+            service.chat_stream(req, session_id=req.session_id),
             media_type="text/event-stream",
         )
-    return await service.chat(req)
+    return await service.chat(req, session_id=req.session_id)

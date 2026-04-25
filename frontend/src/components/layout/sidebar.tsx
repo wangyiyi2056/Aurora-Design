@@ -1,14 +1,14 @@
 import { NavLink, useLocation } from "react-router-dom"
 import {
-  CommentOutlined,
-  AppstoreOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
-  BuildOutlined,
-  GlobalOutlined,
-  SunOutlined,
-  MoonOutlined,
-} from "@ant-design/icons"
+  LayoutGrid,
+  MessageSquare,
+  ArrowRightToLine,
+  ArrowLeftToLine,
+  Hammer,
+  Globe,
+  Sun,
+  Moon,
+} from "lucide-react"
 import { useTranslation } from "react-i18next"
 import i18n from "@/lib/i18n"
 import { useGlobalStore } from "@/stores/global-store"
@@ -30,9 +30,9 @@ export function Sidebar() {
   ].some((p) => location.pathname.startsWith(p))
 
   const navItems = [
-    { path: "/", label: t("nav.explore"), icon: <AppstoreOutlined /> },
-    { path: "/chat", label: t("nav.chat"), icon: <CommentOutlined /> },
-    { path: "/construct/app", label: t("nav.construct"), icon: <BuildOutlined /> },
+    { path: "/", label: t("nav.explore"), icon: LayoutGrid },
+    { path: "/chat", label: t("nav.chat"), icon: MessageSquare },
+    { path: "/construct/app", label: t("nav.construct"), icon: Hammer },
   ]
 
   return (
@@ -52,7 +52,7 @@ export function Sidebar() {
           aria-label={sidebarCollapsed ? t("sidebar.expand") : t("sidebar.collapse")}
           title={sidebarCollapsed ? t("sidebar.expand") : t("sidebar.collapse")}
         >
-          {sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          {sidebarCollapsed ? <ArrowRightToLine className="h-4 w-4" /> : <ArrowLeftToLine className="h-4 w-4" />}
         </button>
       </div>
       <nav className="flex flex-1 flex-col gap-1 p-3">
@@ -70,7 +70,7 @@ export function Sidebar() {
             }
             title={item.label}
           >
-            <span className="text-base">{item.icon}</span>
+            <item.icon className="h-4 w-4" />
             {!sidebarCollapsed && <span className="text-sm">{item.label}</span>}
           </NavLink>
         ))}
@@ -82,7 +82,7 @@ export function Sidebar() {
           aria-label={t("sidebar.toggleTheme")}
           title={t("sidebar.toggleTheme")}
         >
-          {theme === "dark" ? <SunOutlined /> : <MoonOutlined />}
+          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           {!sidebarCollapsed && (
             <span>{theme === "dark" ? t("sidebar.lightMode") : t("sidebar.darkMode")}</span>
           )}
@@ -97,7 +97,7 @@ export function Sidebar() {
           aria-label={t("sidebar.toggleLanguage")}
           title={t("sidebar.toggleLanguage")}
         >
-          <GlobalOutlined />
+          <Globe className="h-4 w-4" />
           {!sidebarCollapsed && <span>{language === "zh" ? "中文" : "English"}</span>}
         </button>
       </div>

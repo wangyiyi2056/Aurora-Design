@@ -24,6 +24,10 @@ class IndicatorSkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "调用外部API指标/工具，用于获取指标数据或调用REST API。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",

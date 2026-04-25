@@ -1,0 +1,38 @@
+appId: com.chatbi.app
+productName: ChatBI
+copyright: Copyright © 2025 ChatBI
+directories:
+  output: dist-electron
+  buildResources: build
+files:
+  - dist-electron/**
+  - dist/**
+extraResources:
+  - from: "../"
+    to: "chatbi-project"
+    filter:
+      - "configs/**"
+      - "packages/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".python-version"
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

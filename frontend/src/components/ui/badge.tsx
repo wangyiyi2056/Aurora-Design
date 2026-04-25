@@ -1,27 +1,36 @@
-import { forwardRef } from "react"
-import { Badge as AntBadge } from "antd"
-import type { BadgeProps as AntBadgeProps } from "antd"
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
+import { cn } from "@/lib/utils"
 
-export interface BadgeProps extends AntBadgeProps {
-  className?: string
-}
-
-export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(
-  ({ className, ...props }, ref) => {
-    return (
-      <AntBadge
-        ref={ref}
-        className={cn("", className)}
-        {...props}
-      />
-    )
+const badgeVariants = cva(
+  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  {
+    variants: {
+      variant: {
+        default:
+          "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
+        secondary:
+          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        destructive:
+          "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
+        outline: "text-foreground",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
   }
 )
 
-Badge.displayName = "Badge"
+export interface BadgeProps
+  extends React.HTMLAttributes<HTMLDivElement>,
+    VariantProps<typeof badgeVariants> {}
+
+function Badge({ className, variant, ...props }: BadgeProps) {
+  return (
+    <div className={cn(badgeVariants({ variant }), className)} {...props} />
+  )
+}
+
+export { Badge, badgeVariants }

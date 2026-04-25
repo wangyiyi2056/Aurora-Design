@@ -1,6 +1,9 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Button, Input, List, Tag, Form } from "antd"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Tag } from "@/components/ui/tag"
 import { ConstructShell } from "@/features/construct/components/construct-shell"
 
 interface PromptItem {
@@ -62,12 +65,11 @@ export default function PromptPage() {
   return (
     <ConstructShell>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-1 bg-surface rounded-xl border border-border p-4">
+        <div className="lg:col-span-1 bg-card rounded-xl border border-border p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold m-0">{t("prompt.title")}</h3>
             <Button
-              type="primary"
-              size="small"
+              size="sm"
               onClick={() => {
                 setSelected(null)
                 setName("")
@@ -77,75 +79,78 @@ export default function PromptPage() {
               {t("prompt.add")}
             </Button>
           </div>
-          <List
-            dataSource={prompts}
-            locale={{ emptyText: t("prompt.empty") }}
-            renderItem={(item) => (
-              <List.Item
-                className={`cursor-pointer rounded px-2 transition-colors ${
-                  selected?.id === item.id ? "bg-primary/10" : "hover:bg-surface-hover"
+          <div className="space-y-1">
+            {prompts.map((item) => (
+              <div
+                key={item.id}
+                className={`flex items-center justify-between px-2 py-2 rounded cursor-pointer transition-colors ${
+                  selected?.id === item.id ? "bg-primary/10" : "hover:bg-muted"
                 }`}
                 onClick={() => handleSelect(item)}
-                actions={[
-                  <Button
-                    key="del"
-                    type="link"
-                    danger
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleDelete(item.id)
-                    }}
-                  >
-                    {t("prompt.delete")}
-                  </Button>,
-                ]}
               >
                 <div className="font-medium text-sm">{item.name}</div>
-              </List.Item>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDelete(item.id)
+                  }}
+                >
+                  {t("prompt.delete")}
+                </Button>
+              </div>
+            ))}
+            {prompts.length === 0 && (
+              <div className="text-muted-foreground text-sm text-center py-4">
+                {t("prompt.empty")}
+              </div>
             )}
-          />
+          </div>
         </div>
 
-        <div className="lg:col-span-2 bg-surface rounded-xl border border-border p-4">
-          <Form layout="vertical">
-            <Form.Item label={t("prompt.name")}>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t("prompt.name")}
-              />
-            </Form.Item>
-            <Form.Item label={t("prompt.content")}>
-              <Input.TextArea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder={t("prompt.placeholder")}
-                rows={8}
-              />
-            </Form.Item>
-            {variables.length > 0 && (
-              <Form.Item label={t("prompt.variables")}>
-                <div className="flex flex-wrap gap-2">
-                  {variables.map((v) => (
-                    <Tag key={v} color="blue">
-                      {v}
-                    </Tag>
-                  ))}
-                </div>
-              </Form.Item>
-            )}
-            {content && (
-              <Form.Item label={t("prompt.preview")}>
-                <div className="bg-bg p-3 rounded text-sm whitespace-pre-wrap border border-border">
-                  {previewText}
-                </div>
-              </Form.Item>
-            )}
-            <Button type="primary" onClick={handleSave} disabled={!name.trim() || !content.trim()}>
-              {t("prompt.save")}
-            </Button>
-          </Form>
+        <div className="lg:col-span-2 bg-card rounded-xl border border-border p-4 space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t("prompt.name")}</label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("prompt.name")}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t("prompt.content")}</label>
+            <Textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder={t("prompt.placeholder")}
+              rows={8}
+            />
+          </div>
+          {variables.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("prompt.variables")}</label>
+              <div className="flex flex-wrap gap-2">
+                {variables.map((v) => (
+                  <Tag key={v} variant="info">
+                    {v}
+                  </Tag>
+                ))}
+              </div>
+            </div>
+          )}
+          {content && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("prompt.preview")}</label>
+              <div className="bg-background p-3 rounded text-sm whitespace-pre-wrap border border-border">
+                {previewText}
+              </div>
+            </div>
+          )}
+          <Button onClick={handleSave} disabled={!name.trim() || !content.trim()}>
+            {t("prompt.save")}
+          </Button>
         </div>
       </div>
     </ConstructShell>

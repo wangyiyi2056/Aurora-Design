@@ -14,6 +14,11 @@ class BaseSkill(ABC):
         ...
 
     @property
+    def description_cn(self) -> str:
+        """Return Chinese description for the skill."""
+        return self.description
+
+    @property
     def parameters(self) -> Dict[str, Any]:
         """Return JSON Schema for the skill's parameters (OpenAI function style)."""
         return {
@@ -22,9 +27,24 @@ class BaseSkill(ABC):
             "required": [],
         }
 
+    @property
+    def is_builtin(self) -> bool:
+        """Return whether this skill is built-in (pre-registered by the system)."""
+        return True
+
     @abstractmethod
     async def execute(self, **kwargs) -> str:
         ...
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return skill metadata as a dictionary for API responses."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "description_cn": self.description_cn,
+            "parameters": self.parameters,
+            "is_builtin": self.is_builtin,
+        }
 
 
 class SkillRegistry:
@@ -41,3 +61,7 @@ class SkillRegistry:
 
     def list_skills(self) -> Dict[str, str]:
         return {name: skill.description for name, skill in self._skills.items()}
+
+    def list_skills_detail(self) -> list[Dict[str, Any]]:
+        """Return all skills with full metadata."""
+        return [skill.to_dict() for skill in self._skills.values()]

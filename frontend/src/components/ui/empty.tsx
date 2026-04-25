@@ -1,21 +1,16 @@
-import { Empty as AntEmpty } from "antd"
-import type { EmptyProps as AntEmptyProps } from "antd"
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { PackageOpen } from "lucide-react"
+import { cn } from "@/lib/utils"
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
-
-export interface EmptyProps extends AntEmptyProps {
+interface EmptyProps {
+  description?: React.ReactNode
   className?: string
 }
 
-export function Empty({ className, ...props }: EmptyProps) {
+export function Empty({ description = "暂无数据", className }: EmptyProps) {
   return (
-    <AntEmpty
-      className={cn("text-text-secondary", className)}
-      {...props}
-    />
+    <div className={cn("flex flex-col items-center justify-center py-8 text-muted-foreground", className)}>
+      <PackageOpen className="h-12 w-12 mb-3 opacity-50" />
+      <p className="text-sm">{description}</p>
+    </div>
   )
 }

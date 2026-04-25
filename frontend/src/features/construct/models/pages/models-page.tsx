@@ -1,175 +1,342 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Button, Form, Input, Modal, Select, Table, Tag, message } from "antd"
+import { toast } from "sonner"
+import { Edit, Trash2, Plug, Plus, Loader2 } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Tag } from "@/components/ui/tag"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { ConstructShell } from "@/features/construct/components/construct-shell"
 import { useModelsStore, type ModelItem } from "@/stores/models-store"
 import { testModelConnection } from "@/services/model-test"
 
 const modelTypes = [
-  { value: "llm", label: "LLM" },
+  { value: "llm", label: "LLM (OpenAI)" },
+  { value: "anthropic", label: "LLM (Anthropic/Kimi)" },
   { value: "embedding", label: "Embedding" },
   { value: "rerank", label: "Rerank" },
 ]
+
+interface FormData {
+  name: string
+  type: string
+  baseUrl: string
+  apiKey: string
+}
 
 export default function ModelsPage() {
   const { t } = useTranslation(["construct", "common"])
   const { models, addModel, updateModel, removeModel } = useModelsStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [form] = Form.useForm()
+  const [editingModel, setEditingModel] = useState<ModelItem | null>(null)
   const [testingId, setTestingId] = useState<string | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null)
 
-  const handleAdd = async () => {
-    const values = await form.validateFields()
+  const [formData, setFormData] = useState<FormData>({
+    name: "",
+    type: "llm",
+    baseUrl: "http://127.0.0.1:8000/v1",
+    apiKey: "",
+  })
+
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {}
+    if (!formData.name.trim()) errors.name = t("models.nameRequired")
+    if (!formData.baseUrl.trim()) errors.baseUrl = t("models.baseUrlRequired")
+    if (!formData.apiKey.trim()) errors.apiKey = t("models.apiKeyRequired")
+    setFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  const handleAdd = () => {
+    if (!validateForm()) return
     addModel({
-      name: values.name,
-      type: values.type,
-      baseUrl: values.baseUrl,
-      apiKey: values.apiKey,
+      name: formData.name,
+      type: formData.type,
+      baseUrl: formData.baseUrl,
+      apiKey: formData.apiKey,
     })
     setIsModalOpen(false)
-    form.resetFields()
-    message.success(t("models.addSuccess"))
+    resetForm()
+    toast.success(t("models.addSuccess"))
+  }
+
+  const handleEdit = () => {
+    if (!editingModel) return
+    if (!validateForm()) return
+    updateModel(editingModel.id, {
+      name: formData.name,
+      type: formData.type,
+      baseUrl: formData.baseUrl,
+      apiKey: formData.apiKey,
+      status: "untested",
+    })
+    setIsModalOpen(false)
+    setEditingModel(null)
+    resetForm()
+    toast.success(t("models.editSuccess"))
+  }
+
+  const openEditModal = (item: ModelItem) => {
+    setEditingModel(item)
+    setFormData({
+      name: item.name,
+      type: item.type,
+      baseUrl: item.baseUrl,
+      apiKey: item.apiKey,
+    })
+    setFormErrors({})
+    setIsModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setIsModalOpen(false)
+    setEditingModel(null)
+    resetForm()
+  }
+
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      type: "llm",
+      baseUrl: "http://127.0.0.1:8000/v1",
+      apiKey: "",
+    })
+    setFormErrors({})
   }
 
   const handleTest = async (item: ModelItem) => {
     setTestingId(item.id)
     updateModel(item.id, { status: "testing" })
     try {
-      await testModelConnection(item.baseUrl, item.apiKey)
+      await testModelConnection(item.baseUrl, item.apiKey, item.type)
       updateModel(item.id, { status: "available", statusMessage: undefined })
-      message.success(t("models.testSuccess"))
+      toast.success(t("models.testSuccess"))
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("models.testFailed")
       updateModel(item.id, { status: "error", statusMessage: msg })
-      message.error(t("models.testFailed"))
+      toast.error(msg)
     } finally {
       setTestingId(null)
     }
   }
 
-  const columns = [
-    {
-      title: t("models.name"),
-      dataIndex: "name",
-      key: "name",
-    },
-    {
-      title: t("models.type"),
-      dataIndex: "type",
-      key: "type",
-      render: (v: string) => <Tag>{v}</Tag>,
-    },
-    {
-      title: t("models.baseUrl"),
-      dataIndex: "baseUrl",
-      key: "baseUrl",
-      ellipsis: true,
-    },
-    {
-      title: t("models.status"),
-      key: "status",
-      render: (_: unknown, item: ModelItem) => {
-        if (item.status === "testing" || testingId === item.id) {
-          return <Tag color="processing">{t("models.testing")}</Tag>
-        }
-        if (item.status === "available") {
-          return <Tag color="success">{t("models.available")}</Tag>
-        }
-        if (item.status === "error") {
-          return (
-            <Tag color="error" title={item.statusMessage}>
-              {t("models.error")}
-            </Tag>
-          )
-        }
-        return <Tag>{t("models.untested")}</Tag>
-      },
-    },
-    {
-      title: t("models.actions"),
-      key: "actions",
-      render: (_: unknown, item: ModelItem) => (
-        <div className="flex gap-2">
-          <Button
-            size="small"
-            loading={testingId === item.id}
-            onClick={() => handleTest(item)}
-          >
-            {t("models.test")}
-          </Button>
-          <Button
-            size="small"
-            danger
-            type="link"
-            onClick={() => removeModel(item.id)}
-          >
-            {t("actions.delete", { ns: "common" })}
-          </Button>
-        </div>
-      ),
-    },
-  ]
+  const handleDelete = (id: string) => {
+    removeModel(id)
+    setDeleteConfirmOpen(null)
+  }
+
+  const getStatusTag = (item: ModelItem) => {
+    if (item.status === "testing" || testingId === item.id) {
+      return <Tag variant="info">{t("models.testing")}</Tag>
+    }
+    if (item.status === "available") {
+      return <Tag variant="success">{t("models.available")}</Tag>
+    }
+    if (item.status === "error") {
+      return (
+        <Tag variant="warning" title={item.statusMessage}>
+          {t("models.error")}
+        </Tag>
+      )
+    }
+    return <Tag variant="secondary">{t("models.untested")}</Tag>
+  }
 
   return (
     <ConstructShell>
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold m-0">{t("models.title")}</h3>
-        <Button type="primary" onClick={() => setIsModalOpen(true)}>
+        <Button onClick={() => setIsModalOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" />
           {t("models.add")}
         </Button>
       </div>
 
-      <Table
-        dataSource={models}
-        columns={columns}
-        rowKey="id"
-        pagination={false}
-      />
+      <div className="rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("models.name")}</TableHead>
+              <TableHead className="w-[160px]">{t("models.type")}</TableHead>
+              <TableHead>{t("models.baseUrl")}</TableHead>
+              <TableHead className="w-[100px]">{t("models.status")}</TableHead>
+              <TableHead className="w-[200px]">{t("models.actions")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {models.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell className="font-medium">{item.name}</TableCell>
+                <TableCell>
+                  <Tag variant={item.type === "anthropic" ? "info" : "default"}>
+                    {modelTypes.find((m) => m.value === item.type)?.label || item.type}
+                  </Tag>
+                </TableCell>
+                <TableCell className="text-muted-foreground truncate max-w-[200px]">
+                  {item.baseUrl}
+                </TableCell>
+                <TableCell>{getStatusTag(item)}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => openEditModal(item)}>
+                      <Edit className="h-4 w-4 mr-1" />
+                      {t("actions.edit", { ns: "common" })}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={testingId === item.id}
+                      onClick={() => handleTest(item)}
+                    >
+                      {testingId === item.id ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <Plug className="h-4 w-4 mr-1" />
+                      )}
+                      {t("models.test")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDeleteConfirmOpen(item.id)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      {t("actions.delete", { ns: "common" })}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {models.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  {t("models.empty") || "暂无模型"}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
-      <Modal
-        title={t("models.add")}
-        open={isModalOpen}
-        onOk={handleAdd}
-        onCancel={() => {
-          setIsModalOpen(false)
-          form.resetFields()
-        }}
-        okText={t("actions.add", { ns: "common" })}
-        cancelText={t("actions.cancel", { ns: "common" })}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingModel ? t("models.edit") : t("models.add")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("models.name")}</label>
+              <Input
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="e.g. gpt-4o-mini"
+              />
+              {formErrors.name && (
+                <p className="text-sm text-destructive">{formErrors.name}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("models.type")}</label>
+              <Select
+                value={formData.type}
+                onValueChange={(v) => setFormData({ ...formData, type: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {modelTypes.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("models.baseUrl")}</label>
+              <Input
+                value={formData.baseUrl}
+                onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+                placeholder="http://127.0.0.1:8000/v1"
+              />
+              {formErrors.baseUrl && (
+                <p className="text-sm text-destructive">{formErrors.baseUrl}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("models.apiKey")}</label>
+              <Input
+                type="password"
+                value={formData.apiKey}
+                onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+                placeholder="sk-xxx"
+              />
+              {formErrors.apiKey && (
+                <p className="text-sm text-destructive">{formErrors.apiKey}</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeModal}>
+              {t("actions.cancel", { ns: "common" })}
+            </Button>
+            <Button onClick={editingModel ? handleEdit : handleAdd}>
+              {editingModel ? t("actions.save", { ns: "common" }) : t("actions.add", { ns: "common" })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={deleteConfirmOpen !== null}
+        onOpenChange={(open: boolean) => !open && setDeleteConfirmOpen(null)}
       >
-        <Form form={form} layout="vertical" className="mt-4">
-          <Form.Item
-            name="name"
-            label={t("models.name")}
-            rules={[{ required: true, message: t("models.nameRequired") }]}
-          >
-            <Input placeholder="e.g. gemma-4-e4b-it-8bit" />
-          </Form.Item>
-          <Form.Item
-            name="type"
-            label={t("models.type")}
-            rules={[{ required: true }]}
-            initialValue="llm"
-          >
-            <Select options={modelTypes} />
-          </Form.Item>
-          <Form.Item
-            name="baseUrl"
-            label={t("models.baseUrl")}
-            rules={[{ required: true, message: t("models.baseUrlRequired") }]}
-            initialValue="http://127.0.0.1:8000/v1"
-          >
-            <Input placeholder="http://127.0.0.1:8000/v1" />
-          </Form.Item>
-          <Form.Item
-            name="apiKey"
-            label={t("models.apiKey")}
-            rules={[{ required: true, message: t("models.apiKeyRequired") }]}
-          >
-            <Input.Password placeholder="sk-xxx" />
-          </Form.Item>
-        </Form>
-      </Modal>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("actions.delete", { ns: "common" })}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("models.deleteConfirm") || "确定要删除此模型吗？"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {t("actions.cancel", { ns: "common" })}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteConfirmOpen && handleDelete(deleteConfirmOpen)}>
+              {t("actions.delete", { ns: "common" })}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ConstructShell>
   )
 }

@@ -21,6 +21,10 @@ class DataAnalysisSkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "对CSV/Excel/TSV文件执行全面数据分析，返回统计摘要、相关性、异常值和排名等。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",

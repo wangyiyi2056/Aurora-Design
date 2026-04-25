@@ -45,6 +45,10 @@ class SQLChartSkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "根据自然语言问题生成图表，输出包含SQL结果数据的vis-db-chart块。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
@@ -171,6 +175,10 @@ class SQLDashboardSkill(BaseSkill):
             "Generate a dashboard from a natural language question. "
             "Outputs a vis-dashboard block with multiple chart data."
         )
+
+    @property
+    def description_cn(self) -> str:
+        return "根据自然语言问题生成仪表板，输出包含多个图表数据的vis-dashboard块。"
 
     @property
     def parameters(self) -> dict[str, Any]:

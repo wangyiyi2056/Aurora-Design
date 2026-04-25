@@ -4,6 +4,7 @@
     "placeholder": "Type your message...",
     "send": "Send",
     "thinking": "Thinking...",
+    "addTool": "Add",
     "attachFile": "Add from local file",
     "useSkill": "Use skills",
     "useKnowledge": "Use knowledge base",

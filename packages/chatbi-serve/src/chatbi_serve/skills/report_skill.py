@@ -18,6 +18,10 @@ class ReportSkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "根据分析结果生成结构化报告，整合多个工具的分析发现。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",

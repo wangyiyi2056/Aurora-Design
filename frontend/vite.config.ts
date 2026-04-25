@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
+  base: process.env.ELECTRON === "true" ? "./" : "/",
   plugins: [react()],
   resolve: {
     alias: {
@@ -14,7 +15,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-antd': ['antd', '@ant-design/icons'],
           'vendor-query': ['@tanstack/react-query', 'zustand'],
           'vendor-markdown': ['react-markdown', 'react-syntax-highlighter', 'remark-gfm'],
         },
@@ -22,9 +22,10 @@ export default defineConfig({
     },
   },
   server: {
+    port: 3000,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8888',
+        target: 'http://127.0.0.1:3001',
         changeOrigin: true,
       },
     },

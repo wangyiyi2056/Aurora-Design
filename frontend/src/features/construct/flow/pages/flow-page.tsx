@@ -1,6 +1,14 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Button, Card, Input, Tabs } from "antd"
+import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
 import { ConstructShell } from "@/features/construct/components/construct-shell"
 import {
   useOperators,
@@ -29,7 +37,6 @@ const mockEdges = [
 
 export default function FlowPage() {
   const { t } = useTranslation("construct")
-  const [activeTab, setActiveTab] = useState("canvas")
   const [input, setInput] = useState("hello chatbi")
   const [result, setResult] = useState<unknown>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
@@ -46,15 +53,18 @@ export default function FlowPage() {
 
   return (
     <ConstructShell>
-      <Tabs activeKey={activeTab} onChange={setActiveTab} className="mb-4">
-        <Tabs.TabPane tab={t("awel.canvas")} key="canvas">
+      <Tabs defaultValue="canvas" className="mb-4">
+        <TabsList>
+          <TabsTrigger value="canvas">{t("awel.canvas")}</TabsTrigger>
+          <TabsTrigger value="operators">{t("awel.operators")}</TabsTrigger>
+          <TabsTrigger value="run">{t("awel.runFlow")}</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="canvas">
           <div className="flex gap-4 h-[480px]">
             {/* Node Palette */}
-            <Card
-              title={t("awel.nodePalette")}
-              className="w-48 bg-surface border-border flex-shrink-0"
-              bodyStyle={{ padding: 12 }}
-            >
+            <Card className="w-48 flex-shrink-0 p-3">
+              <h4 className="font-semibold mb-3 text-sm">{t("awel.nodePalette")}</h4>
               <div className="flex flex-col gap-2">
                 {nodeTypes.map((n) => (
                   <div
@@ -69,9 +79,9 @@ export default function FlowPage() {
             </Card>
 
             {/* Canvas */}
-            <div className="flex-1 bg-surface rounded-xl border border-border relative overflow-hidden"
+            <div className="flex-1 bg-card rounded-xl border border-border relative overflow-hidden"
             >
-              <div className="absolute top-3 left-3 text-xs text-text-secondary">
+              <div className="absolute top-3 left-3 text-xs text-muted-foreground">
                 {t("awel.placeholder")}
               </div>
               <svg className="w-full h-full">
@@ -126,62 +136,59 @@ export default function FlowPage() {
             </div>
 
             {/* Properties */}
-            <Card
-              title={t("awel.properties")}
-              className="w-56 bg-surface border-border flex-shrink-0"
-              bodyStyle={{ padding: 12 }}
-            >
+            <Card className="w-56 flex-shrink-0 p-3">
+              <h4 className="font-semibold mb-3 text-sm">{t("awel.properties")}</h4>
               {selectedNode ? (
                 <div className="text-sm">
                   <p className="m-0 mb-2">
-                    <span className="text-text-secondary">ID: </span>
+                    <span className="text-muted-foreground">ID: </span>
                     {selectedNode}
                   </p>
-                  <p className="m-0 text-text-secondary">
+                  <p className="m-0 text-muted-foreground">
                     Click a node to view its configuration.
                   </p>
                 </div>
               ) : (
-                <p className="text-sm text-text-secondary m-0">
+                <p className="text-sm text-muted-foreground m-0">
                   Select a node to edit properties.
                 </p>
               )}
             </Card>
           </div>
-        </Tabs.TabPane>
+        </TabsContent>
 
-        <Tabs.TabPane tab={t("awel.operators")} key="operators">
-          {isLoading && <div className="text-text-secondary text-sm mb-4">Loading...</div>}
+        <TabsContent value="operators">
+          {isLoading && <div className="text-muted-foreground text-sm mb-4">Loading...</div>}
           <div className="flex flex-wrap gap-2 mb-8">
             {opList.map((op) => (
               <div
                 key={op.name}
-                className="bg-surface px-3 py-2 rounded-lg text-xs"
+                className="bg-card px-3 py-2 rounded-lg text-xs border border-border"
               >
                 {op.name}{" "}
-                <span className="text-text-secondary">({op.type})</span>
+                <span className="text-muted-foreground">({op.type})</span>
               </div>
             ))}
           </div>
-        </Tabs.TabPane>
+        </TabsContent>
 
-        <Tabs.TabPane tab={t("awel.runFlow")} key="run">
+        <TabsContent value="run">
           <div className="flex gap-3 mb-3">
             <Input
               className="flex-1"
               value={input}
               onChange={(e) => setInput(e.target.value)}
             />
-            <Button type="primary" onClick={run} loading={runner.isPending}>
-              {t("awel.run")}
+            <Button onClick={run} disabled={runner.isPending}>
+              {runner.isPending ? "Running..." : t("awel.run")}
             </Button>
           </div>
           {result !== null && (
-            <pre className="bg-surface p-3 rounded-lg text-xs overflow-auto max-h-96">
+            <pre className="bg-card p-3 rounded-lg text-xs overflow-auto max-h-96 border border-border">
               {JSON.stringify(result, null, 2)}
             </pre>
           )}
-        </Tabs.TabPane>
+        </TabsContent>
       </Tabs>
     </ConstructShell>
   )

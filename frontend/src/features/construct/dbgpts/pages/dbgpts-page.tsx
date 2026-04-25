@@ -1,6 +1,14 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Button, Card, List, Tabs, Tag } from "antd"
+import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Tag } from "@/components/ui/tag"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
 import { ConstructShell } from "@/features/construct/components/construct-shell"
 
 interface PluginItem {
@@ -21,7 +29,6 @@ export default function DbgptsPage() {
   const [myPlugins, setMyPlugins] = useState<PluginItem[]>([
     { id: "3", name: "chart-renderer", version: "1.1.0", description: "Render charts from natural language.", installed: true },
   ])
-  const [activeTab, setActiveTab] = useState("hub")
 
   const install = (plugin: PluginItem) => {
     if (!myPlugins.find((p) => p.id === plugin.id)) {
@@ -37,53 +44,55 @@ export default function DbgptsPage() {
 
   return (
     <ConstructShell>
-      <Tabs activeKey={activeTab} onChange={setActiveTab} className="mb-4">
-        <Tabs.TabPane tab={t("dbgpts.hub")} key="hub">
-          <List
-            grid={{ gutter: 16, xs: 1, sm: 2, lg: 3 }}
-            dataSource={hubItems}
-            locale={{ emptyText: t("dbgpts.emptyHub") }}
-            renderItem={(item) => (
-              <List.Item>
-                <Card
-                  title={item.name}
-                  className="bg-surface border-border w-full"
-                  extra={<Tag>v{item.version}</Tag>}
-                  actions={[
-                    <Button type="primary" size="small" onClick={() => install(item)}>
-                      {t("dbgpts.install")}
-                    </Button>,
-                  ]}
-                >
-                  <p className="text-text-secondary text-sm m-0">{item.description}</p>
-                </Card>
-              </List.Item>
+      <Tabs defaultValue="hub" className="mb-4">
+        <TabsList>
+          <TabsTrigger value="hub">{t("dbgpts.hub")}</TabsTrigger>
+          <TabsTrigger value="my">{t("dbgpts.my")}</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="hub">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {hubItems.map((item) => (
+              <Card key={item.id} className="p-4 flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-semibold">{item.name}</h4>
+                  <Tag variant="outline">v{item.version}</Tag>
+                </div>
+                <p className="text-muted-foreground text-sm m-0 mb-4 flex-1">{item.description}</p>
+                <Button size="sm" onClick={() => install(item)}>
+                  {t("dbgpts.install")}
+                </Button>
+              </Card>
+            ))}
+            {hubItems.length === 0 && (
+              <div className="text-muted-foreground text-sm text-center py-8 col-span-full">
+                {t("dbgpts.emptyHub")}
+              </div>
             )}
-          />
-        </Tabs.TabPane>
-        <Tabs.TabPane tab={t("dbgpts.my")} key="my">
-          <List
-            grid={{ gutter: 16, xs: 1, sm: 2, lg: 3 }}
-            dataSource={myPlugins}
-            locale={{ emptyText: t("dbgpts.emptyMy") }}
-            renderItem={(item) => (
-              <List.Item>
-                <Card
-                  title={item.name}
-                  className="bg-surface border-border w-full"
-                  extra={<Tag color="blue">v{item.version}</Tag>}
-                  actions={[
-                    <Button danger size="small" onClick={() => uninstall(item.id)}>
-                      {t("dbgpts.uninstall")}
-                    </Button>,
-                  ]}
-                >
-                  <p className="text-text-secondary text-sm m-0">{item.description}</p>
-                </Card>
-              </List.Item>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="my">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {myPlugins.map((item) => (
+              <Card key={item.id} className="p-4 flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-semibold">{item.name}</h4>
+                  <Tag variant="info">v{item.version}</Tag>
+                </div>
+                <p className="text-muted-foreground text-sm m-0 mb-4 flex-1">{item.description}</p>
+                <Button size="sm" variant="destructive" onClick={() => uninstall(item.id)}>
+                  {t("dbgpts.uninstall")}
+                </Button>
+              </Card>
+            ))}
+            {myPlugins.length === 0 && (
+              <div className="text-muted-foreground text-sm text-center py-8 col-span-full">
+                {t("dbgpts.emptyMy")}
+              </div>
             )}
-          />
-        </Tabs.TabPane>
+          </div>
+        </TabsContent>
       </Tabs>
     </ConstructShell>
   )

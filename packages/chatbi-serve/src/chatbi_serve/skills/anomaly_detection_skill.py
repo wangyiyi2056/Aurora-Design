@@ -19,6 +19,10 @@ class AnomalyDetectionSkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "通过对比基线值和当前值检测指标异常波动，返回是否超过阈值。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",

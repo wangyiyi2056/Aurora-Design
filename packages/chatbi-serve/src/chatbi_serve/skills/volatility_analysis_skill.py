@@ -21,6 +21,10 @@ class VolatilityAnalysisSkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "执行指标波动归因分析，计算各因素的绝对变化和贡献率。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",

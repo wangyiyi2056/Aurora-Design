@@ -1,18 +1,20 @@
 import { QueryClientProvider } from "@tanstack/react-query"
-import { ConfigProvider } from "antd"
+import { Toaster } from "sonner"
 import { queryClient } from "@/lib/query-client"
-import { getAntdTheme } from "@/styles/antd-theme"
-import { useGlobalStore } from "@/stores/global-store"
+import { useTheme } from "@/hooks/use-theme"
 
 interface AppProvidersProps {
   children: React.ReactNode
 }
 
 export function AppProviders({ children }: AppProvidersProps) {
-  const { theme } = useGlobalStore()
+  // Initialize theme class on mount
+  useTheme()
+
   return (
     <QueryClientProvider client={queryClient}>
-      <ConfigProvider theme={getAntdTheme(theme)}>{children}</ConfigProvider>
+      {children}
+      <Toaster richColors position="top-center" />
     </QueryClientProvider>
   )
 }

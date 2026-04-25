@@ -6,6 +6,7 @@ import openai
 from chatbi_core.model.base import BaseLLM
 from chatbi_core.schema.message import Message, ModelOutput, ToolCall
 from chatbi_core.schema.model import LLMConfig
+from chatbi_core.utils.retry import retry_on_transient
 
 
 class OpenAILLM(BaseLLM):
@@ -42,6 +43,7 @@ class OpenAILLM(BaseLLM):
             result.append(msg)
         return result
 
+    @retry_on_transient(max_retries=3, base_delay=1.0)
     async def achat(self, messages: List[Message], **kwargs) -> ModelOutput:
         response = await self.client.chat.completions.create(
             model=self.config.model_name,

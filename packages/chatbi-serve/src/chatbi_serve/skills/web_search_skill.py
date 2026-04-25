@@ -153,6 +153,10 @@ class WebSearchSkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "使用必应搜索互联网获取最新信息，返回包含标题、链接和内容摘要的搜索结果。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",

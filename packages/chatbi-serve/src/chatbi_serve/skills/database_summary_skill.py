@@ -29,6 +29,10 @@ class DatabaseSummarySkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "获取数据库完整摘要，包括表结构、索引、外键、主键、行数和表关系。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",

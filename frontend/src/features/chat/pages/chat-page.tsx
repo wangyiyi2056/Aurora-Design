@@ -1,16 +1,24 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useQuery } from "@tanstack/react-query"
-import { Modal, Select, message } from "antd"
+import { toast } from "sonner"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Button } from "@/components/ui/button"
 import { useChatStore } from "@/stores/chat-store"
 import { useModelsStore } from "@/stores/models-store"
-import { useChatStream } from "@/features/chat/hooks/use-chat-stream"
-import { ChatHeader } from "@/features/chat/components/chat-header"
+import { sendChatStream } from "@/features/chat/hooks/use-chat-stream"
 import { ChatMessageList } from "@/features/chat/components/chat-message-list"
 import { ChatInput } from "@/features/chat/components/chat-input"
 import { ChatWelcome } from "@/features/chat/components/chat-welcome"
 import { useChatTools } from "@/features/chat/hooks/use-chat-tools"
-import { listSkills } from "@/services/models"
+import { listSkillsDetail, type SkillInfo } from "@/services/models"
 import { listKnowledge, queryKnowledge } from "@/services/knowledge"
 import { listDatasources } from "@/services/database"
 import type { ChatMessage, ContentPart } from "@/services/chat"
@@ -51,7 +59,7 @@ export default function ChatPage() {
 
   const skillsQuery = useQuery({
     queryKey: ["skills"],
-    queryFn: listSkills,
+    queryFn: listSkillsDetail,
     enabled: skillModalOpen,
   })
 
@@ -68,18 +76,6 @@ export default function ChatPage() {
       return res.items
     },
     enabled: databaseModalOpen,
-  })
-
-  const chatStream = useChatStream({
-    onSuccess: (content) => {
-      addMessage({ role: "assistant", content })
-      setLoading(false)
-      clearAttachments()
-    },
-    onError: (error) => {
-      addMessage({ role: "assistant", content: "Error: " + error.message })
-      setLoading(false)
-    },
   })
 
   const modelConfig = models.find((m) => m.name === model)
@@ -119,7 +115,7 @@ export default function ChatPage() {
           text: `以下是来自知识库 "${knowledgeAtt.name}" 的检索结果：\n${results}`,
         })
       } catch (err) {
-        message.error(t("chat.knowledgeQueryFailed") || "知识库查询失败")
+        toast.error(t("chat.knowledgeQueryFailed") || "知识库查询失败")
         setLoading(false)
         return
       }
@@ -155,7 +151,9 @@ export default function ChatPage() {
     addMessage({ role: "user", content: input.trim() })
     setInput("")
     setLoading(true)
-    chatStream.mutate({
+    clearAttachments()
+
+    sendChatStream({
       messages: newMessages,
       model,
       modelConfig: modelConfig
@@ -163,8 +161,9 @@ export default function ChatPage() {
             model_name: modelConfig.name,
             base_url: modelConfig.baseUrl,
             api_key: modelConfig.apiKey,
+            model_type: modelConfig.type,
           }
-        : { model_name: model, base_url: "", api_key: "" },
+        : { model_name: model, base_url: "", api_key: "", model_type: "llm" },
       selectParam,
       extInfo,
     })
@@ -173,9 +172,29 @@ export default function ChatPage() {
   const hasConversation =
     messages.filter((m) => m.role !== "system").length > 0
 
+  const handleSkillConfirm = () => {
+    if (selectedSkill) {
+      setSkill(selectedSkill)
+      setSkillModalOpen(false)
+    }
+  }
+
+  const handleKnowledgeConfirm = () => {
+    if (selectedKnowledge) {
+      setKnowledge(selectedKnowledge)
+      setKnowledgeModalOpen(false)
+    }
+  }
+
+  const handleDatabaseConfirm = () => {
+    if (selectedDatabase) {
+      setDatabase(selectedDatabase)
+      setDatabaseModalOpen(false)
+    }
+  }
+
   return (
     <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-48px)]">
-      <ChatHeader model={model} onModelChange={setModel} />
       {hasConversation ? (
         <ChatMessageList messages={messages} loading={loading} />
       ) : (
@@ -188,7 +207,7 @@ export default function ChatPage() {
                 addMessage(userMsg)
                 setInput("")
                 setLoading(true)
-                chatStream.mutate({
+                sendChatStream({
                   messages: [
                     { role: "system" as const, content: messages.find((m) => m.role === "system")?.content || "" },
                     userMsg,
@@ -199,10 +218,11 @@ export default function ChatPage() {
                         model_name: modelConfig.name,
                         base_url: modelConfig.baseUrl,
                         api_key: modelConfig.apiKey,
+                        model_type: modelConfig.type,
                       }
-                    : { model_name: model, base_url: "", api_key: "" },
+                    : { model_name: model, base_url: "", api_key: "", model_type: "llm" },
                 })
-              }, 300)
+              }, 0)
             }}
           />
         </div>
@@ -218,6 +238,8 @@ export default function ChatPage() {
         onUseSkill={() => setSkillModalOpen(true)}
         onUseKnowledge={() => setKnowledgeModalOpen(true)}
         onUseDatabase={() => setDatabaseModalOpen(true)}
+        model={model}
+        onModelChange={setModel}
       />
       <input
         type="file"
@@ -230,80 +252,106 @@ export default function ChatPage() {
         }}
       />
 
-      <Modal
-        title={t("chat.useSkill")}
-        open={skillModalOpen}
-        onCancel={() => setSkillModalOpen(false)}
-        onOk={() => {
-          if (selectedSkill) {
-            setSkill(selectedSkill)
-            setSkillModalOpen(false)
-          }
-        }}
-        okText={t("actions.add", { ns: "common" })}
-        cancelText={t("actions.cancel", { ns: "common" })}
-      >
-        <Select
-          className="w-full mt-4"
-          placeholder={t("chat.selectSkill")}
-          value={selectedSkill}
-          onChange={setSelectedSkill}
-          options={Object.entries(skillsQuery.data || {}).map(([key, val]) => ({
-            value: key,
-            label: `${key} (${val})`,
-          }))}
-        />
-      </Modal>
+      <Dialog open={skillModalOpen} onOpenChange={setSkillModalOpen}>
+        <DialogContent className="max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>{t("chat.useSkill")}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[400px] overflow-y-auto py-4">
+            {(skillsQuery.data?.skills || []).map((skill: SkillInfo) => (
+              <div
+                key={skill.name}
+                className={`p-3 rounded-lg mb-2 cursor-pointer border ${
+                  selectedSkill === skill.name
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/50"
+                }`}
+                onClick={() => setSelectedSkill(skill.name)}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{skill.name}</span>
+                  {skill.is_builtin && (
+                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                      内置
+                    </span>
+                  )}
+                </div>
+                <div className="text-foreground text-sm mt-1">
+                  {skill.description_cn || skill.description}
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSkillModalOpen(false)}>
+              {t("actions.cancel", { ns: "common" })}
+            </Button>
+            <Button onClick={handleSkillConfirm}>
+              {t("actions.add", { ns: "common" })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Modal
-        title={t("chat.useKnowledge")}
-        open={knowledgeModalOpen}
-        onCancel={() => setKnowledgeModalOpen(false)}
-        onOk={() => {
-          if (selectedKnowledge) {
-            setKnowledge(selectedKnowledge)
-            setKnowledgeModalOpen(false)
-          }
-        }}
-        okText={t("actions.add", { ns: "common" })}
-        cancelText={t("actions.cancel", { ns: "common" })}
-      >
-        <Select
-          className="w-full mt-4"
-          placeholder={t("chat.selectKnowledge")}
-          value={selectedKnowledge}
-          onChange={setSelectedKnowledge}
-          options={(knowledgeQuery.data || []).map((name) => ({
-            value: name,
-            label: name,
-          }))}
-        />
-      </Modal>
+      <Dialog open={knowledgeModalOpen} onOpenChange={setKnowledgeModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("chat.useKnowledge")}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Select value={selectedKnowledge} onValueChange={setSelectedKnowledge}>
+              <SelectTrigger>
+                <SelectValue placeholder={t("chat.selectKnowledge")} />
+              </SelectTrigger>
+              <SelectContent>
+                {(knowledgeQuery.data || []).map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setKnowledgeModalOpen(false)}>
+              {t("actions.cancel", { ns: "common" })}
+            </Button>
+            <Button onClick={handleKnowledgeConfirm}>
+              {t("actions.add", { ns: "common" })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Modal
-        title={t("chat.useDatabase")}
-        open={databaseModalOpen}
-        onCancel={() => setDatabaseModalOpen(false)}
-        onOk={() => {
-          if (selectedDatabase) {
-            setDatabase(selectedDatabase)
-            setDatabaseModalOpen(false)
-          }
-        }}
-        okText={t("actions.add", { ns: "common" })}
-        cancelText={t("actions.cancel", { ns: "common" })}
-      >
-        <Select
-          className="w-full mt-4"
-          placeholder={t("chat.selectDatabase")}
-          value={selectedDatabase}
-          onChange={setSelectedDatabase}
-          options={(datasourcesQuery.data || []).map((ds) => ({
-            value: ds.name,
-            label: `${ds.name} (${ds.db_type})`,
-          }))}
-        />
-      </Modal>
+      <Dialog open={databaseModalOpen} onOpenChange={setDatabaseModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("chat.useDatabase")}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Select value={selectedDatabase} onValueChange={setSelectedDatabase}>
+              <SelectTrigger>
+                <SelectValue placeholder={t("chat.selectDatabase")} />
+              </SelectTrigger>
+              <SelectContent>
+                {(datasourcesQuery.data || []).map((ds) => (
+                  <SelectItem key={ds.name} value={ds.name}>
+                    {ds.name} ({ds.db_type})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDatabaseModalOpen(false)}>
+              {t("actions.cancel", { ns: "common" })}
+            </Button>
+            <Button onClick={handleDatabaseConfirm}>
+              {t("actions.add", { ns: "common" })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

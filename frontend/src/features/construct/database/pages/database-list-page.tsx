@@ -1,6 +1,23 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Button, Input, Select, Table } from "antd"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
 import { ConstructShell } from "@/features/construct/components/construct-shell"
 import {
   useDatasources,
@@ -34,83 +51,90 @@ export default function DatabaseListPage() {
     setResult(data)
   }
 
-  const columns = [
-    { title: t("database.name"), dataIndex: "name", key: "name" },
-    { title: t("database.type"), dataIndex: "db_type", key: "db_type" },
-    {
-      title: t("database.connected"),
-      dataIndex: "connected",
-      key: "connected",
-      render: (v: boolean) => (v ? "Yes" : "No"),
-    },
-  ]
-
   return (
     <ConstructShell>
-      <div className="flex gap-3 mb-6">
+      <div className="flex gap-3 mb-6 flex-wrap">
         <Input
           placeholder={t("database.name")}
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <Select
-          value={dbType}
-          onChange={setDbType}
-          options={[
-            { value: "sqlite", label: "SQLite" },
-            { value: "postgresql", label: "PostgreSQL" },
-            { value: "mysql", label: "MySQL" },
-            { value: "duckdb", label: "DuckDB" },
-          ]}
-          className="min-w-[120px]"
-        />
+        <Select value={dbType} onValueChange={setDbType}>
+          <SelectTrigger className="w-[120px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="sqlite">SQLite</SelectItem>
+            <SelectItem value="postgresql">PostgreSQL</SelectItem>
+            <SelectItem value="mysql">MySQL</SelectItem>
+            <SelectItem value="duckdb">DuckDB</SelectItem>
+          </SelectContent>
+        </Select>
         <Input
           placeholder="Database"
           value={database}
           onChange={(e) => setDatabase(e.target.value)}
-          className="flex-1"
+          className="flex-1 min-w-[150px]"
         />
-        <Button type="primary" onClick={add} loading={create.isPending}>
-          {t("database.add")}
+        <Button onClick={add} disabled={create.isPending}>
+          {create.isPending ? "Adding..." : t("database.add")}
         </Button>
       </div>
 
-      <Table
-        dataSource={items}
-        columns={columns}
-        rowKey="name"
-        pagination={false}
-        loading={isLoading}
-        className="mb-8"
-      />
+      <div className="rounded-lg border border-border mb-8">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("database.name")}</TableHead>
+              <TableHead>{t("database.type")}</TableHead>
+              <TableHead>{t("database.connected")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((it) => (
+              <TableRow key={it.name}>
+                <TableCell className="font-medium">{it.name}</TableCell>
+                <TableCell>{it.db_type}</TableCell>
+                <TableCell>{it.connected ? "Yes" : "No"}</TableCell>
+              </TableRow>
+            ))}
+            {items.length === 0 && !isLoading && (
+              <TableRow>
+                <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
+                  {t("database.empty") || "暂无数据源"}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
       <h3 className="text-lg font-medium mt-8 mb-4">{t("database.query")}</h3>
       <div className="flex gap-3 mb-3">
-        <Select
-          value={selected}
-          onChange={setSelected}
-          placeholder={t("database.selectDatasource")}
-          className="min-w-[180px]"
-        >
-          <Select.Option value="">{t("database.selectDatasource")}</Select.Option>
-          {items.map((it) => (
-            <Select.Option key={it.name} value={it.name}>
-              {it.name}
-            </Select.Option>
-          ))}
+        <Select value={selected} onValueChange={setSelected}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder={t("database.selectDatasource")} />
+          </SelectTrigger>
+          <SelectContent>
+            {items.map((it) => (
+              <SelectItem key={it.name} value={it.name}>
+                {it.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
       </div>
-      <Input.TextArea
+      <Textarea
         value={sql}
         onChange={(e) => setSql(e.target.value)}
         rows={4}
         className="mb-3"
       />
-      <Button type="primary" onClick={run} loading={runner.isPending}>
-        {t("database.runSql")}
+      <Button onClick={run} disabled={runner.isPending}>
+        {runner.isPending ? "Running..." : t("database.runSql")}
       </Button>
       {result !== null && (
-        <pre className="bg-surface mt-4 p-3 rounded-lg text-xs overflow-auto max-h-96">
+        <pre className="bg-card mt-4 p-3 rounded-lg text-xs overflow-auto max-h-96 border border-border">
           {JSON.stringify(result, null, 2)}
         </pre>
       )}

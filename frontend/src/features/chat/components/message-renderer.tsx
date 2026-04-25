@@ -67,6 +67,7 @@ function VisBlock({ language, codeString }: { language: string; codeString: stri
 
 export default function MessageRenderer({ content }: MessageRendererProps) {
   return (
+    <div className="message-content">
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
@@ -146,5 +147,6 @@ export default function MessageRenderer({ content }: MessageRendererProps) {
     >
       {content}
     </ReactMarkdown>
+    </div>
   )
 }

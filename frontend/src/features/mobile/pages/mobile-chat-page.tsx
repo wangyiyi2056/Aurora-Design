@@ -1,7 +1,16 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useQuery } from "@tanstack/react-query"
-import { Modal, Select, message } from "antd"
+import { toast } from "sonner"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Button } from "@/components/ui/button"
 import { useChatStore } from "@/stores/chat-store"
 import { useModelsStore } from "@/stores/models-store"
 import { useChatStream } from "@/features/chat/hooks/use-chat-stream"
@@ -116,7 +125,7 @@ export default function MobileChatPage() {
           text: `以下是来自知识库 "${knowledgeAtt.name}" 的检索结果：\n${results}`,
         })
       } catch (err) {
-        message.error(t("chat.knowledgeQueryFailed") || "知识库查询失败")
+        toast.error(t("chat.knowledgeQueryFailed") || "知识库查询失败")
         setLoading(false)
         return
       }
@@ -168,19 +177,19 @@ export default function MobileChatPage() {
   const hasConversation = messages.filter((m) => m.role !== "system").length > 0
 
   return (
-    <div className="flex h-screen flex-col bg-bg">
+    <div className="flex h-screen flex-col bg-background">
       <MobileNav showNewChat onNewChat={resetChat} />
       <div className="flex-1 overflow-hidden">
         {hasConversation ? (
           <ChatMessageList messages={messages} loading={loading} />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center px-6 text-center text-text-secondary">
-            <div className="text-lg font-medium text-text mb-2">ChatBI</div>
+          <div className="flex h-full flex-col items-center justify-center px-6 text-center text-muted-foreground">
+            <div className="text-lg font-medium text-foreground mb-2">ChatBI</div>
             <p>Start a new conversation</p>
           </div>
         )}
       </div>
-      <div className="border-t border-border bg-surface p-3">
+      <div className="border-t border-border bg-card p-3">
         <ChatInput
           value={input}
           onChange={setInput}
@@ -192,6 +201,8 @@ export default function MobileChatPage() {
           onUseSkill={() => setSkillModalOpen(true)}
           onUseKnowledge={() => setKnowledgeModalOpen(true)}
           onUseDatabase={() => setDatabaseModalOpen(true)}
+          model={model}
+          onModelChange={(m) => useChatStore.getState().setModel(m)}
         />
         <input
           type="file"
@@ -205,80 +216,110 @@ export default function MobileChatPage() {
         />
       </div>
 
-      <Modal
-        title={t("chat.useSkill")}
-        open={skillModalOpen}
-        onCancel={() => setSkillModalOpen(false)}
-        onOk={() => {
-          if (selectedSkill) {
-            setSkill(selectedSkill)
-            setSkillModalOpen(false)
-          }
-        }}
-        okText={t("actions.add", { ns: "common" })}
-        cancelText={t("actions.cancel", { ns: "common" })}
-      >
-        <Select
-          className="w-full mt-4"
-          placeholder={t("chat.selectSkill")}
-          value={selectedSkill}
-          onChange={setSelectedSkill}
-          options={Object.entries(skillsQuery.data || {}).map(([key, val]) => ({
-            value: key,
-            label: `${key} (${val})`,
-          }))}
-        />
-      </Modal>
+      <Dialog open={skillModalOpen} onOpenChange={setSkillModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("chat.useSkill")}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Select value={selectedSkill} onValueChange={setSelectedSkill}>
+              <SelectTrigger>
+                <SelectValue placeholder={t("chat.selectSkill")} />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(skillsQuery.data || {}).map(([key, val]) => (
+                  <SelectItem key={key} value={key}>
+                    {key} ({String(val)})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSkillModalOpen(false)}>
+              {t("actions.cancel", { ns: "common" })}
+            </Button>
+            <Button onClick={() => {
+              if (selectedSkill) {
+                setSkill(selectedSkill)
+                setSkillModalOpen(false)
+              }
+            }}>
+              {t("actions.add", { ns: "common" })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Modal
-        title={t("chat.useKnowledge")}
-        open={knowledgeModalOpen}
-        onCancel={() => setKnowledgeModalOpen(false)}
-        onOk={() => {
-          if (selectedKnowledge) {
-            setKnowledge(selectedKnowledge)
-            setKnowledgeModalOpen(false)
-          }
-        }}
-        okText={t("actions.add", { ns: "common" })}
-        cancelText={t("actions.cancel", { ns: "common" })}
-      >
-        <Select
-          className="w-full mt-4"
-          placeholder={t("chat.selectKnowledge")}
-          value={selectedKnowledge}
-          onChange={setSelectedKnowledge}
-          options={(knowledgeQuery.data || []).map((name) => ({
-            value: name,
-            label: name,
-          }))}
-        />
-      </Modal>
+      <Dialog open={knowledgeModalOpen} onOpenChange={setKnowledgeModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("chat.useKnowledge")}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Select value={selectedKnowledge} onValueChange={setSelectedKnowledge}>
+              <SelectTrigger>
+                <SelectValue placeholder={t("chat.selectKnowledge")} />
+              </SelectTrigger>
+              <SelectContent>
+                {(knowledgeQuery.data || []).map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setKnowledgeModalOpen(false)}>
+              {t("actions.cancel", { ns: "common" })}
+            </Button>
+            <Button onClick={() => {
+              if (selectedKnowledge) {
+                setKnowledge(selectedKnowledge)
+                setKnowledgeModalOpen(false)
+              }
+            }}>
+              {t("actions.add", { ns: "common" })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Modal
-        title={t("chat.useDatabase")}
-        open={databaseModalOpen}
-        onCancel={() => setDatabaseModalOpen(false)}
-        onOk={() => {
-          if (selectedDatabase) {
-            setDatabase(selectedDatabase)
-            setDatabaseModalOpen(false)
-          }
-        }}
-        okText={t("actions.add", { ns: "common" })}
-        cancelText={t("actions.cancel", { ns: "common" })}
-      >
-        <Select
-          className="w-full mt-4"
-          placeholder={t("chat.selectDatabase")}
-          value={selectedDatabase}
-          onChange={setSelectedDatabase}
-          options={(datasourcesQuery.data || []).map((ds) => ({
-            value: ds.name,
-            label: `${ds.name} (${ds.db_type})`,
-          }))}
-        />
-      </Modal>
+      <Dialog open={databaseModalOpen} onOpenChange={setDatabaseModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("chat.useDatabase")}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Select value={selectedDatabase} onValueChange={setSelectedDatabase}>
+              <SelectTrigger>
+                <SelectValue placeholder={t("chat.selectDatabase")} />
+              </SelectTrigger>
+              <SelectContent>
+                {(datasourcesQuery.data || []).map((ds) => (
+                  <SelectItem key={ds.name} value={ds.name}>
+                    {ds.name} ({ds.db_type})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDatabaseModalOpen(false)}>
+              {t("actions.cancel", { ns: "common" })}
+            </Button>
+            <Button onClick={() => {
+              if (selectedDatabase) {
+                setDatabase(selectedDatabase)
+                setDatabaseModalOpen(false)
+              }
+            }}>
+              {t("actions.add", { ns: "common" })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

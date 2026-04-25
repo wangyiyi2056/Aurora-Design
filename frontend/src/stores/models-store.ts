@@ -21,16 +21,7 @@ interface ModelsState {
 export const useModelsStore = create<ModelsState>()(
   persist(
     (set) => ({
-      models: [
-        {
-          id: "1",
-          name: "gemma-4-e4b-it-8bit",
-          type: "llm",
-          baseUrl: "http://127.0.0.1:8000/v1",
-          apiKey: "123456",
-          status: "available",
-        },
-      ],
+      models: [],
       addModel: (model) =>
         set((state) => ({
           models: [

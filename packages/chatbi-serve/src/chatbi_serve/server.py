@@ -18,6 +18,7 @@ def create_app() -> FastAPI:
         from chatbi_core.agent.skill.base import SkillRegistry
         from chatbi_core.config.settings import Settings
         from chatbi_core.model.adapter.openai_adapter import OpenAILLM
+        from chatbi_core.model.adapter.anthropic_adapter import AnthropicLLM
         from chatbi_core.model.adapter.openai_embeddings import OpenAIEmbeddings
         from chatbi_core.model.registry import ModelRegistry
         from chatbi_core.schema.model import LLMConfig
@@ -53,7 +54,8 @@ def create_app() -> FastAPI:
         )
         registry = ModelRegistry()
         for cfg in settings.llm_configs:
-            if cfg.get("model_type") == "openai":
+            model_type = cfg.get("model_type", "openai")
+            if model_type == "openai":
                 api_key = cfg.get("api_key") or os.getenv("OPENAI_API_KEY")
                 if not api_key:
                     logger.warning(
@@ -63,7 +65,6 @@ def create_app() -> FastAPI:
                     continue
                 llm_config = LLMConfig(**cfg)
                 registry.register_llm(cfg["model_name"], OpenAILLM(llm_config))
-                # Register embeddings with text-embedding-3-small by default
                 emb_config = LLMConfig(
                     model_name="text-embedding-3-small",
                     model_type="openai",
@@ -71,6 +72,16 @@ def create_app() -> FastAPI:
                     api_base=cfg.get("api_base"),
                 )
                 registry.register_embeddings("openai", OpenAIEmbeddings(emb_config))
+            elif model_type == "anthropic":
+                api_key = cfg.get("api_key") or os.getenv("ANTHROPIC_API_KEY")
+                if not api_key:
+                    logger.warning(
+                        "Skipping LLM '%s': ANTHROPIC_API_KEY not set",
+                        cfg.get("model_name"),
+                    )
+                    continue
+                llm_config = LLMConfig(**cfg)
+                registry.register_llm(cfg["model_name"], AnthropicLLM(llm_config))
         app.state.model_registry = registry
 
         datasource_service = DatasourceService()
@@ -135,10 +146,32 @@ def create_app() -> FastAPI:
         )
         app.state.skill_registry = skill_registry
 
-        app.state.chat_service = ChatService(registry, sql_agent, skill_registry)
+        # Initialize MCP client
+        from chatbi_core.mcp.client import MCPClient
+        from chatbi_core.mcp.config import MCPConfig, MCPServerConfig
+
+        mcp_client = MCPClient()
+        try:
+            mcp_config = MCPConfig.load()
+            await mcp_client.connect_all(mcp_config.servers)
+            logger.info(
+                "MCP: %d servers connected, %d tools available",
+                len(mcp_client._connections),
+                len(mcp_client.get_tools()),
+            )
+        except Exception as e:
+            logger.warning("MCP initialization failed: %s", e)
+        app.state.mcp_client = mcp_client
+
+        app.state.chat_service = ChatService(
+            registry, sql_agent, skill_registry, mcp_client=mcp_client
+        )
 
         app.state.knowledge_stores = {}
         yield
+
+        # Shutdown
+        mcp_client.disconnect_all()
 
     app = FastAPI(title="ChatBI", lifespan=lifespan)
     app.add_middleware(

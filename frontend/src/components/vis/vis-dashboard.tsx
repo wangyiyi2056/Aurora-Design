@@ -1,7 +1,18 @@
 import { useState } from "react"
-import { Button, Select, Space, Tooltip, Spin } from "antd"
-import { AppstoreOutlined, TableOutlined } from "@ant-design/icons"
 import { VisChart } from "./vis-chart"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface DashboardChartItem {
   sql?: string
@@ -27,12 +38,11 @@ const LAYOUT_OPTIONS = [
 
 export function VisDashboard({ charts, title }: VisDashboardProps) {
   const [layout, setLayout] = useState<LayoutMode>("grid")
-  const [loading, setLoading] = useState(false)
 
   if (!charts || charts.length === 0) {
     return (
-      <div className="my-2 rounded-xl border border-border bg-surface p-4">
-        <div className="text-sm text-text-secondary">暂无图表数据</div>
+      <div className="my-2 rounded-xl border border-border bg-card p-4">
+        <div className="text-sm text-muted-foreground">暂无图表数据</div>
       </div>
     )
   }
@@ -54,41 +64,43 @@ export function VisDashboard({ charts, title }: VisDashboardProps) {
   }
 
   return (
-    <div className="my-2 rounded-xl border border-border bg-surface overflow-hidden">
-      <div className="flex justify-between items-center px-4 py-3 border-b border-border bg-surface-elevated flex-wrap gap-2">
+    <div className="my-2 rounded-xl border border-border bg-card overflow-hidden">
+      <div className="flex justify-between items-center px-4 py-3 border-b border-border bg-muted flex-wrap gap-2">
         <div>
           {title && <h3 className="text-lg font-semibold">{title}</h3>}
-          <span className="text-sm text-text-secondary">
+          <span className="text-sm text-muted-foreground">
             {successCharts.length} 个图表
             {errorCharts.length > 0 && ` · ${errorCharts.length} 个错误`}
           </span>
         </div>
-        <Space wrap>
-          <Tooltip title="布局模式">
-            <Select
-              value={layout}
-              onChange={setLayout}
-              options={LAYOUT_OPTIONS}
-              size="small"
-              className="w-28"
-            />
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Select value={layout} onValueChange={(v) => setLayout(v as LayoutMode)}>
+                <SelectTrigger className="w-[120px] h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LAYOUT_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </TooltipTrigger>
+            <TooltipContent>布局模式</TooltipContent>
           </Tooltip>
-        </Space>
+        </TooltipProvider>
       </div>
 
       {errorCharts.length > 0 && (
-        <div className="px-4 py-2 bg-surface-elevated border-b border-border">
+        <div className="px-4 py-2 bg-muted border-b border-border">
           {errorCharts.map((chart, idx) => (
-            <div key={idx} className="text-sm text-error mb-1">
+            <div key={idx} className="text-sm text-destructive mb-1">
               {chart.title || `图表 ${idx + 1}`}: {chart.err_msg}
             </div>
           ))}
-        </div>
-      )}
-
-      {loading && (
-        <div className="flex justify-center items-center py-8">
-          <Spin tip="加载图表中..." />
         </div>
       )}
 
@@ -96,7 +108,7 @@ export function VisDashboard({ charts, title }: VisDashboardProps) {
         {successCharts.map((chart, idx) => (
           <div
             key={idx}
-            className={`rounded-lg border border-border bg-surface-elevated overflow-hidden ${
+            className={`rounded-lg border border-border bg-muted overflow-hidden ${
               layout === "compact" ? "p-2" : "p-3"
             }`}
           >
@@ -112,7 +124,7 @@ export function VisDashboard({ charts, title }: VisDashboardProps) {
       </div>
 
       {successCharts.length > 4 && layout === "grid" && (
-        <div className="px-4 py-2 text-center text-sm text-text-secondary bg-surface-elevated border-t border-border">
+        <div className="px-4 py-2 text-center text-sm text-muted-foreground bg-muted border-t border-border">
           提示: 切换到紧凑布局可查看更多图表
         </div>
       )}

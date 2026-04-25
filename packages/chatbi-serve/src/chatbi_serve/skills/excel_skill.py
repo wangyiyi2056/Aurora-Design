@@ -89,6 +89,10 @@ class Excel2TableSkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "将CSV或Excel文件导入数据库作为新表，文件需已上传并提供本地路径。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",

@@ -10,6 +10,24 @@
     "prompt": "提示词",
     "dbgpts": "插件"
   },
+  "skill": {
+    "title": "技能管理",
+    "description": "平台已集成的内置技能，支持数据分析、SQL查询、可视化等功能",
+    "builtin": "内置",
+    "available": "可用",
+    "custom": "自定义",
+    "status": "状态",
+    "type": "类型",
+    "parameters": "参数定义",
+    "description_cn": "中文描述",
+    "empty": "暂无技能",
+    "category": {
+      "data": "数据处理",
+      "sql": "SQL查询",
+      "analysis": "数据分析",
+      "other": "其他工具"
+    }
+  },
   "database": {
     "name": "名称",
     "type": "类型",
@@ -101,10 +119,11 @@
     "apiKey": "API 密钥",
     "status": "状态",
     "actions": "操作",
-    "test": "测试连接",
+    "test": "测试",
     "testSuccess": "连接测试通过",
     "testFailed": "连接失败",
     "addSuccess": "添加成功",
+    "editSuccess": "修改成功",
     "nameRequired": "请输入模型名称",
     "baseUrlRequired": "请输入基础地址",
     "apiKeyRequired": "请输入 API 密钥",
@@ -117,6 +136,7 @@
     "start": "启动",
     "stop": "停止",
     "add": "新增模型",
+    "edit": "修改模型",
     "empty": "暂无模型"
   },
   "dbgpts": {

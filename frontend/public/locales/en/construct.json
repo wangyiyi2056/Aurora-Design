@@ -10,6 +10,24 @@
     "prompt": "Prompt",
     "dbgpts": "Dbgpts"
   },
+  "skill": {
+    "title": "Skills Management",
+    "description": "Built-in skills for data analysis, SQL queries, visualization, etc.",
+    "builtin": "Built-in",
+    "available": "Available",
+    "custom": "Custom",
+    "status": "Status",
+    "type": "Type",
+    "parameters": "Parameters",
+    "description_cn": "Chinese Description",
+    "empty": "No skills available",
+    "category": {
+      "data": "Data Processing",
+      "sql": "SQL Query",
+      "analysis": "Data Analysis",
+      "other": "Other Tools"
+    }
+  },
   "database": {
     "name": "Name",
     "type": "Type",
@@ -101,10 +119,11 @@
     "apiKey": "API Key",
     "status": "Status",
     "actions": "Actions",
-    "test": "Test Connection",
+    "test": "Test",
     "testSuccess": "Connection test passed",
     "testFailed": "Connection failed",
     "addSuccess": "Added successfully",
+    "editSuccess": "Updated successfully",
     "nameRequired": "Please enter model name",
     "baseUrlRequired": "Please enter base URL",
     "apiKeyRequired": "Please enter API key",
@@ -117,6 +136,7 @@
     "start": "Start",
     "stop": "Stop",
     "add": "Add Model",
+    "edit": "Edit Model",
     "empty": "No models yet"
   },
   "dbgpts": {

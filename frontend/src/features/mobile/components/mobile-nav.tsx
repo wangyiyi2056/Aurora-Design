@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom"
-import { LeftOutlined, PlusOutlined, SunOutlined, MoonOutlined } from "@ant-design/icons"
+import { ChevronLeft, Plus, Sun, Moon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useGlobalStore } from "@/stores/global-store"
 
@@ -31,15 +31,15 @@ export function MobileNav({
   }
 
   return (
-    <header className="flex h-12 items-center justify-between border-b border-border bg-surface px-4">
+    <header className="flex h-12 items-center justify-between border-b border-border bg-card px-4">
       <div className="flex items-center gap-2">
         {showBack && (
           <button
             onClick={handleBack}
-            className="flex h-8 w-8 items-center justify-center rounded text-text-secondary hover:bg-surface-hover hover:text-text"
+            className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label={t("chat.back", { defaultValue: "Back" })}
           >
-            <LeftOutlined />
+            <ChevronLeft className="h-5 w-5" />
           </button>
         )}
         <span className="font-medium">{title || t("appName")}</span>
@@ -47,18 +47,18 @@ export function MobileNav({
       <div className="flex items-center gap-2">
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="flex h-8 w-8 items-center justify-center rounded text-text-secondary hover:bg-surface-hover hover:text-text"
+          className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label={t("sidebar.toggleTheme", { ns: "common", defaultValue: "Toggle theme" })}
         >
-          {theme === "dark" ? <SunOutlined /> : <MoonOutlined />}
+          {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </button>
         {showNewChat && (
           <button
             onClick={onNewChat}
-            className="flex h-8 w-8 items-center justify-center rounded text-text-secondary hover:bg-surface-hover hover:text-text"
+            className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label={t("explore.newChat")}
           >
-            <PlusOutlined />
+            <Plus className="h-5 w-5" />
           </button>
         )}
       </div>

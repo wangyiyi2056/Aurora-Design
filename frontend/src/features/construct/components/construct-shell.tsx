@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "react-router-dom"
-import { Tabs } from "antd"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useTranslation } from "react-i18next"
 
 interface ConstructShellProps {
@@ -22,15 +22,21 @@ export function ConstructShell({ children }: ConstructShellProps) {
     { key: "/construct/dbgpts", label: t("construct.dbgpts") },
   ]
 
+  // Find the matching key for current path
+  const currentKey = items.find(item => location.pathname.startsWith(item.key))?.key || "/construct/app"
+
   return (
     <div className="max-w-5xl mx-auto">
       <h2 className="text-xl font-semibold mt-0 mb-4">{t("construct.title")}</h2>
-      <Tabs
-        activeKey={location.pathname}
-        items={items}
-        onChange={(key) => navigate(key)}
-        className="mb-4"
-      />
+      <Tabs value={currentKey} onValueChange={(key) => navigate(key)} className="mb-4">
+        <TabsList>
+          {items.map((item) => (
+            <TabsTrigger key={item.key} value={item.key}>
+              {item.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
       {children}
     </div>
   )

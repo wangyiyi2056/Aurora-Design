@@ -72,3 +72,12 @@ coverage.xml
 
 # Local config overrides
 configs/*.local.toml
+.gstack/
+
+# Local data / uploads
+.chatbi/
+uploads/
+packages/chatbi-serve/uploads/
+
+# Electron build output
+frontend/dist-electron/

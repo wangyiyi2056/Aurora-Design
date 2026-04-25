@@ -1,7 +1,22 @@
 import { useEffect, useRef, useState } from "react"
 import * as echarts from "echarts"
-import { Button, Select, Space, Tooltip, Spin, Alert } from "antd"
-import { DownloadOutlined, ReloadOutlined } from "@ant-design/icons"
+import { Download, RefreshCw, AlertTriangle } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Spinner } from "@/components/ui/spinner"
 
 interface VisChartProps {
   data: Record<string, unknown>[]
@@ -130,7 +145,10 @@ export function VisChart({ data, type, title, sql, describe }: VisChartProps) {
         const yKey = yKeys[0]
         option = {
           title: { text: title || "Chart", left: "center", top: 10, textStyle: { fontSize: 14 } },
-          tooltip: { trigger: "item", formatter: (params: any) => `${xKey}: ${params.data[0]}<br />${yKey}: ${params.data[1]}` },
+          tooltip: { trigger: "item", formatter: (params: unknown) => {
+            const p = params as { data: number[] }
+            return `${xKey}: ${p.data[0]}<br />${yKey}: ${p.data[1]}`
+          } },
           xAxis: { type: "value", name: xKey, nameLocation: "middle", nameGap: 30 },
           yAxis: { type: "value", name: yKey, nameLocation: "middle", nameGap: 40 },
           grid: { left: "12%", right: "10%", bottom: "15%", top: "20%", containLabel: true },
@@ -149,12 +167,15 @@ export function VisChart({ data, type, title, sql, describe }: VisChartProps) {
         const maxVal = Math.max(...values)
         option = {
           title: { text: title || "Heatmap", left: "center", top: 10, textStyle: { fontSize: 14 } },
-          tooltip: { position: "top", formatter: (params: any) => `${xKey}: ${params.data[0]}<br />${yKey}: ${params.data[1]}` },
+          tooltip: { position: "top", formatter: (params: unknown) => {
+            const p = params as { data: (string | number)[] }
+            return `${xKey}: ${p.data[0]}<br />${yKey}: ${p.data[1]}`
+          } },
           grid: { height: "50%", top: "15%" },
           xAxis: { type: "category", data: xData, axisLabel: { rotate: xData.length > 10 ? 45 : 0 } },
           yAxis: { type: "category", data: yKeys },
           visualMap: { min: minVal, max: maxVal, calculable: true, orient: "horizontal", left: "center", bottom: "5%", inRange: { color: ["#313695", "#4575b4", "#74add1", "#abd9e9", "#e0f3f8", "#ffffbf", "#fee090", "#fdae61", "#f46d43", "#d73027", "#a50026"] } },
-          series: [{ type: "heatmap", data: data.map((item, idx) => [String(item[xKey]), yKey, Number(item[yKey]) || 0]), label: { show: true } }],
+          series: [{ type: "heatmap", data: data.map((item) => [String(item[xKey]), yKey, Number(item[yKey]) || 0]), label: { show: true } }],
         }
       } else if (chartType === "radar" && yKeys.length >= 3) {
         const maxValues = yKeys.map((k) => Math.max(...data.map((item) => Number(item[k]) || 0)))
@@ -177,14 +198,14 @@ export function VisChart({ data, type, title, sql, describe }: VisChartProps) {
           ],
         }
       } else {
-        const series: echarts.SeriesOption[] = yKeys.map((yKey, _idx) => ({
-          type: chartType === "area" ? "line" : chartType,
+        const series = yKeys.map((yKey) => ({
+          type: chartType === "area" ? "line" : chartType as "bar" | "line",
           name: yKey,
           data: data.map((item) => Number(item[yKey]) || 0),
           smooth: chartType === "line" || chartType === "area",
           areaStyle: chartType === "area" ? { opacity: 0.3 } : undefined,
           stack: yKeys.length > 1 && chartType === "area" ? "total" : undefined,
-        }))
+        })) as echarts.SeriesOption[]
 
         option = {
           title: { text: title || "Chart", left: "center", top: 10, textStyle: { fontSize: 14 } },
@@ -248,8 +269,12 @@ export function VisChart({ data, type, title, sql, describe }: VisChartProps) {
 
   if (!data || data.length === 0) {
     return (
-      <div className="my-2 rounded-lg border border-border bg-surface p-4">
-        <Alert type="warning" message="无数据" description="该图表没有数据可供展示" showIcon />
+      <div className="my-2 rounded-lg border border-border bg-card p-4">
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>无数据</AlertTitle>
+          <AlertDescription>该图表没有数据可供展示</AlertDescription>
+        </Alert>
       </div>
     )
   }
@@ -257,11 +282,11 @@ export function VisChart({ data, type, title, sql, describe }: VisChartProps) {
   if (chartType === "table") {
     const columns = Object.keys(data[0])
     return (
-      <div className="my-2 overflow-auto rounded-lg border border-border bg-surface max-h-[400px]">
-        {title && <div className="px-4 py-2 font-semibold border-b border-border bg-surface-elevated">{title}</div>}
-        {describe && <div className="px-4 py-1 text-sm text-text-secondary bg-surface-elevated">{describe}</div>}
+      <div className="my-2 overflow-auto rounded-lg border border-border bg-card max-h-[400px]">
+        {title && <div className="px-4 py-2 font-semibold border-b border-border bg-muted">{title}</div>}
+        {describe && <div className="px-4 py-1 text-sm text-muted-foreground bg-muted">{describe}</div>}
         <table className="w-full text-sm border-collapse">
-          <thead className="bg-surface-elevated sticky top-0">
+          <thead className="bg-muted sticky top-0">
             <tr>
               {columns.map((col) => (
                 <th key={col} className="border border-border px-3 py-2 text-left font-semibold whitespace-nowrap">
@@ -272,7 +297,7 @@ export function VisChart({ data, type, title, sql, describe }: VisChartProps) {
           </thead>
           <tbody>
             {data.slice(0, 100).map((row, idx) => (
-              <tr key={idx} className={idx % 2 === 0 ? "bg-surface" : "bg-surface-elevated"}>
+              <tr key={idx} className={idx % 2 === 0 ? "bg-card" : "bg-muted"}>
                 {columns.map((col) => (
                   <td key={col} className="border border-border px-3 py-2 whitespace-nowrap">
                     {String(row[col] ?? "")}
@@ -283,7 +308,7 @@ export function VisChart({ data, type, title, sql, describe }: VisChartProps) {
           </tbody>
         </table>
         {data.length > 100 && (
-          <div className="text-sm text-text-secondary text-center py-2 bg-surface-elevated">
+          <div className="text-sm text-muted-foreground text-center py-2 bg-muted">
             显示前 100 条，共 {data.length} 条数据
           </div>
         )}
@@ -292,48 +317,69 @@ export function VisChart({ data, type, title, sql, describe }: VisChartProps) {
   }
 
   return (
-    <div className="my-2 rounded-lg border border-border bg-surface">
+    <div className="my-2 rounded-lg border border-border bg-card">
       <div className="flex justify-between items-center px-4 py-2 border-b border-border flex-wrap gap-2">
-        <Space wrap>
-          <span className="text-sm text-text-secondary">图表类型:</span>
-          <Select
-            value={chartType}
-            onChange={setChartType}
-            options={CHART_TYPE_OPTIONS}
-            size="small"
-            className="w-28"
-          />
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-muted-foreground">图表类型:</span>
+          <Select value={chartType} onValueChange={(v) => setChartType(v as ChartType)}>
+            <SelectTrigger className="w-[120px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CHART_TYPE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {sql && (
-            <Button type="link" size="small" onClick={() => setShowSql(!showSql)}>
+            <Button variant="link" size="sm" onClick={() => setShowSql(!showSql)}>
               {showSql ? "隐藏 SQL" : "显示 SQL"}
             </Button>
           )}
-        </Space>
-        <Space>
-          <Tooltip title="刷新图表">
-            <Button type="text" size="small" icon={<ReloadOutlined />} onClick={handleRefresh} />
-          </Tooltip>
-          <Tooltip title="下载图表">
-            <Button type="text" size="small" icon={<DownloadOutlined />} onClick={handleDownload} />
-          </Tooltip>
-        </Space>
+        </div>
+        <TooltipProvider>
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh}>
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>刷新图表</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleDownload}>
+                  <Download className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>下载图表</TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
       </div>
       {showSql && sql && (
-        <div className="px-4 py-2 bg-surface-elevated text-xs text-text-secondary overflow-auto max-h-[100px]">
+        <div className="px-4 py-2 bg-muted text-xs text-muted-foreground overflow-auto max-h-[100px]">
           <pre className="whitespace-pre-wrap">{sql}</pre>
         </div>
       )}
       {describe && !showSql && (
-        <div className="px-4 py-1 text-sm text-text-secondary">{describe}</div>
+        <div className="px-4 py-1 text-sm text-muted-foreground">{describe}</div>
       )}
       {loading && (
         <div className="flex justify-center items-center h-[320px]">
-          <Spin tip="加载中..." />
+          <Spinner size="lg" />
         </div>
       )}
       {error && (
         <div className="px-4 py-2">
-          <Alert type="error" message="渲染错误" description={error} showIcon />
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>渲染错误</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         </div>
       )}
       <div ref={chartRef} style={{ width: "100%", height: 320, minHeight: 200 }} className={loading || error ? "hidden" : ""} />

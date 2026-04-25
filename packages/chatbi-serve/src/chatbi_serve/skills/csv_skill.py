@@ -36,6 +36,10 @@ class CSVAnalysisSkill(BaseSkill):
         )
 
     @property
+    def description_cn(self) -> str:
+        return "分析CSV/Excel数据，返回统计信息、列类型推断和图表推荐。"
+
+    @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",

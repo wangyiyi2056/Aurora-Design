@@ -1,5 +1,8 @@
 /** @type {import('tailwindcss').Config} */
-export default {
+const animate = require("tailwindcss-animate")
+
+module.exports = {
+  darkMode: "class",
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -7,7 +10,41 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: "var(--color-primary)",
+        // shadcn-compatible variables
+        background: "var(--background)",
+        foreground: "var(--foreground)",
+        card: {
+          DEFAULT: "var(--card)",
+          foreground: "var(--card-foreground)",
+        },
+        popover: {
+          DEFAULT: "var(--popover)",
+          foreground: "var(--popover-foreground)",
+        },
+        primary: {
+          DEFAULT: "var(--primary)",
+          foreground: "var(--primary-foreground)",
+        },
+        secondary: {
+          DEFAULT: "var(--secondary)",
+          foreground: "var(--secondary-foreground)",
+        },
+        muted: {
+          DEFAULT: "var(--muted)",
+          foreground: "var(--muted-foreground)",
+        },
+        accent: {
+          DEFAULT: "var(--accent)",
+          foreground: "var(--accent-foreground)",
+        },
+        destructive: {
+          DEFAULT: "var(--destructive)",
+          foreground: "var(--destructive-foreground)",
+        },
+        border: "var(--border)",
+        input: "var(--input)",
+        ring: "var(--ring)",
+        // Keep existing mappings for compatibility
         success: "var(--color-success)",
         error: "var(--color-error)",
         warning: "var(--color-warning)",
@@ -17,12 +54,12 @@ export default {
         "surface-2": "var(--color-surface-2)",
         "text-primary": "var(--color-text)",
         "text-secondary": "var(--color-text-secondary)",
-        accent: "var(--color-accent)",
         "accent-hover": "var(--color-accent-hover)",
-        border: "var(--color-border)",
       },
       borderRadius: {
-        base: "var(--radius-base)",
+        lg: "var(--radius-lg)",
+        md: "var(--radius-base)",
+        sm: "0.25rem",
       },
       spacing: {
         xs: "var(--space-xs)",
@@ -35,7 +72,36 @@ export default {
         fast: "var(--duration-fast)",
         normal: "var(--duration-normal)",
       },
+      keyframes: {
+        "accordion-down": {
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
+        },
+        "accordion-up": {
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
+        },
+        "message-fade-in": {
+          from: { opacity: "0", transform: "translateY(8px) scale(0.98)" },
+          to: { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        "bounce-dot": {
+          "0%, 80%, 100%": { transform: "scale(0)" },
+          "40%": { transform: "scale(1)" },
+        },
+        "pulse-glow": {
+          "0%, 100%": { opacity: "0.4" },
+          "50%": { opacity: "1" },
+        },
+      },
+      animation: {
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
+        "message-fade-in": "message-fade-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+        "bounce-dot": "bounce-dot 1.4s ease-in-out infinite both",
+        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
+      },
     },
   },
-  plugins: [],
+  plugins: [animate],
 }

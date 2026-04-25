@@ -1,24 +1,44 @@
-import { Modal as AntModal } from "antd"
-import type { ModalProps as AntModalProps } from "antd"
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
-
-export interface ModalProps extends AntModalProps {
+interface ModalProps {
+  title?: string
+  open: boolean
+  onCancel?: () => void
+  onOk?: () => void
+  okText?: string
+  cancelText?: string
+  children?: React.ReactNode
   className?: string
 }
 
-export function Modal({ className, wrapClassName, children, ...props }: ModalProps) {
+export function Modal({ title, open, onCancel, onOk, okText = "确定", cancelText = "取消", children, className }: ModalProps) {
   return (
-    <AntModal
-      className={cn("", className)}
-      wrapClassName={cn("ant-modal-root-custom", wrapClassName)}
-      {...props}
-    >
-      {children}
-    </AntModal>
+    <Dialog open={open} onOpenChange={(open) => !open && onCancel?.()}>
+      <DialogContent className={className}>
+        {title && (
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+          </DialogHeader>
+        )}
+        {children}
+        {(onOk || onCancel) && (
+          <DialogFooter>
+            {onCancel && (
+              <Button variant="outline" onClick={onCancel}>
+                {cancelText}
+              </Button>
+            )}
+            {onOk && <Button onClick={onOk}>{okText}</Button>}
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }

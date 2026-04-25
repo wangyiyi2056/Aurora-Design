@@ -28,6 +28,7 @@ class ModelConfig(BaseModel):
     model_name: str
     base_url: str
     api_key: str
+    model_type: str = "openai"
 
 
 class ChatRequest(BaseModel):
@@ -39,6 +40,7 @@ class ChatRequest(BaseModel):
     model_config_field: Optional[ModelConfig] = Field(None, alias="model_config")
     select_param: Optional[str] = None
     ext_info: Optional[Dict[str, Any]] = None
+    session_id: Optional[str] = None
 
     class Config:
         populate_by_name = True

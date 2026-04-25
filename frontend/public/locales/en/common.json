@@ -21,6 +21,8 @@
     "add": "Add",
     "cancel": "Cancel",
     "delete": "Delete",
+    "edit": "Edit",
+    "save": "Save",
     "run": "Run",
     "upload": "Upload",
     "ask": "Ask"
