@@ -26,8 +26,33 @@ from chatbi_serve.chat.schema import (
     ContentPart,
 )
 
+# Prompt system (ported from Claude Code)
+from chatbi_core.prompt import (
+    PromptBuilder,
+    ContextProvider,
+    build_system_prompt,
+    build_system_prompt_block,
+    DYNAMIC_BOUNDARY,
+)
 
-SYSTEM_TOOL_PROMPT = """You are ChatBI, an intelligent data assistant. You have access to the following tools. Use them when appropriate to answer user questions accurately."""
+# New tool system imports
+from chatbi_core.tool import (
+    Tool,
+    ToolRegistry,
+    ToolUseContext,
+    ToolPermissionContext,
+    ToolResult,
+    build_tool,
+    find_tool_by_name,
+    filter_tools_by_deny_rules,
+    assemble_tool_pool,
+    get_all_base_tools,
+    get_tools,
+    get_merged_tools,
+    run_tool_use,
+    run_tools,
+    StreamingToolExecutor,
+)
 
 CSV_CHART_PROMPT = """
 When you have analyzed CSV data and want to present a visualization, you MUST output a ```vis-db-chart code block with the following JSON structure:
@@ -96,10 +121,39 @@ class EnhancedChatService:
         self.subagent_manager = SubagentManager(agents_path=project_agents_path)
         self.permission_manager = PermissionManager(project_settings_path=project_settings_file)
 
-        # Register existing skills to tool search
+        # Initialize the new ToolRegistry (ported from Claude Code)
+        self.tool_registry = ToolRegistry()
+
+        # Initialize PromptBuilder (ported from Claude Code)
+        self.prompt_builder = PromptBuilder(
+            context_provider=ContextProvider(
+                project_root=project_path or str(Path.cwd()),
+                memory_manager=self.memory_manager,
+                skill_registry=skill_registry,
+            ),
+            skill_registry=skill_registry,
+            memory_manager=self.memory_manager,
+            include_chart_vis=True,
+        )
+
+        # Register built-in tools (Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, Agent)
+        for tool in get_all_base_tools():
+            self.tool_registry.register(tool)
+
+        # Register skills as tools in the registry
         if skill_registry:
             for name in skill_registry.list_skills():
                 skill = skill_registry.get(name)
+                # Create a Tool wrapper from each skill
+                skill_tool = build_tool(
+                    name=skill.name,
+                    description=skill.description,
+                    input_schema=skill.parameters,
+                    call_fn=skill.execute,
+                    is_read_only_fn=lambda _: True,
+                )
+                self.tool_registry.register(skill_tool)
+
                 self.tool_search.register_tool(
                     name=skill.name,
                     description=skill.description,
@@ -107,9 +161,17 @@ class EnhancedChatService:
                     source="builtin",
                 )
 
-        # Register MCP tools to tool search
+        # Register MCP tools to tool registry and search
         if mcp_client:
             for tool in mcp_client.get_tools():
+                mcp_tool = build_tool(
+                    name=tool.name,
+                    description=tool.description,
+                    input_schema=tool.input_schema,
+                    is_mcp=True,
+                )
+                self.tool_registry.register_mcp(mcp_tool)
+
                 self.tool_search.register_tool(
                     name=tool.name,
                     description=tool.description,
@@ -184,107 +246,123 @@ class EnhancedChatService:
         return messages
 
     def _build_tools(self) -> List[Dict[str, Any]] | None:
-        """Build tools for LLM."""
-        if not self.skill_registry:
+        """Build tools for LLM using the new tool registry."""
+        # Get active tools from the registry
+        tools = self.tool_registry.get_active_tools()
+        if not tools:
             return None
 
-        # Use tool search for on-demand loading
-        return self.tool_search.get_full_tools_context()
+        # Convert to OpenAI function-calling format
+        result = []
+        for t in tools:
+            result.append({
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.input_schema,
+                },
+            })
+
+        return result
 
     async def _execute_tool_calls(
         self,
         tool_calls: List[ToolCall],
         session_id: Optional[str] = None,
     ) -> tuple[List[Message], bool]:
-        """Execute tool calls with hooks and permissions."""
-        if not self.skill_registry and not self.mcp_client:
+        """Execute tool calls using the new Tool system."""
+        if not self.tool_registry:
             return [], False
 
         tool_messages: List[Message] = []
         used_csv_analysis = False
 
+        # Build ToolUseContext
+        context = ToolUseContext(
+            options={
+                "tools": self.tool_registry.get_active_tools(),
+                "skill_registry": self.skill_registry,
+                "subagent_manager": self.subagent_manager,
+                "mcp_client": self.mcp_client,
+                "hook_manager": self.hook_manager,
+                "permission_manager": self.permission_manager,
+                "session_id": session_id,
+            },
+        )
+
+        # Convert ToolCall blocks to the format expected by the executor
+        tool_blocks = []
         for tc in tool_calls:
             if tc.type != "function":
                 continue
+            try:
+                args = json.loads(tc.function.get("arguments", "{}"))
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+            tool_blocks.append({
+                "name": tc.function.get("name", ""),
+                "id": tc.id,
+                "input": args,
+            })
 
-            fn_name = tc.function.get("name", "")
-            fn_args = tc.function.get("arguments", "{}")
+        if not tool_blocks:
+            return [], False
 
-            # Check permissions
-            perm_decision = self.permission_manager.check_tool(fn_name)
-            if not perm_decision.allowed:
-                result = f"Tool '{fn_name}' blocked: {perm_decision.reason}"
-                await self.hook_manager.run_post_tool_use(
-                    tool_name=fn_name,
-                    output_data=result,
-                )
-            elif perm_decision.needs_approval:
-                result = f"Tool '{fn_name}' requires approval"
-                await self.hook_manager.run_post_tool_use(
-                    tool_name=fn_name,
-                    output_data=result,
-                )
+        # Execute tools using run_tools (with concurrency control)
+        assistant_msg_uuid = f"assistant-{int(time.time() * 1000)}"
+        async for update in run_tools(
+            tool_blocks,
+            self.tool_registry.get_active_tools(),
+            assistant_message_uuid=assistant_msg_uuid,
+            context=context,
+        ):
+            if update.message is None:
+                continue
+
+            msg = update.message
+            content_str = ""
+            if isinstance(msg.get("content"), list):
+                for part in msg["content"]:
+                    if isinstance(part, dict):
+                        content_str += part.get("content", "")
+                if not content_str:
+                    content_str = json.dumps(msg["content"])
             else:
-                # Run PreToolUse hooks
-                pre_result = await self.hook_manager.run_pre_tool_use(
-                    tool_name=fn_name,
-                    input_data={"arguments": fn_args},
-                )
+                content_str = str(msg.get("content", ""))
 
-                if pre_result.blocked:
-                    result = f"Tool '{fn_name}' blocked by hook: {pre_result.error}"
-                else:
-                    if fn_name == "csv_analysis":
-                        used_csv_analysis = True
-                    try:
-                        # Check source: MCP tool or built-in skill
-                        tool_info = self.tool_search.get_tool(fn_name)
-                        if tool_info and tool_info.source == "mcp" and self.mcp_client:
-                            args = json.loads(fn_args) if fn_args else {}
-                            if pre_result.modified_input:
-                                args.update(pre_result.modified_input)
-                            mcp_result = await self.mcp_client.call_tool(
-                                fn_name, args
-                            )
-                            result = mcp_result.content if not mcp_result.is_error else f"MCP error: {mcp_result.error_message}"
-                        elif self.skill_registry:
-                            skill = self.skill_registry.get(fn_name)
-                            args = json.loads(fn_args) if fn_args else {}
-                            if pre_result.modified_input:
-                                args.update(pre_result.modified_input)
-                            result = await skill.execute(**args)
-                        else:
-                            result = f"Tool '{fn_name}' not found"
-                    except Exception as e:
-                        result = f"Tool execution failed: {e}"
+            # Track csv_analysis
+            if "csv_analysis" in content_str:
+                used_csv_analysis = True
 
-                # Run PostToolUse hooks
+            # Build tool result
+            tool_msg = Message(
+                role="tool",
+                content=content_str,
+                tool_call_id=msg.get("tool_use_id", ""),
+                name=msg.get("name", ""),
+            )
+            tool_messages.append(tool_msg)
+
+            # Run PostToolUse hooks
+            if msg.get("name"):
                 await self.hook_manager.run_post_tool_use(
-                    tool_name=fn_name,
-                    output_data=result,
+                    tool_name=msg["name"],
+                    output_data=content_str,
                 )
 
             # Save to session
-            if session_id:
+            if session_id and msg.get("name"):
                 self.session_manager.append_message(
                     session_id,
                     SessionMessage(
                         type="tool_result",
-                        content=result,
+                        content=content_str,
                         role="tool",
-                        tool_call_id=tc.id,
-                        tool_name=fn_name,
+                        tool_call_id=msg.get("tool_use_id", ""),
+                        tool_name=msg.get("name", ""),
                     ),
                 )
-
-            tool_messages.append(
-                Message(
-                    role="tool",
-                    content=str(result),
-                    tool_call_id=tc.id,
-                    name=fn_name,
-                )
-            )
 
         return tool_messages, used_csv_analysis
 
@@ -309,15 +387,32 @@ class EnhancedChatService:
                 Message(role="system", content=memory_context),
             )
 
-        # Inject system prompt
+        # Build system prompt using PromptBuilder (Claude Code architecture)
         model_type = req.model_config_field.model_type if req.model_config_field else "openai"
         tools = None
         if model_type not in ("anthropic", "kimi"):
             tools = self._build_tools()
         if tools and (not messages or messages[0].role != "system"):
+            system_prompt = self.prompt_builder.build_single_string()
             messages.insert(
                 0,
-                Message(role="system", content=SYSTEM_TOOL_PROMPT),
+                Message(role="system", content=system_prompt),
+            )
+
+        # Inject user context (CLAUDE.md + date) as <system-reminder> user message
+        user_context = self.prompt_builder.get_user_context()
+        if user_context:
+            messages.insert(
+                0,
+                Message(role="user", content=f"<system-reminder>\n{user_context}\n</system-reminder>"),
+            )
+
+        # Inject system context (git status) to system prompt
+        system_context = self.prompt_builder.get_system_context()
+        if system_context and messages and messages[0].role == "system":
+            messages[0] = Message(
+                role="system",
+                content=messages[0].content + "\n\n" + system_context,
             )
 
         # Save user message to session
@@ -454,9 +549,26 @@ class EnhancedChatService:
             tools = self._build_tools()
 
         if tools and (not messages or messages[0].role != "system"):
+            system_prompt = self.prompt_builder.build_single_string()
             messages.insert(
                 0,
-                Message(role="system", content=SYSTEM_TOOL_PROMPT),
+                Message(role="system", content=system_prompt),
+            )
+
+        # Inject user context (CLAUDE.md + date)
+        user_context = self.prompt_builder.get_user_context()
+        if user_context:
+            messages.insert(
+                0,
+                Message(role="user", content=f"<system-reminder>\n{user_context}\n</system-reminder>"),
+            )
+
+        # Inject system context (git status)
+        system_context = self.prompt_builder.get_system_context()
+        if system_context and messages and messages[0].role == "system":
+            messages[0] = Message(
+                role="system",
+                content=messages[0].content + "\n\n" + system_context,
             )
 
         llm = self._get_llm(req)
