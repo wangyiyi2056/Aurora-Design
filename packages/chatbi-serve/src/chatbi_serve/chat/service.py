@@ -26,6 +26,9 @@ from chatbi_serve.chat.schema import (
     ContentPart,
 )
 
+# Plan mode system (ported from Claude Code)
+from chatbi_core.plan import PlanEnforcer
+
 # Status system (ported from Claude Code)
 from chatbi_core.status import CostTracker
 
@@ -127,6 +130,9 @@ class EnhancedChatService:
 
         # Initialize the new ToolRegistry (ported from Claude Code)
         self.tool_registry = ToolRegistry()
+
+        # Initialize PlanEnforcer (ported from Claude Code)
+        self.plan_enforcer = PlanEnforcer()
 
         # Initialize CostTracker (ported from Claude Code)
         self.cost_tracker = CostTracker()
@@ -315,6 +321,20 @@ class EnhancedChatService:
 
         if not tool_blocks:
             return [], False
+
+        # Plan mode enforcement: block writes/destructive tools
+        if self.plan_enforcer.is_plan_mode():
+            for block in tool_blocks:
+                tool_name = block.get("name", "")
+                if not self.plan_enforcer.can_use_tool(tool_name):
+                    msg = self.plan_enforcer.get_blocked_message(tool_name)
+                    tool_messages.append(Message(
+                        role="tool",
+                        content=msg,
+                        tool_call_id=block.get("id", ""),
+                        name=tool_name,
+                    ))
+                    return tool_messages, used_csv_analysis
 
         # Execute tools using run_tools (with concurrency control)
         assistant_msg_uuid = f"assistant-{int(time.time() * 1000)}"

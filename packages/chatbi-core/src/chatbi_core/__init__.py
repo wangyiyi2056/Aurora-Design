@@ -32,6 +32,12 @@ from chatbi_core.mcp import MCPClient, MCPConfig, MCPServerConfig
 # Skills System
 from chatbi_core.skills import SkillsLoader, SkillFile
 
+# Plan Mode (ported from Claude Code)
+from chatbi_core.plan import PlanEnforcer, PlanSession
+
+# LSP Handler (ported from Claude Code)
+from chatbi_core.lsp import LSPHandler, get_lsp_handler, execute_lsp
+
 # Query Engine (ported from Claude Code)
 from chatbi_core.query import (
     QueryEngine,
@@ -165,6 +171,13 @@ __all__ = [
     # Skills
     "SkillsLoader",
     "SkillFile",
+    # Plan
+    "PlanEnforcer",
+    "PlanSession",
+    # LSP
+    "LSPHandler",
+    "get_lsp_handler",
+    "execute_lsp",
     # Query
     "QueryEngine",
     "QueryConfig",
