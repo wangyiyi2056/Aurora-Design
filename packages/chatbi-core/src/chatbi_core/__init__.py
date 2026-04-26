@@ -32,6 +32,13 @@ from chatbi_core.mcp import MCPClient, MCPConfig, MCPServerConfig
 # Skills System
 from chatbi_core.skills import SkillsLoader, SkillFile
 
+# Query Engine (ported from Claude Code)
+from chatbi_core.query import (
+    QueryEngine,
+    QueryConfig,
+    TaskComplexity,
+)
+
 # Status System (ported from Claude Code)
 from chatbi_core.status import (
     StatusData,
@@ -158,6 +165,10 @@ __all__ = [
     # Skills
     "SkillsLoader",
     "SkillFile",
+    # Query
+    "QueryEngine",
+    "QueryConfig",
+    "TaskComplexity",
     # Status
     "StatusData",
     "ModelInfo",
