@@ -26,6 +26,9 @@ from chatbi_serve.chat.schema import (
     ContentPart,
 )
 
+# Status system (ported from Claude Code)
+from chatbi_core.status import CostTracker
+
 # Prompt system (ported from Claude Code)
 from chatbi_core.prompt import (
     PromptBuilder,
@@ -123,6 +126,9 @@ class EnhancedChatService:
 
         # Initialize the new ToolRegistry (ported from Claude Code)
         self.tool_registry = ToolRegistry()
+
+        # Initialize CostTracker (ported from Claude Code)
+        self.cost_tracker = CostTracker()
 
         # Initialize PromptBuilder (ported from Claude Code)
         self.prompt_builder = PromptBuilder(
@@ -344,6 +350,14 @@ class EnhancedChatService:
             )
             tool_messages.append(tool_msg)
 
+            # Record tool call in cost tracker
+            if msg.get("name"):
+                has_error = "error" in content_str.lower()
+                self.cost_tracker.record_tool_call(
+                    success=not has_error,
+                    duration_ms=0,
+                )
+
             # Run PostToolUse hooks
             if msg.get("name"):
                 await self.hook_manager.run_post_tool_use(
@@ -451,6 +465,14 @@ class EnhancedChatService:
                 tools=tools,
                 tool_choice="auto",
             )
+
+            # Record API usage
+            if output.usage:
+                self.cost_tracker.record_usage(
+                    model_name=llm.config.model_name,
+                    input_tokens=output.usage.get("input_tokens", 0),
+                    output_tokens=output.usage.get("output_tokens", 0),
+                )
 
             if output.finish_reason == "tool_calls" and output.tool_calls:
                 # Save assistant message with tool_calls
@@ -644,6 +666,64 @@ class EnhancedChatService:
             if chunk.finish_reason:
                 yield f"data: {json.dumps({'type': 'text_end', 'finish_reason': chunk.finish_reason})}\n\n"
         yield "data: [DONE]\n\n"
+
+    def get_status(self) -> dict:
+        """Get current application status snapshot.
+
+        Returns a JSON-serializable status dict with model info,
+        token usage, cost, tool stats, git info, and memory stats.
+        """
+        from chatbi_core.status.models import StatusData, WorkspaceInfo, GitInfo
+
+        git_info = GitInfo()
+        try:
+            import subprocess
+            from pathlib import Path
+            project_path = Path.cwd()
+            if (project_path / ".git").exists():
+                branch_result = subprocess.run(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                git_info.branch = branch_result.stdout.strip()
+                status_result = subprocess.run(
+                    ["git", "status", "--short"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                git_info.has_uncommitted_changes = bool(status_result.stdout.strip())
+        except Exception:
+            pass
+
+        workspace = WorkspaceInfo(
+            current_dir=str(Path.cwd()),
+            project_dir=str(Path.cwd()),
+        )
+
+        model_display = getattr(
+            getattr(self, "registry", None), "default_model", "unknown"
+        )
+
+        status = StatusData(
+            session_id=getattr(self, "_current_session_id", ""),
+            model=ModelInfo(
+                id=str(model_display),
+                display_name=str(model_display),
+                provider="openai",
+            ),
+            context_window=self.cost_tracker.get_context_window(),
+            current_usage=self.cost_tracker.get_current_usage(),
+            cost=self.cost_tracker.get_cost_stats(),
+            workspace=workspace,
+            tools=self.cost_tracker.get_tool_stats(
+                active_tool_count=len(self.tool_registry.get_active_tools())
+            ),
+            git=git_info,
+            memory=self.cost_tracker.get_memory_stats(self.memory_manager),
+            permission_mode=self.permission_manager.mode
+            if hasattr(self.permission_manager, "mode")
+            else PermissionMode.DEFAULT,
+        )
+        return status.to_dict()
 
     def resume_session(self, session_id: str) -> Optional[Session]:
         """Resume a previous session."""

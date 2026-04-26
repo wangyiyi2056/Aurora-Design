@@ -23,6 +23,23 @@ from chatbi_core.mcp import MCPClient, MCPConfig, MCPServerConfig
 # Skills System
 from chatbi_core.skills import SkillsLoader, SkillFile
 
+# Status System (ported from Claude Code)
+from chatbi_core.status import (
+    StatusData,
+    ModelInfo,
+    ContextWindow,
+    CurrentUsage,
+    CostStats,
+    WorkspaceInfo,
+    ToolStats,
+    GitInfo,
+    MemoryStats,
+    CostTracker,
+    ModelUsage,
+    MODEL_PRICING,
+    DEFAULT_PRICING,
+)
+
 # Permissions System
 from chatbi_core.permissions import PermissionManager, PermissionMode, PermissionConfig
 
@@ -126,6 +143,20 @@ __all__ = [
     # Skills
     "SkillsLoader",
     "SkillFile",
+    # Status
+    "StatusData",
+    "ModelInfo",
+    "ContextWindow",
+    "CurrentUsage",
+    "CostStats",
+    "WorkspaceInfo",
+    "ToolStats",
+    "GitInfo",
+    "MemoryStats",
+    "CostTracker",
+    "ModelUsage",
+    "MODEL_PRICING",
+    "DEFAULT_PRICING",
     # Permissions
     "PermissionManager",
     "PermissionMode",
