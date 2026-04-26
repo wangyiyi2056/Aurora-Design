@@ -12,7 +12,16 @@ from chatbi_core.memory import MemoryManager, MemoryEntry, MemoryType
 from chatbi_core.hooks import HookManager, Hook, HookType, HookMatcher
 
 # Context Management
-from chatbi_core.context import ContextCompactor, ToolSearchManager
+from chatbi_core.context import (
+    ContextCompactor,
+    ToolSearchManager,
+    ContextMonitor,
+    ContextSnapshot,
+    CompactionConfig,
+    ContextSummary,
+    ToolDefinition,
+    ToolSearchResult,
+)
 
 # Subagents System
 from chatbi_core.subagents import SubagentManager, SubagentDefinition
@@ -133,6 +142,12 @@ __all__ = [
     # Context
     "ContextCompactor",
     "ToolSearchManager",
+    "ContextMonitor",
+    "ContextSnapshot",
+    "CompactionConfig",
+    "ContextSummary",
+    "ToolDefinition",
+    "ToolSearchResult",
     # Subagents
     "SubagentManager",
     "SubagentDefinition",

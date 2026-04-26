@@ -9,7 +9,7 @@ from chatbi_core.agent.skill.base import SkillRegistry
 from chatbi_core.session import SessionManager, SessionMessage, Session
 from chatbi_core.memory import MemoryManager, MemoryType
 from chatbi_core.hooks import HookManager, HookType
-from chatbi_core.context import ContextCompactor, ToolSearchManager
+from chatbi_core.context import ContextCompactor, ToolSearchManager, ContextMonitor
 from chatbi_core.subagents import SubagentManager, SubagentDefinition
 from chatbi_core.permissions import PermissionManager, PermissionMode
 from chatbi_core.mcp.client import MCPClient
@@ -118,6 +118,7 @@ class EnhancedChatService:
         self.memory_manager = MemoryManager(project_path=project_path)
         self.hook_manager = HookManager(project_settings_path=project_settings_file)
         self.context_compactor = ContextCompactor()
+        self.context_monitor = ContextMonitor(max_tokens=200000)
         self.tool_search = ToolSearchManager()
 
         project_agents_path = str(Path(project_path) / ".chatbi" / "agents") if project_path else None
