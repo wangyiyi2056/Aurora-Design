@@ -141,12 +141,6 @@ export default function ChatPage() {
     const extInfo: Record<string, unknown> = {}
     let selectParam: string | undefined
 
-    // Detect client type: Electron desktop app or web browser
-    extInfo.client_type =
-      typeof window !== "undefined" && "electronAPI" in window
-        ? "desktop"
-        : "web"
-
     const skillAtt = attachments.find((a) => a.type === "skill")
     if (skillAtt) {
       selectParam = skillAtt.name
@@ -278,12 +272,6 @@ export default function ChatPage() {
                         model_type: modelConfig.type,
                       }
                     : { model_name: model, base_url: "", api_key: "", model_type: "llm" },
-                  extInfo: {
-                    client_type:
-                      typeof window !== "undefined" && "electronAPI" in window
-                        ? "desktop"
-                        : "web",
-                  },
                   session_id: currentSessionId,
                 })
               }, 0)

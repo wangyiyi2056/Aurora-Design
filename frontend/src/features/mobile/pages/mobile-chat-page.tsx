@@ -171,12 +171,6 @@ export default function MobileChatPage() {
     const extInfo: Record<string, unknown> = {}
     let selectParam: string | undefined
 
-    // Detect client type: Electron desktop app or web browser
-    extInfo.client_type =
-      typeof window !== "undefined" && "electronAPI" in window
-        ? "desktop"
-        : "web"
-
     const skillAtt = attachments.find((a) => a.type === "skill")
     if (skillAtt) {
       selectParam = skillAtt.name

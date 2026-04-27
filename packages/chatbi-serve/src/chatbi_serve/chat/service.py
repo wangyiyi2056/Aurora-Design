@@ -18,7 +18,7 @@ from chatbi_core.model.adapter.anthropic_adapter import AnthropicLLM
 from chatbi_core.model.registry import ModelRegistry
 from chatbi_core.schema.message import Message, ToolCall
 from chatbi_core.schema.model import LLMConfig
-from chatbi_core.mode import ChatMode, filter_tools_for_mode, BI_ALLOWED_TOOLS
+from chatbi_core.mode import ChatMode
 from chatbi_serve.chat.schema import (
     ChatChoice,
     ChatMessage,
@@ -105,13 +105,12 @@ class EnhancedChatService:
         skill_registry: Optional[SkillRegistry] = None,
         project_path: Optional[str] = None,
         mcp_client: Optional["MCPClient"] = None,
-        mode: ChatMode = ChatMode.CODE,
+        mode: ChatMode = ChatMode.BI,
     ):
         self.registry = model_registry
         self.sql_agent = sql_agent
         self.skill_registry = skill_registry
         self.mcp_client = mcp_client
-        self.default_mode = mode
 
         # Initialize Claude Code architecture components
         self.session_manager = SessionManager()
@@ -141,13 +140,17 @@ class EnhancedChatService:
         self.cost_tracker = CostTracker()
 
         # Initialize PromptBuilder (ported from Claude Code)
-        self._context_provider = ContextProvider(
-            project_root=project_path or str(Path.cwd()),
-            memory_manager=self.memory_manager,
+        self.prompt_builder = PromptBuilder(
+            context_provider=ContextProvider(
+                project_root=project_path or str(Path.cwd()),
+                memory_manager=self.memory_manager,
+                skill_registry=skill_registry,
+            ),
             skill_registry=skill_registry,
+            memory_manager=self.memory_manager,
+            include_chart_vis=True,
+            mode=mode,
         )
-        self._prompt_builder_cache: Dict[ChatMode, PromptBuilder] = {}
-        self.prompt_builder = self._get_prompt_builder(self.default_mode)
 
         # Register built-in tools (Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, Agent)
         for tool in get_all_base_tools():
@@ -191,24 +194,6 @@ class EnhancedChatService:
                     parameters=tool.input_schema,
                     source="mcp",
                 )
-
-    def _get_prompt_builder(self, mode: ChatMode) -> PromptBuilder:
-        """Get or create a PromptBuilder for the given mode."""
-        if mode not in self._prompt_builder_cache:
-            self._prompt_builder_cache[mode] = PromptBuilder(
-                context_provider=self._context_provider,
-                skill_registry=self.skill_registry,
-                memory_manager=self.memory_manager,
-                include_chart_vis=True,
-                mode=mode,
-            )
-        return self._prompt_builder_cache[mode]
-
-    @staticmethod
-    def _detect_mode_from_request(req: ChatRequest) -> ChatMode:
-        """Detect operational mode from request ext_info."""
-        ext_info = req.ext_info or {}
-        return ChatMode.detect(ext_info)
 
     async def start_session(self, project_path: str = "") -> Session:
         """Start a new session with memory context."""
@@ -360,28 +345,6 @@ class EnhancedChatService:
 
         return result
 
-    def _build_tools_for_mode(self, mode: ChatMode) -> List[Dict[str, Any]] | None:
-        """Build tools filtered by operational mode."""
-        all_tools = self.tool_registry.get_active_tools()
-        if not all_tools:
-            return None
-
-        filtered = filter_tools_for_mode(all_tools, mode)
-        if not filtered:
-            return None
-
-        result = []
-        for t in filtered:
-            result.append({
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.input_schema,
-                },
-            })
-        return result
-
     async def _execute_tool_calls(
         self,
         tool_calls: List[ToolCall],
@@ -525,25 +488,21 @@ class EnhancedChatService:
                 Message(role="system", content=memory_context),
             )
 
-        # Detect operational mode from request ext_info
-        detected_mode = self._detect_mode_from_request(req)
-        mode_prompt_builder = self._get_prompt_builder(detected_mode)
-
         # Build system prompt using PromptBuilder (Claude Code architecture)
         model_type = req.model_config_field.model_type if req.model_config_field else "openai"
         tools = None
         if model_type not in ("anthropic", "kimi"):
-            tools = self._build_tools_for_mode(detected_mode)
+            tools = self._build_tools()
         # Always inject system prompt (HTML report, chart vis, etc.) — independent of tools
         if not messages or messages[0].role != "system":
-            system_prompt = mode_prompt_builder.build_single_string()
+            system_prompt = self.prompt_builder.build_single_string()
             messages.insert(
                 0,
                 Message(role="system", content=system_prompt),
             )
 
         # Inject user context (CLAUDE.md + date) as <system-reminder> user message
-        user_context = mode_prompt_builder.get_user_context()
+        user_context = self.prompt_builder.get_user_context()
         if user_context:
             messages.insert(
                 0,
@@ -551,7 +510,7 @@ class EnhancedChatService:
             )
 
         # Inject system context (git status) to system prompt
-        system_context = mode_prompt_builder.get_system_context()
+        system_context = self.prompt_builder.get_system_context()
         if system_context and messages and messages[0].role == "system":
             messages[0] = Message(
                 role="system",
@@ -713,25 +672,21 @@ class EnhancedChatService:
         if memory_context:
             messages.insert(0, Message(role="system", content=memory_context))
 
-        # Detect operational mode from request ext_info
-        detected_mode = self._detect_mode_from_request(req)
-        mode_prompt_builder = self._get_prompt_builder(detected_mode)
-
         model_type = req.model_config_field.model_type if req.model_config_field else "openai"
         tools = None
         model_name_lower = req.model.lower()
         if model_type not in ("anthropic", "kimi") and "kimi" not in model_name_lower:
-            tools = self._build_tools_for_mode(detected_mode)
+            tools = self._build_tools()
         # Always inject system prompt (HTML report, chart vis, etc.) — independent of tools
         if not messages or messages[0].role != "system":
-            system_prompt = mode_prompt_builder.build_single_string()
+            system_prompt = self.prompt_builder.build_single_string()
             messages.insert(
                 0,
                 Message(role="system", content=system_prompt),
             )
 
         # Inject user context (CLAUDE.md + date)
-        user_context = mode_prompt_builder.get_user_context()
+        user_context = self.prompt_builder.get_user_context()
         if user_context:
             messages.insert(
                 0,
@@ -739,7 +694,7 @@ class EnhancedChatService:
             )
 
         # Inject system context (git status)
-        system_context = mode_prompt_builder.get_system_context()
+        system_context = self.prompt_builder.get_system_context()
         if system_context and messages and messages[0].role == "system":
             messages[0] = Message(
                 role="system",
