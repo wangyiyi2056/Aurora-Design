@@ -12,9 +12,14 @@ from chatbi_core.utils.retry import retry_on_transient
 class OpenAILLM(BaseLLM):
     def __init__(self, config: LLMConfig):
         super().__init__(config)
+        extra_headers: Dict[str, str] = {}
+        # Kimi coding API requires specific User-Agent
+        if "kimi.com/coding" in (config.api_base or ""):
+            extra_headers["User-Agent"] = "KimiCLI/1.0"
         self.client = openai.AsyncOpenAI(
             api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
             base_url=config.api_base,
+            default_headers=extra_headers if extra_headers else None,
         )
 
     def _build_openai_messages(
@@ -55,6 +60,11 @@ class OpenAILLM(BaseLLM):
         )
         choice = response.choices[0]
         message = choice.message
+        content = message.content or ""
+        # Kimi coding model may return reasoning_content instead of content
+        if not content:
+            reasoning = getattr(message, "reasoning_content", None) or ""
+            content = reasoning
         tool_calls: List[ToolCall] | None = None
         if message.tool_calls:
             tool_calls = [
@@ -69,7 +79,7 @@ class OpenAILLM(BaseLLM):
                 for tc in message.tool_calls
             ]
         return ModelOutput(
-            text=message.content or "",
+            text=content,
             usage=response.usage.model_dump() if response.usage else None,
             finish_reason=choice.finish_reason,
             tool_calls=tool_calls,
@@ -78,6 +88,8 @@ class OpenAILLM(BaseLLM):
     async def achat_stream(
         self, messages: List[Message], **kwargs
     ) -> AsyncIterator[ModelOutput]:
+        import json as _json
+
         response = await self.client.chat.completions.create(
             model=self.config.model_name,
             messages=self._build_openai_messages(messages),
@@ -86,24 +98,32 @@ class OpenAILLM(BaseLLM):
             temperature=self.config.temperature,
             **kwargs,
         )
-        async for chunk in response:
-            delta = chunk.choices[0].delta
-            text = delta.content or ""
-            tool_calls: List[ToolCall] | None = None
-            if delta.tool_calls:
-                tool_calls = [
-                    ToolCall(
-                        id=tc.id or "",
-                        type=tc.type or "function",
-                        function={
-                            "name": tc.function.name or "",
-                            "arguments": tc.function.arguments or "",
-                        },
-                    )
-                    for tc in delta.tool_calls
-                ]
+        # Use raw SSE lines to avoid SDK iterator hanging with Kimi's non-standard format
+        raw_response = response.response
+        async for line in raw_response.aiter_lines():
+            line = line.strip()
+            if not line:
+                continue
+            if line == "data: [DONE]":
+                break
+            if not line.startswith("data:"):
+                continue
+            data_str = line[5:].lstrip()  # remove "data:" prefix
+            try:
+                chunk_data = _json.loads(data_str)
+            except _json.JSONDecodeError:
+                continue
+            choices = chunk_data.get("choices", [])
+            if not choices:
+                continue
+            delta_data = choices[0].get("delta", {})
+            content = delta_data.get("content", "") or ""
+            if not content:
+                content = delta_data.get("reasoning_content", "") or ""
+            finish_reason = choices[0].get("finish_reason")
+            if not content and not finish_reason:
+                continue
             yield ModelOutput(
-                text=text,
-                finish_reason=chunk.choices[0].finish_reason,
-                tool_calls=tool_calls,
+                text=content,
+                finish_reason=finish_reason,
             )

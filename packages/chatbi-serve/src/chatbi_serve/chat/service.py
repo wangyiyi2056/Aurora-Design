@@ -211,11 +211,19 @@ class EnhancedChatService:
         """Get LLM for request."""
         if req.model_config_field:
             model_type = req.model_config_field.model_type or "openai"
+            api_base = req.model_config_field.base_url or ""
+            api_key = req.model_config_field.api_key or ""
+            # Fall back to registry config if frontend sent empty credentials
+            if not api_base and not api_key:
+                return self.registry.get_llm(req.model)
+            # Also fall back for unrecognized model types
+            if model_type not in ("openai", "anthropic"):
+                return self.registry.get_llm(req.model)
             cfg = LLMConfig(
                 model_name=req.model_config_field.model_name,
                 model_type=model_type,
-                api_base=req.model_config_field.base_url,
-                api_key=req.model_config_field.api_key,
+                api_base=api_base,
+                api_key=api_key,
             )
             if model_type == "anthropic":
                 return AnthropicLLM(cfg)
@@ -481,11 +489,30 @@ class EnhancedChatService:
                         Message(role="system", content=summary.summary_text),
                     )
 
-            output = await llm.achat(
-                messages,
-                tools=tools,
-                tool_choice="auto",
-            )
+            try:
+                output = await llm.achat(
+                    messages,
+                    tools=tools,
+                    tool_choice="auto",
+                )
+            except Exception as e:
+                error_msg = str(e)
+                if "401" in error_msg or "AuthenticationError" in error_msg or "Incorrect API key" in error_msg:
+                    return ChatResponse(
+                        id=f"chatbi-{int(time.time() * 1000)}",
+                        created=int(time.time()),
+                        model=llm.config.model_name,
+                        choices=[
+                            ChatChoice(
+                                message=ChatMessage(
+                                    role="assistant",
+                                    content="API Key 无效或已过期，请联系管理员更新。请检查配置中的 api_key 或环境变量 OPENAI_API_KEY。",
+                                ),
+                                finish_reason="error",
+                            )
+                        ],
+                    )
+                raise
 
             # Record API usage
             if output.usage:
@@ -588,7 +615,8 @@ class EnhancedChatService:
 
         model_type = req.model_config_field.model_type if req.model_config_field else "openai"
         tools = None
-        if model_type not in ("anthropic", "kimi"):
+        model_name_lower = req.model.lower()
+        if model_type not in ("anthropic", "kimi") and "kimi" not in model_name_lower:
             tools = self._build_tools()
 
         if tools and (not messages or messages[0].role != "system"):

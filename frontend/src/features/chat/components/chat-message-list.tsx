@@ -6,10 +6,11 @@ import type { ChatMessage } from "@/stores/chat-store"
 
 function ThinkingDots() {
   return (
-    <div className="flex items-center gap-1.5 h-5 px-1">
+    <div className="flex items-center gap-2 h-5">
       <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce-dot" style={{ animationDelay: "0ms" }} />
       <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce-dot" style={{ animationDelay: "150ms" }} />
       <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce-dot" style={{ animationDelay: "300ms" }} />
+      <span className="text-xs text-muted-foreground/50 ml-1">AI thinking...</span>
     </div>
   )
 }
@@ -57,6 +58,7 @@ export function ChatMessageList({ messages, loading }: ChatMessageListProps) {
                 left: 0,
                 width: "100%",
                 transform: `translateY(${virtualItem.start}px)`,
+                paddingBottom: "20px",
               }}
             >
               <ChatMessageItem role={msg.role} content={msg.content} />
