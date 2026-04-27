@@ -41,12 +41,12 @@ class SQLChartSkill(BaseSkill):
         return (
             "Generate a chart from a natural language question. "
             "Requires the question to be provided. "
-            "Outputs a vis-db-chart block with SQL result data."
+            "Outputs a self-contained HTML page with ECharts."
         )
 
     @property
     def description_cn(self) -> str:
-        return "根据自然语言问题生成图表，输出包含SQL结果数据的vis-db-chart块。"
+        return "根据自然语言问题生成图表，输出包含ECharts的完整HTML页面。"
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -99,23 +99,61 @@ class SQLChartSkill(BaseSkill):
         if not success:
             return f"SQL execution failed: {result}\n\nGenerated SQL: {sql}"
 
-        # Step 3: build vis-db-chart JSON
-        data = []
+        # Step 3: build HTML with ECharts
+        data: list[Any] = []
         if isinstance(result, list):
             data = result
         elif isinstance(result, str):
-            # Try to parse if it's a table-like string
             data = self._parse_result_to_list(result)
 
-        payload = {
-            "sql": sql,
-            "type": display_type,
-            "title": thought or "Chart",
-            "describe": thought,
-            "data": data,
+        data_json = json.dumps(data, ensure_ascii=False)
+        title = thought or "Chart"
+        chart_type_map = {
+            "response_bar_chart": "bar",
+            "response_line_chart": "line",
+            "response_pie_chart": "pie",
+            "response_scatter_chart": "scatter",
+            "response_area_chart": "line",
         }
+        echarts_type = chart_type_map.get(display_type, "bar")
+        series_map = {
+            "bar": f'{{name: "{title}", type: "bar", data: rawData.map(d => d[columns[1]])}}',
+            "line": f'{{name: "{title}", type: "line", data: rawData.map(d => d[columns[1]])}}',
+            "pie": f'{{name: "{title}", type: "pie", data: rawData.map(d => ({{name: d[columns[0]], value: d[columns[1]]}}))}}',
+            "scatter": f'{{name: "{title}", type: "scatter", data: rawData.map(d => [d[columns[0]], d[columns[1]]])}}',
+        }
+        series_config = series_map.get(echarts_type, series_map["bar"])
 
-        return f"```vis-db-chart\n{json.dumps(payload, ensure_ascii=False)}\n```"
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+body{{margin:0;padding:24px;font-family:system-ui,-apple-system,sans-serif;background:#fff}}
+h2{{margin:0 0 16px;font-size:18px;color:#333}}
+#chart{{width:100%;height:400px}}
+</style>
+</head>
+<body>
+<h2>{title}</h2>
+<div id="chart"></div>
+<script>
+var rawData = {data_json};
+var columns = Object.keys(rawData[0] || {{}});
+var chart = echarts.init(document.getElementById("chart"));
+chart.setOption({{
+  tooltip: {{trigger: "axis"}},
+  xAxis: echarts_type === "pie" ? null : {{type: "category", data: rawData.map(d => d[columns[0]])}},
+  yAxis: echarts_type === "pie" ? null : {{type: "value"}},
+  series: [{series_config}]
+}});
+</script>
+</body>
+</html>"""
+
+        return f"```web\n{html}\n```"
 
     def _build_prompt(self, schema: str, question: str) -> str:
         return (
@@ -173,12 +211,12 @@ class SQLDashboardSkill(BaseSkill):
     def description(self) -> str:
         return (
             "Generate a dashboard from a natural language question. "
-            "Outputs a vis-dashboard block with multiple chart data."
+            "Outputs a self-contained HTML dashboard with ECharts."
         )
 
     @property
     def description_cn(self) -> str:
-        return "根据自然语言问题生成仪表板，输出包含多个图表数据的vis-dashboard块。"
+        return "根据自然语言问题生成仪表板，输出包含ECharts的完整HTML页面。"
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -246,15 +284,62 @@ class SQLDashboardSkill(BaseSkill):
                 "err_msg": err_msg,
             })
 
-        payload = {
-            "data": charts,
-            "chart_count": len(charts),
-            "title": question,
-            "display_strategy": "default",
-            "style": "default",
+        chart_type_map = {
+            "response_bar_chart": "bar",
+            "response_line_chart": "line",
+            "response_pie_chart": "pie",
+            "response_scatter_chart": "scatter",
+            "response_area_chart": "line",
         }
 
-        return f"```vis-dashboard\n{json.dumps(payload, ensure_ascii=False)}\n```"
+        chart_scripts: list[str] = []
+        chart_divs: list[str] = []
+        for i, c in enumerate(charts):
+            data_json = json.dumps(c.get("data", []), ensure_ascii=False)
+            title = c.get("title", f"Chart {i+1}")
+            t = c.get("type", "response_bar_chart")
+            echarts_type = chart_type_map.get(t, "bar")
+            chart_divs.append(
+                f'<h3>{title}</h3><div id="chart{i}" style="width:100%;height:350px"></div>'
+            )
+            chart_scripts.append(f"""
+(function() {{
+  var data = {data_json};
+  if (!data.length) return;
+  var cols = Object.keys(data[0]);
+  var chart = echarts.init(document.getElementById("chart{i}"));
+  chart.setOption({{
+    tooltip: {{trigger: 'axis'}},
+    xAxis: '{echarts_type}' === 'pie' ? null : {{type: 'category', data: data.map(d => d[cols[0]])}},
+    yAxis: '{echarts_type}' === 'pie' ? null : {{type: 'value'}},
+    series: ['{echarts_type}' === 'pie'
+      ? {{name: '{title}', type: 'pie', data: data.map(d => ({{name: d[cols[0]], value: d[cols[1]]}}))}}
+      : {{name: '{title}', type: '{echarts_type}', data: data.map(d => d[cols[1]])}}]
+  }});
+}})();""")
+
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+body{{margin:0;padding:24px;font-family:system-ui,-apple-system,sans-serif;background:#fff}}
+h2{{margin:0 0 20px;font-size:22px;color:#333}}
+h3{{margin:16px 0 8px;font-size:16px;color:#555}}
+</style>
+</head>
+<body>
+<h2>{question}</h2>
+{"".join(chart_divs)}
+<script>
+{"".join(chart_scripts)}
+</script>
+</body>
+</html>"""
+
+        return f"```web\n{html}\n```"
 
     def _build_prompt(self, schema: str, question: str) -> str:
         return (

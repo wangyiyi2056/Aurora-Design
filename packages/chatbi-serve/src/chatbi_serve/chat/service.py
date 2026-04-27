@@ -61,28 +61,6 @@ from chatbi_core.tool import (
     StreamingToolExecutor,
 )
 
-CSV_CHART_PROMPT = """
-When you have analyzed CSV data and want to present a visualization, you MUST output a ```vis-db-chart code block with the following JSON structure:
-
-```vis-db-chart
-{"type": "response_bar_chart", "title": "Chart Title", "data": [{"column1": "value1", "column2": 123}, ...]}
-```
-
-Available chart types:
-- response_table: suitable for display with many columns or non-numeric columns
-- response_bar_chart: used to compare values across categories
-- response_line_chart: used to display trend analysis over time or sequence
-- response_pie_chart: suitable for proportion and distribution (few categories, 2-8)
-- response_scatter_chart: suitable for exploring relationships between variables
-- response_area_chart: suitable for time series data with filled areas
-
-Important:
-1. Use the actual column names from the CSV data as keys in the data array
-2. Choose the chart type based on data characteristics (time series → line, comparison → bar, proportion → pie)
-3. For pie charts, use {"name": "category", "value": number} format in data
-4. Always include a meaningful title that describes what the chart shows
-"""
-
 
 class EnhancedChatService:
     """Enhanced Chat Service with Claude Code architecture components.
@@ -101,14 +79,12 @@ class EnhancedChatService:
     def __init__(
         self,
         model_registry: ModelRegistry,
-        sql_agent: Optional["SQLAgent"] = None,
         skill_registry: Optional[SkillRegistry] = None,
         project_path: Optional[str] = None,
         mcp_client: Optional["MCPClient"] = None,
         mode: ChatMode = ChatMode.BI,
     ):
         self.registry = model_registry
-        self.sql_agent = sql_agent
         self.skill_registry = skill_registry
         self.mcp_client = mcp_client
 
@@ -238,28 +214,36 @@ class EnhancedChatService:
         suffix = file_path.suffix.lower()
 
         if suffix == ".csv":
-            import csv
-            import io
-
-            raw = file_path.read_text(encoding="utf-8-sig", errors="replace")
-            reader = csv.reader(io.StringIO(raw))
-            rows = list(reader)
-            if not rows:
-                return "[Empty CSV file]"
-            return self._format_table(rows[0], rows[1:])
-
-        if suffix in (".xlsx", ".xls"):
             import pandas as pd
 
-            df = pd.read_excel(str(file_path), engine="openpyxl", keep_default_na=False)
+            df = pd.read_csv(str(file_path), encoding="utf-8-sig", keep_default_na=True)
             if df.empty:
-                return "[Empty Excel file]"
+                return "[Empty CSV file]"
+
+            profile = self._build_data_profile(df)
             headers = [str(h) for h in df.columns]
             rows = [
                 [str(df.iloc[i, j]) for j in range(len(headers))]
                 for i in range(len(df))
             ]
-            return self._format_table(headers, rows)
+            table = self._format_table(headers, rows)
+            return f"{profile}\n\n{table}"
+
+        if suffix in (".xlsx", ".xls"):
+            import pandas as pd
+
+            df = pd.read_excel(str(file_path), engine="openpyxl", keep_default_na=True)
+            if df.empty:
+                return "[Empty Excel file]"
+
+            profile = self._build_data_profile(df)
+            headers = [str(h) for h in df.columns]
+            rows = [
+                [str(df.iloc[i, j]) for j in range(len(headers))]
+                for i in range(len(df))
+            ]
+            table = self._format_table(headers, rows)
+            return f"{profile}\n\n{table}"
 
         # Fallback: try to read as text
         return file_path.read_text(encoding="utf-8", errors="replace")
@@ -275,6 +259,54 @@ class EnhancedChatService:
             lines.append("| " + " | ".join(cells) + " |")
         if len(rows) > 200:
             lines.append(f"\n... ({len(rows) - 200} more rows omitted)")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _build_data_profile(df: "pd.DataFrame") -> str:
+        """Lightweight data profiling for LLM context."""
+        import pandas as pd
+
+        lines: list[str] = []
+        total_rows = len(df)
+        total_cols = len(df.columns)
+        lines.append("## Data Profile")
+        lines.append(f"- Rows: {total_rows}, Columns: {total_cols}")
+
+        col_infos: list[str] = []
+        for col in df.columns:
+            series = df[col]
+            null_count = int(series.isna().sum())
+            dtype = str(series.dtype)
+
+            if pd.api.types.is_numeric_dtype(series):
+                col_type = "numeric"
+                stats = (
+                    f"nulls={null_count}"
+                    if null_count == total_rows
+                    else f"min={series.min():.4g}, max={series.max():.4g}, "
+                    f"mean={series.mean():.4g}, nulls={null_count}"
+                )
+            elif pd.api.types.is_datetime64_any_dtype(series):
+                col_type = "datetime"
+                stats = f"range=[{series.min()} ~ {series.max()}], nulls={null_count}"
+            else:
+                col_type = "categorical"
+                unique = series.nunique()
+                top_vals = (
+                    series.value_counts().head(3).index.tolist()
+                    if unique > 0
+                    else []
+                )
+                stats = f"unique={unique}, top={top_vals}, nulls={null_count}"
+
+            col_infos.append(f"  - `{col}` ({col_type}, {dtype}): {stats}")
+
+        completeness = (
+            f"{(1 - df.isna().any(axis=1).sum() / max(total_rows, 1)) * 100:.1f}%"
+        )
+        lines.append(f"- Complete rows: {completeness}")
+        lines.append("- Columns:")
+        lines.extend(col_infos)
         return "\n".join(lines)
 
     def _resolve_content_parts(
@@ -349,13 +381,12 @@ class EnhancedChatService:
         self,
         tool_calls: List[ToolCall],
         session_id: Optional[str] = None,
-    ) -> tuple[List[Message], bool]:
+    ) -> List[Message]:
         """Execute tool calls using the new Tool system."""
         if not self.tool_registry:
-            return [], False
+            return []
 
         tool_messages: List[Message] = []
-        used_csv_analysis = False
 
         # Build ToolUseContext
         context = ToolUseContext(
@@ -400,7 +431,7 @@ class EnhancedChatService:
                         tool_call_id=block.get("id", ""),
                         name=tool_name,
                     ))
-                    return tool_messages, used_csv_analysis
+                    return tool_messages
 
         # Execute tools using run_tools (with concurrency control)
         assistant_msg_uuid = f"assistant-{int(time.time() * 1000)}"
@@ -423,10 +454,6 @@ class EnhancedChatService:
                     content_str = json.dumps(msg["content"])
             else:
                 content_str = str(msg.get("content", ""))
-
-            # Track csv_analysis
-            if "csv_analysis" in content_str:
-                used_csv_analysis = True
 
             # Build tool result
             tool_msg = Message(
@@ -465,7 +492,7 @@ class EnhancedChatService:
                     ),
                 )
 
-        return tool_messages, used_csv_analysis
+        return tool_messages
 
     async def chat(
         self,
@@ -491,7 +518,7 @@ class EnhancedChatService:
         # Build system prompt using PromptBuilder (Claude Code architecture)
         model_type = req.model_config_field.model_type if req.model_config_field else "openai"
         tools = None
-        if model_type not in ("anthropic", "kimi"):
+        if model_type not in ("anthropic",):
             tools = self._build_tools()
         # Always inject system prompt (HTML report, chart vis, etc.) — independent of tools
         if not messages or messages[0].role != "system":
@@ -603,14 +630,10 @@ class EnhancedChatService:
                         tool_calls=output.tool_calls,
                     )
                 )
-                tool_results, used_csv_analysis = await self._execute_tool_calls(
+                tool_results = await self._execute_tool_calls(
                     output.tool_calls, session_id
                 )
                 messages.extend(tool_results)
-                if used_csv_analysis:
-                    messages.append(
-                        Message(role="system", content=CSV_CHART_PROMPT),
-                    )
                 continue
 
             # Final answer
@@ -675,7 +698,7 @@ class EnhancedChatService:
         model_type = req.model_config_field.model_type if req.model_config_field else "openai"
         tools = None
         model_name_lower = req.model.lower()
-        if model_type not in ("anthropic", "kimi") and "kimi" not in model_name_lower:
+        if model_type not in ("anthropic",):
             tools = self._build_tools()
         # Always inject system prompt (HTML report, chart vis, etc.) — independent of tools
         if not messages or messages[0].role != "system":
@@ -761,7 +784,7 @@ class EnhancedChatService:
                             continue
                         yield f"data: {json.dumps({'type': 'tool_call_start', 'tool_name': tc.function.get('name', ''), 'arguments': tc.function.get('arguments', '{}')})}\n\n"
 
-                    tool_results, used_csv_analysis = await self._execute_tool_calls(
+                    tool_results = await self._execute_tool_calls(
                         output.tool_calls, session_id
                     )
 
@@ -770,10 +793,6 @@ class EnhancedChatService:
                         yield f"data: {json.dumps({'type': 'tool_call_result', 'tool_name': tr.name or '', 'content': str(tr.content) if tr.content else ''})}\n\n"
 
                     messages.extend(tool_results)
-                    if used_csv_analysis:
-                        messages.append(
-                            Message(role="system", content=CSV_CHART_PROMPT),
-                        )
                     continue
 
                 # Stream the final text response as deltas

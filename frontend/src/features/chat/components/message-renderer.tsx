@@ -2,68 +2,10 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"
-import { VisChart } from "../../../components/vis/vis-chart"
-import { VisDashboard } from "../../../components/vis/vis-dashboard"
 import { HtmlPreview } from "./html-preview"
 
 interface MessageRendererProps {
   content: string
-}
-
-interface VisChartData {
-  sql?: string
-  type: string
-  title?: string
-  describe?: string
-  data: Record<string, unknown>[]
-}
-
-interface VisDashboardData {
-  data: {
-    sql?: string
-    type: string
-    title?: string
-    describe?: string
-    data: Record<string, unknown>[]
-    err_msg?: string | null
-  }[]
-  chart_count?: number
-  title?: string
-}
-
-function tryParseJson(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
-}
-
-function VisBlock({ language, codeString }: { language: string; codeString: string }) {
-  if (language === "vis-db-chart") {
-    const data = tryParseJson(codeString) as VisChartData | null
-    if (!data || !Array.isArray(data.data)) {
-      return <div className="text-sm text-text-secondary">Invalid chart data</div>
-    }
-    return (
-      <VisChart
-        data={data.data}
-        type={data.type}
-        title={data.title}
-        sql={data.sql}
-      />
-    )
-  }
-
-  if (language === "vis-dashboard") {
-    const data = tryParseJson(codeString) as VisDashboardData | null
-    if (!data || !Array.isArray(data.data)) {
-      return <div className="text-sm text-text-secondary">Invalid dashboard data</div>
-    }
-    return <VisDashboard charts={data.data} title={data.title} />
-  }
-
-  return null
 }
 
 export default function MessageRenderer({ content }: MessageRendererProps) {
@@ -76,10 +18,6 @@ export default function MessageRenderer({ content }: MessageRendererProps) {
           const match = /language-(\w+)/.exec(className || "")
           const language = match ? match[1] : "text"
           const codeString = String(children).replace(/\n$/, "")
-
-          if (language === "vis-db-chart" || language === "vis-dashboard") {
-            return <VisBlock language={language} codeString={codeString} />
-          }
 
           if (language === "html" || language === "web") {
             return <HtmlPreview html={codeString} />

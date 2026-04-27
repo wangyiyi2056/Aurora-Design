@@ -197,29 +197,6 @@ Rules:
     return PromptSection(name="html_report", content=content, is_dynamic=True)
 
 
-def get_chart_vis_section() -> PromptSection:
-    """ChatBI-specific visualization prompt."""
-    content = """When you have analyzed CSV data and want to present a visualization, you MUST output a ```vis-db-chart code block with the following JSON structure:
-
-```vis-db-chart
-{"type": "response_bar_chart", "title": "Chart Title", "data": [{"column1": "value1", "column2": 123}, ...]}
-```
-
-Available chart types:
-- response_table: suitable for display with many columns or non-numeric columns
-- response_bar_chart: used to compare values across categories
-- response_line_chart: used to display trend analysis over time or sequence
-- response_pie_chart: suitable for proportion and distribution (few categories, 2-8)
-- response_scatter_chart: suitable for exploring relationships between variables
-- response_area_chart: suitable for time series data with filled areas
-
-Important:
-1. Use the actual column names from the CSV data as keys in the data array
-2. Choose the chart type based on data characteristics (time series → line, comparison → bar, proportion → pie)
-3. For pie charts, use {"name": "category", "value": number} format in data
-4. Always include a meaningful title that describes what the chart shows"""
-    return PromptSection(name="chart_vis", content=content, is_dynamic=True)
-
 
 # ── Dynamic Sections (vary per session, after DYNAMIC_BOUNDARY) ──
 

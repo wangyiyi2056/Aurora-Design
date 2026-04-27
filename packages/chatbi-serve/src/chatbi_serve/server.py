@@ -22,7 +22,6 @@ def create_app() -> FastAPI:
         from chatbi_core.model.adapter.openai_embeddings import OpenAIEmbeddings
         from chatbi_core.model.registry import ModelRegistry
         from chatbi_core.schema.model import LLMConfig
-        from chatbi_serve.agent.sql_agent import SQLAgent
         from chatbi_serve.chat.service import ChatService
         from chatbi_serve.datasource.schema import DBConfig
         from chatbi_serve.datasource.service import DatasourceService
@@ -90,7 +89,6 @@ def create_app() -> FastAPI:
         app.state.datasource_service = datasource_service
 
         default_ds = settings.default_datasource if hasattr(settings, "default_datasource") else ""
-        sql_agent = SQLAgent(registry, datasource_service, default_ds)
 
         skill_registry = SkillRegistry()
         skill_registry.register(CSVAnalysisSkill())
@@ -164,7 +162,7 @@ def create_app() -> FastAPI:
         app.state.mcp_client = mcp_client
 
         app.state.chat_service = ChatService(
-            registry, sql_agent, skill_registry, mcp_client=mcp_client
+            registry, skill_registry, mcp_client=mcp_client
         )
 
         app.state.knowledge_stores = {}

@@ -15,7 +15,6 @@ from chatbi_core.prompt.sections import (
     STATIC_SECTIONS,
     get_environment_section,
     get_session_section,
-    get_chart_vis_section,
     get_html_report_section,
 )
 from chatbi_core.prompt.bi_sections import BI_STATIC_SECTIONS
@@ -126,13 +125,7 @@ class PromptBuilder:
             sections.append(ctx.skills_context)
 
         if self.include_chart_vis:
-            # BI mode: skip legacy vis-db-chart format, only use web/HTML reports
-            if self.mode != ChatMode.BI:
-                chart_section = get_chart_vis_section()
-                if chart_section.content:
-                    sections.append(chart_section.content)
-
-            # HTML report generation (both modes, but critical for BI)
+            # HTML report generation (self-contained web pages with ECharts)
             report_section = get_html_report_section()
             if report_section.content:
                 sections.append(report_section.content)
