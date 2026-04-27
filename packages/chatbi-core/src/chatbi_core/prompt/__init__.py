@@ -21,6 +21,8 @@ from chatbi_core.prompt.sections import (
     get_chart_vis_section,
 )
 
+from chatbi_core.prompt.bi_sections import BI_STATIC_SECTIONS
+
 from chatbi_core.prompt.context import (
     PromptContext,
     ContextProvider,

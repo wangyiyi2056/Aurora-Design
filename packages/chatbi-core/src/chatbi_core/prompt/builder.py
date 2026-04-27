@@ -18,7 +18,9 @@ from chatbi_core.prompt.sections import (
     get_chart_vis_section,
     get_html_report_section,
 )
+from chatbi_core.prompt.bi_sections import BI_STATIC_SECTIONS
 from chatbi_core.prompt.context import ContextProvider, PromptContext
+from chatbi_core.mode import ChatMode
 
 if TYPE_CHECKING:
     pass
@@ -53,12 +55,14 @@ class PromptBuilder:
         memory_manager=None,
         model_info: str = "",
         include_chart_vis: bool = True,
+        mode: ChatMode = ChatMode.CODE,
     ):
         self.context_provider = context_provider
         self.skill_registry = skill_registry
         self.memory_manager = memory_manager
         self.model_info = model_info
         self.include_chart_vis = include_chart_vis
+        self.mode = mode
 
         # Cache for assembled context
         self._context: Optional[PromptContext] = None
@@ -82,7 +86,13 @@ class PromptBuilder:
         sections: List[str] = []
 
         # ── Static sections (cacheable) ──
-        for section in STATIC_SECTIONS:
+        # BI mode uses data-analysis-focused sections; CODE mode keeps Claude Code engineering sections
+        if self.mode == ChatMode.BI:
+            static_sections = BI_STATIC_SECTIONS
+        else:
+            static_sections = STATIC_SECTIONS
+
+        for section in static_sections:
             if section.content:
                 sections.append(section.content)
 
@@ -115,14 +125,14 @@ class PromptBuilder:
         if ctx.skills_context:
             sections.append(ctx.skills_context)
 
-        # Chart visualization (ChatBI-specific)
         if self.include_chart_vis:
-            chart_section = get_chart_vis_section()
-            if chart_section.content:
-                sections.append(chart_section.content)
+            # BI mode: skip legacy vis-db-chart format, only use web/HTML reports
+            if self.mode != ChatMode.BI:
+                chart_section = get_chart_vis_section()
+                if chart_section.content:
+                    sections.append(chart_section.content)
 
-        # HTML report generation (ChatBI-specific)
-        if self.include_chart_vis:
+            # HTML report generation (both modes, but critical for BI)
             report_section = get_html_report_section()
             if report_section.content:
                 sections.append(report_section.content)
