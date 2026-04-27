@@ -18,7 +18,6 @@ from chatbi_core.prompt.sections import (
     get_environment_section,
     get_session_section,
     get_html_report_section,
-    get_chart_vis_section,
 )
 
 from chatbi_core.prompt.bi_sections import BI_STATIC_SECTIONS
@@ -52,7 +51,6 @@ __all__ = [
     "get_environment_section",
     "get_session_section",
     "get_html_report_section",
-    "get_chart_vis_section",
     "PromptContext",
     "ContextProvider",
     "get_date_context",

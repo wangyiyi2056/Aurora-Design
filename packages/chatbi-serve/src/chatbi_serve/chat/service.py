@@ -194,20 +194,44 @@ class EnhancedChatService:
             api_key = req.model_config_field.api_key or ""
             # Fall back to registry config if frontend sent empty credentials
             if not api_base and not api_key:
-                return self.registry.get_llm(req.model)
-            # Also fall back for unrecognized model types
-            if model_type not in ("openai", "anthropic"):
-                return self.registry.get_llm(req.model)
+                try:
+                    return self.registry.get_llm(req.model)
+                except KeyError:
+                    raise ValueError(
+                        f"Model '{req.model}' not configured. "
+                        "Please add an API key in Settings or configure the model."
+                    )
             cfg = LLMConfig(
-                model_name=req.model_config_field.model_name,
-                model_type=model_type,
+                model_name=req.model_config_field.model_name or req.model,
+                model_type=model_type if model_type in ("openai", "anthropic") else "openai",
                 api_base=api_base,
                 api_key=api_key,
             )
             if model_type == "anthropic":
                 return AnthropicLLM(cfg)
             return OpenAILLM(cfg)
-        return self.registry.get_llm(req.model)
+        try:
+            return self.registry.get_llm(req.model)
+        except KeyError:
+            raise ValueError(
+                f"Model '{req.model}' not found. Please configure a model in Settings."
+            )
+
+    @staticmethod
+    def _extract_text_content(content: Any) -> str:
+        """Extract human-readable text from message content (str or list of ContentParts)."""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            texts = []
+            for part in content:
+                if isinstance(part, dict):
+                    if part.get("type") == "text" and part.get("text"):
+                        texts.append(part["text"])
+                elif hasattr(part, "text") and part.text:
+                    texts.append(part.text)
+            return " ".join(texts)
+        return str(content) if content else ""
 
     def _read_tabular_file(self, file_path: Path) -> str:
         """Read Excel/CSV file and return readable text for the LLM."""
@@ -556,7 +580,7 @@ class EnhancedChatService:
                     session_id,
                     SessionMessage(
                         type="user",
-                        content=str(last_user.content) if last_user.content else "",
+                        content=self._extract_text_content(last_user.content),
                         role="user",
                     ),
                 )
@@ -697,7 +721,6 @@ class EnhancedChatService:
 
         model_type = req.model_config_field.model_type if req.model_config_field else "openai"
         tools = None
-        model_name_lower = req.model.lower()
         if model_type not in ("anthropic",):
             tools = self._build_tools()
         # Always inject system prompt (HTML report, chart vis, etc.) — independent of tools
@@ -736,7 +759,7 @@ class EnhancedChatService:
                     session_id,
                     SessionMessage(
                         type="user",
-                        content=str(last_user.content) if last_user.content else "",
+                        content=self._extract_text_content(last_user.content),
                         role="user",
                     ),
                 )

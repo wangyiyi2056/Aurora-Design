@@ -55,6 +55,7 @@ async def list_sessions(
             message_count=s.get("message_count", 0),
         )
         for s in sessions
+        if s.get("message_count", 0) > 0
     ]
     items.sort(key=lambda x: x.updated_at, reverse=True)
     return SessionListResponse(sessions=items)
