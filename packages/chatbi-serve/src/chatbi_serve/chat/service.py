@@ -190,32 +190,16 @@ class EnhancedChatService:
         """Get LLM for request."""
         if req.model_config_field:
             model_type = req.model_config_field.model_type or "openai"
-            api_base = req.model_config_field.base_url or ""
-            api_key = req.model_config_field.api_key or ""
-            # Fall back to registry config if frontend sent empty credentials
-            if not api_base and not api_key:
-                try:
-                    return self.registry.get_llm(req.model)
-                except KeyError:
-                    raise ValueError(
-                        f"Model '{req.model}' not configured. "
-                        "Please add an API key in Settings or configure the model."
-                    )
             cfg = LLMConfig(
-                model_name=req.model_config_field.model_name or req.model,
-                model_type=model_type if model_type in ("openai", "anthropic") else "openai",
-                api_base=api_base,
-                api_key=api_key,
+                model_name=req.model_config_field.model_name,
+                model_type=model_type,
+                api_base=req.model_config_field.base_url,
+                api_key=req.model_config_field.api_key,
             )
             if model_type == "anthropic":
                 return AnthropicLLM(cfg)
             return OpenAILLM(cfg)
-        try:
-            return self.registry.get_llm(req.model)
-        except KeyError:
-            raise ValueError(
-                f"Model '{req.model}' not found. Please configure a model in Settings."
-            )
+        return self.registry.get_llm(req.model)
 
     @staticmethod
     def _extract_text_content(content: Any) -> str:
