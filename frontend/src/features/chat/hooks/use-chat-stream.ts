@@ -75,7 +75,19 @@ export async function sendChatStream(
 
     if (!resp.ok) {
       const errText = await resp.text()
-      throw new Error(`Chat API error ${resp.status}: ${errText}`)
+      let detail = errText
+      try {
+        const parsed = JSON.parse(errText)
+        detail = parsed.detail || parsed.message || errText
+      } catch {
+        // Not JSON — likely HTML error page, use status-based message
+        if (errText.trim().startsWith("<!DOCTYPE") || errText.trim().startsWith("<html")) {
+          detail = `Server error (status ${resp.status})`
+        } else {
+          detail = errText.slice(0, 300)
+        }
+      }
+      throw new Error(detail)
     }
 
     const reader = resp.body?.getReader()

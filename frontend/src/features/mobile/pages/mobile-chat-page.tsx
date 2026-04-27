@@ -151,6 +151,8 @@ export default function MobileChatPage() {
           text: `以下是来自知识库 "${knowledgeAtt.name}" 的检索结果：\n${results}`,
         })
       } catch (err) {
+        const msg = err instanceof Error ? err.message : "知识库查询失败"
+        addMessage({ role: "assistant", content: `❌ 知识库查询失败：${msg}` })
         toast.error(t("chat.knowledgeQueryFailed") || "知识库查询失败")
         setLoading(false)
         return
@@ -190,7 +192,7 @@ export default function MobileChatPage() {
         currentSessionId = session_id
         setSessionId(session_id)
       } catch {
-        // Continue without session
+        addMessage({ role: "system", content: "⚠️ 无法创建会话，对话不会被保存" })
       }
     }
 
