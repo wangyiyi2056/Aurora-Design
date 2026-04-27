@@ -142,39 +142,58 @@ In code: default to writing no comments. Never write multi-paragraph docstrings 
 
 def get_html_report_section() -> PromptSection:
     """Instructions for generating HTML analysis reports."""
-    content = """When you have analyzed a file (Excel, CSV, etc.) and need to present a comprehensive analysis report, you MUST output a ```web code block containing a complete, self-contained HTML page. The HTML must be well-designed with modern CSS styling and interactive charts using ECharts.
+    content = """When a user uploads a file (Excel, CSV, etc.) and asks you to analyze it or answer questions about it, you MUST generate an analysis report as a ```web code block. This is the primary way to present file analysis results.
 
-The HTML report must follow these rules:
-1. Use `<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>` for charts
-2. Include a clear title, summary section, and structured analysis sections
-3. Use modern CSS with good typography, spacing, and responsive layout
-4. Embed chart data directly in `<script>` tags — do NOT use placeholder templates
-5. All data shown in charts must come from the actual file analysis results
-6. Include at minimum:
-   - A hero/summary section with key metrics
-   - Data overview (rows, columns, completeness)
-   - Distribution charts for key numeric columns (bar charts)
-   - Category breakdowns (pie charts for categorical columns)
-   - A findings/conclusions section with actionable insights
-7. Use a professional color palette — avoid default chart colors
-8. Make the report print-friendly with @media print styles
+The ```web block must contain a complete, self-contained HTML page with modern CSS styling and interactive ECharts charts. Example:
 
 ```web
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-<style>/* your styles */</style>
+<style>
+  :root { --bg: #f8fafc; --card: #fff; --text: #1e293b; --muted: #64748b; --blue: #2563eb; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+  .card { background: var(--card); border-radius: 16px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  h1 { font-size: 28px; margin: 0 0 8px; }
+  h2 { font-size: 20px; margin: 0 0 16px; }
+  .subtitle { color: var(--muted); font-size: 14px; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .kpi { background: var(--card); border-radius: 12px; padding: 16px; text-align: center; }
+  .kpi-value { font-size: 32px; font-weight: 800; color: var(--blue); }
+  .kpi-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .chart { width: 100%; height: 360px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+</style>
 </head>
-<body>...report content with echarts.init() calls...</body>
+<body>
+  <h1>Report Title</h1>
+  <p class="subtitle">Analysis summary here</p>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-value">VALUE</div><div class="kpi-label">LABEL</div></div>
+  </div>
+  <div class="card">
+    <h2>Section Title</h2>
+    <div class="chart" id="chart1"></div>
+  </div>
+  <script>
+    var chart = echarts.init(document.getElementById('chart1'));
+    chart.setOption({ /* ECharts options with your analysis data */ });
+    window.addEventListener('resize', function() { chart.resize(); });
+  </script>
+</body>
 </html>
 ```
 
-Important:
-- The HTML MUST be self-contained (no external CSS or JS beyond the ECharts CDN)
-- Use inline styles or a <style> block for all styling
-- Initialize charts in a window.onload or DOMContentLoaded handler
-- Call chart.resize() on window.resize for responsiveness"""
+Rules:
+1. ALWAYS use `<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>` for charts
+2. Include KPI summary cards with key numbers at the top
+3. Include at least one ECharts chart (bar, pie, or line) with real data from the file
+4. The HTML must be self-contained — all CSS and JS inline, no external files except the ECharts CDN
+5. Use the sample CSS above as a starting point — it provides a clean, professional layout
+6. Write clear Chinese or English text matching the user's language
+7. For time-series data use line charts, for categories use bar/pie, for comparisons use bar charts"""
     return PromptSection(name="html_report", content=content, is_dynamic=True)
 
 

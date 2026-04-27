@@ -302,7 +302,13 @@ class EnhancedChatService:
                 resolved.append(
                     {
                         "type": "text",
-                        "text": f"[Attached file: {part.file_url.file_name}]\n{text}",
+                        "text": (
+                            f"[Attached file: {part.file_url.file_name}]\n{text}\n\n"
+                            "IMPORTANT: You MUST analyze this file and generate a complete HTML "
+                            "analysis report using a ```web code block. Include a KPI summary at "
+                            "the top and at least one ECharts chart. The ```web block must contain "
+                            "a full, self-contained HTML page."
+                        ),
                     }
                 )
         return resolved
