@@ -484,7 +484,8 @@ class EnhancedChatService:
         tools = None
         if model_type not in ("anthropic", "kimi"):
             tools = self._build_tools()
-        if tools and (not messages or messages[0].role != "system"):
+        # Always inject system prompt (HTML report, chart vis, etc.) — independent of tools
+        if not messages or messages[0].role != "system":
             system_prompt = self.prompt_builder.build_single_string()
             messages.insert(
                 0,
@@ -667,8 +668,8 @@ class EnhancedChatService:
         model_name_lower = req.model.lower()
         if model_type not in ("anthropic", "kimi") and "kimi" not in model_name_lower:
             tools = self._build_tools()
-
-        if tools and (not messages or messages[0].role != "system"):
+        # Always inject system prompt (HTML report, chart vis, etc.) — independent of tools
+        if not messages or messages[0].role != "system":
             system_prompt = self.prompt_builder.build_single_string()
             messages.insert(
                 0,
