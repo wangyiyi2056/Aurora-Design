@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom"
-import { ChevronLeft, Plus, Sun, Moon } from "lucide-react"
+import { ChevronLeft, Plus, Clock, Sun, Moon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useGlobalStore } from "@/stores/global-store"
 
@@ -9,6 +9,8 @@ interface MobileNavProps {
   onBack?: () => void
   showNewChat?: boolean
   onNewChat?: () => void
+  showHistory?: boolean
+  onHistory?: () => void
 }
 
 export function MobileNav({
@@ -17,6 +19,8 @@ export function MobileNav({
   onBack,
   showNewChat = false,
   onNewChat,
+  showHistory = false,
+  onHistory,
 }: MobileNavProps) {
   const navigate = useNavigate()
   const { t } = useTranslation("chat")
@@ -52,6 +56,15 @@ export function MobileNav({
         >
           {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </button>
+        {showHistory && (
+          <button
+            onClick={onHistory}
+            className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="History"
+          >
+            <Clock className="h-5 w-5" />
+          </button>
+        )}
         {showNewChat && (
           <button
             onClick={onNewChat}

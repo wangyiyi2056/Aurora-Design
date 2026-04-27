@@ -16,7 +16,15 @@
     "welcomeTitle": "欢迎使用 ChatBI",
     "welcomeDesc": "向数据提问，或进行自由对话。",
     "copy": "复制",
-    "copied": "已复制"
+    "copied": "已复制",
+    "newChat": "新对话",
+    "conversationHistory": "对话历史",
+    "noConversations": "暂无对话",
+    "confirmDelete": "确认删除该对话？",
+    "sessionDeleted": "对话已删除",
+    "sessionLoaded": "对话已加载",
+    "sessionLoadFailed": "对话加载失败",
+    "sessionDeleteFailed": "对话删除失败"
   },
   "explore": {
     "title": "ChatBI",

@@ -1,0 +1,5 @@
+# Generated files — exclude from language statistics
+*package-lock.json linguist-generated
+*pnpm-lock.yaml linguist-generated
+*uv.lock linguist-generated
+frontend/playwright-report/** linguist-generated

@@ -13,12 +13,13 @@ interface ChatStreamParams {
   modelConfig: ModelConfig
   selectParam?: string
   extInfo?: Record<string, unknown>
+  session_id?: string | null
 }
 
 /** Legacy non-streaming mutation for backward compatibility. */
 export function useChatStream(options: UseChatStreamOptions = {}) {
   return useMutation({
-    mutationFn: async ({ messages, model, modelConfig, selectParam, extInfo }: ChatStreamParams) => {
+    mutationFn: async ({ messages, model, modelConfig, selectParam, extInfo, session_id }: ChatStreamParams) => {
       const data = await chatComplete({
         messages,
         model,
@@ -26,6 +27,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
         stream: false,
         selectParam,
         extInfo,
+        session_id,
       })
       const content =
         data.choices?.[0]?.message?.content || JSON.stringify(data)
@@ -67,6 +69,7 @@ export async function sendChatStream(
         model_config: params.modelConfig,
         select_param: params.selectParam,
         ext_info: params.extInfo,
+        session_id: params.session_id,
       }),
     })
 

@@ -16,7 +16,15 @@
     "welcomeTitle": "Welcome to ChatBI",
     "welcomeDesc": "Ask anything about data or have a free conversation.",
     "copy": "Copy",
-    "copied": "Copied"
+    "copied": "Copied",
+    "newChat": "New Chat",
+    "conversationHistory": "Conversation History",
+    "noConversations": "No conversations yet",
+    "confirmDelete": "Delete this conversation?",
+    "sessionDeleted": "Conversation deleted",
+    "sessionLoaded": "Conversation loaded",
+    "sessionLoadFailed": "Failed to load conversation",
+    "sessionDeleteFailed": "Failed to delete conversation"
   },
   "explore": {
     "title": "ChatBI",

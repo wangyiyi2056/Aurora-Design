@@ -59,3 +59,26 @@ class ChatResponse(BaseModel):
     model: str
     choices: List[ChatChoice]
     usage: Optional[Dict[str, Any]] = None
+
+
+# --- Session Management Schemas ---
+
+class SessionMetaResponse(BaseModel):
+    id: str
+    title: str
+    created_at: float
+    updated_at: float
+    message_count: int
+
+
+class SessionListResponse(BaseModel):
+    sessions: List[SessionMetaResponse]
+
+
+class SessionLoadResponse(BaseModel):
+    session: SessionMetaResponse
+    messages: List[Dict[str, Any]]
+
+
+class SessionCreateResponse(BaseModel):
+    session_id: str

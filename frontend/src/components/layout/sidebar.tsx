@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from "react-router-dom"
+import { NavLink, useLocation, useNavigate } from "react-router-dom"
 import {
   LayoutGrid,
   MessageSquare,
@@ -12,11 +12,17 @@ import {
 import { useTranslation } from "react-i18next"
 import i18n from "@/lib/i18n"
 import { useGlobalStore } from "@/stores/global-store"
+import { useChatStore } from "@/stores/chat-store"
+import { ConversationList } from "@/features/chat/components/conversation-list"
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar, language, setLanguage, theme, setTheme } = useGlobalStore()
   const location = useLocation()
+  const navigate = useNavigate()
   const { t } = useTranslation()
+
+  const sessionId = useChatStore((s) => s.sessionId)
+  const resetToNewChat = useChatStore((s) => s.resetToNewChat)
 
   const isConstructActive = [
     "/construct/app",
@@ -34,6 +40,13 @@ export function Sidebar() {
     { path: "/chat", label: t("nav.chat"), icon: MessageSquare },
     { path: "/construct/app", label: t("nav.construct"), icon: Hammer },
   ]
+
+  const isChatPage = location.pathname === "/chat"
+
+  const handleNewChat = () => {
+    resetToNewChat()
+    navigate("/chat")
+  }
 
   return (
     <aside
@@ -55,7 +68,7 @@ export function Sidebar() {
           {sidebarCollapsed ? <ArrowRightToLine className="h-4 w-4" /> : <ArrowLeftToLine className="h-4 w-4" />}
         </button>
       </div>
-      <nav className="flex flex-1 flex-col gap-1 p-3">
+      <nav className="flex flex-col gap-1 p-3">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
@@ -75,6 +88,17 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {isChatPage && (
+        <div className="flex-1 overflow-y-auto border-t border-border">
+          <ConversationList
+            activeId={sessionId}
+            collapsed={sidebarCollapsed}
+            onNewChat={handleNewChat}
+          />
+        </div>
+      )}
+
       <div className="p-3 border-t border-border flex flex-col gap-1">
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}

@@ -48,10 +48,12 @@ class SessionManager:
         meta_path = self._meta_file_path(session.id)
         meta = {
             "id": session.id,
+            "title": session.title,
             "project_path": session.project_path,
             "branch": session.branch,
             "created_at": session.created_at,
             "updated_at": session.updated_at,
+            "message_count": len(session.messages),
             "metadata": session.metadata,
         }
         meta_path.write_text(json.dumps(meta))
@@ -72,7 +74,25 @@ class SessionManager:
         # Update metadata
         if self._current_session and self._current_session.id == session_id:
             self._current_session.add_message(message)
+
+            # Auto-derive title from first user message
+            if (
+                message.type == "user"
+                and self._current_session.title == "New Chat"
+            ):
+                text = str(message.content) if message.content else ""
+                self._current_session.title = text[:50] + ("..." if len(text) > 50 else "")
+
             self._save_session_meta(self._current_session)
+        else:
+            # Load the session, add message, and save
+            session = self.load_session(session_id)
+            if session:
+                session.add_message(message)
+                if message.type == "user" and session.title == "New Chat":
+                    text = str(message.content) if message.content else ""
+                    session.title = text[:50] + ("..." if len(text) > 50 else "")
+                self._save_session_meta(session)
 
     def load_session(self, session_id: str) -> Optional[Session]:
         """Load a full session from disk."""
@@ -82,6 +102,7 @@ class SessionManager:
 
         session = Session(
             id=meta["id"],
+            title=meta.get("title", "New Chat"),
             project_path=meta.get("project_path", ""),
             branch=meta.get("branch", "main"),
             created_at=meta.get("created_at", time.time()),
@@ -137,6 +158,16 @@ class SessionManager:
             meta = json.loads(meta_file.read_text())
             if project_path and meta.get("project_path") != project_path:
                 continue
+
+            # Count messages from JSONL file
+            session_path = self._session_file_path(meta["id"])
+            msg_count = 0
+            if session_path.exists():
+                content = session_path.read_text().strip()
+                if content:
+                    msg_count = len(content.split("\n"))
+
+            meta["message_count"] = msg_count
             sessions.append(meta)
             if len(sessions) >= limit:
                 break
@@ -205,6 +236,19 @@ class SessionManager:
         if self._current_session and self._current_session.id == session_id:
             return self._current_session.rollback_checkpoint(file_path)
         return None
+
+    def set_title(self, session_id: str, title: str) -> bool:
+        """Set a custom title for a session."""
+        meta = self.load_session_meta(session_id)
+        if not meta:
+            return False
+        meta["title"] = title
+        meta["updated_at"] = time.time()
+        meta_path = self._meta_file_path(session_id)
+        meta_path.write_text(json.dumps(meta))
+        if self._current_session and self._current_session.id == session_id:
+            self._current_session.title = title
+        return True
 
     def cleanup_old_sessions(self, max_age_days: int = 30) -> int:
         """Remove sessions older than max_age_days."""

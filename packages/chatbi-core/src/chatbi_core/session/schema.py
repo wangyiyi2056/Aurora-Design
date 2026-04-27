@@ -34,6 +34,7 @@ class SessionMessage:
 class Session:
     """A ChatBI session with persistence support."""
     id: str = field(default_factory=lambda: str(uuid4()))
+    title: str = "New Chat"
     project_path: str = ""
     branch: str = "main"
     created_at: float = field(default_factory=lambda: time.time())
@@ -46,6 +47,19 @@ class Session:
         """Add a message to the session."""
         self.messages.append(message)
         self.updated_at = time.time()
+
+    def derive_title(self) -> str:
+        """Derive title from first user message."""
+        for msg in self.messages:
+            if msg.type == "user":
+                text = str(msg.content) if msg.content else ""
+                return text[:50] + ("..." if len(text) > 50 else "")
+        return self.title or "New Chat"
+
+    @property
+    def message_count(self) -> int:
+        """Return the number of messages in this session."""
+        return len(self.messages)
 
     def add_checkpoint(self, file_path: str, content: str) -> None:
         """Add a file checkpoint for rollback support."""

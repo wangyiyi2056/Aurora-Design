@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api-client"
+import type { SessionMeta } from "@/stores/chat-store"
 
 export interface ContentPart {
   type: "text" | "image_url" | "file_url"
@@ -26,7 +27,36 @@ export interface ChatCompleteOptions {
   stream?: boolean
   selectParam?: string
   extInfo?: Record<string, unknown>
+  session_id?: string | null
 }
+
+// --- Session / Conversation CRUD ---
+
+export interface SessionLoadResponse {
+  session: SessionMeta
+  messages: { type: string; content: string; tool_name?: string; tool_call_id?: string }[]
+}
+
+export async function createSession(): Promise<{ session_id: string }> {
+  const res = await apiClient.post("/v1/chat/sessions")
+  return res.data
+}
+
+export async function listSessions(): Promise<{ sessions: SessionMeta[] }> {
+  const res = await apiClient.get("/v1/chat/sessions")
+  return res.data
+}
+
+export async function loadSession(sessionId: string): Promise<SessionLoadResponse> {
+  const res = await apiClient.get(`/v1/chat/sessions/${sessionId}`)
+  return res.data
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  await apiClient.delete(`/v1/chat/sessions/${sessionId}`)
+}
+
+// --- Chat Completion ---
 
 export async function chatComplete(options: ChatCompleteOptions) {
   const {
@@ -36,6 +66,7 @@ export async function chatComplete(options: ChatCompleteOptions) {
     stream = false,
     selectParam,
     extInfo,
+    session_id,
   } = options
 
   const res = await apiClient.post(
@@ -47,6 +78,7 @@ export async function chatComplete(options: ChatCompleteOptions) {
       model_config: modelConfig,
       select_param: selectParam,
       ext_info: extInfo,
+      session_id,
     },
     {
       timeout: 60000,
