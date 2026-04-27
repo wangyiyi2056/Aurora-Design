@@ -244,7 +244,17 @@ export default function ChatPage() {
       <input
         type="file"
         ref={fileInputRef}
-        className="hidden"
+        style={{
+          position: "absolute",
+          width: "1px",
+          height: "1px",
+          padding: 0,
+          margin: -1,
+          overflow: "hidden",
+          clip: "rect(0, 0, 0, 0)",
+          whiteSpace: "nowrap",
+          borderWidth: 0,
+        }}
         onChange={(e) => {
           const file = e.target.files?.[0]
           if (file) handleFileSelect(file)

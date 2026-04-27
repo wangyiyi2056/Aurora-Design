@@ -33,7 +33,7 @@ export const useChatStore = create<ChatState>()(
       ],
       input: "",
       loading: false,
-      model: "gemma-4-e4b-it-8bit",
+      model: "kimi-for-coding",
       setMessages: (messages) => set({ messages }),
       addMessage: (message) =>
         set((state) => ({

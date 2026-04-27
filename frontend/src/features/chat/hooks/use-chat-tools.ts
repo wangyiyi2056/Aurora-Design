@@ -12,7 +12,11 @@ export function useChatTools() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const attachFile = () => {
-    fileInputRef.current?.click()
+    // Use requestAnimationFrame to escape any event-handling context
+    // that could block the file picker (e.g. Radix dropdown close)
+    requestAnimationFrame(() => {
+      fileInputRef.current?.click()
+    })
   }
 
   const handleFileSelect = async (file: File) => {

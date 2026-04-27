@@ -35,6 +35,7 @@ interface ChatInputProps {
 }
 
 const builtinModels = [
+  { value: "kimi-for-coding", label: "Kimi K2.6" },
   { value: "gpt-4o-mini", label: "GPT-4o Mini" },
   { value: "gpt-4o", label: "GPT-4o" },
 ]
@@ -67,6 +68,7 @@ export function ChatInput({
     const lower = value.toLowerCase()
     if (lower.includes("gpt")) return { color: "#10a37f", label: "OpenAI" }
     if (lower.includes("claude") || lower.includes("anthropic")) return { color: "#cc785c", label: "Anthropic" }
+    if (lower.includes("kimi")) return { color: "#6c5ce7", label: "Kimi" }
     if (lower.includes("gemma") || lower.includes("llama") || lower.includes("mistral") || lower.includes("qwen")) return { color: "#a78bfa", label: "Open" }
     return { color: "#00c6ff", label: "LLM" }
   }
@@ -141,7 +143,10 @@ export function ChatInput({
                   Tools
                 </DropdownMenuLabel>
                 <DropdownMenuItem
-                  onClick={onAttachFile}
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    setTimeout(() => onAttachFile?.(), 0)
+                  }}
                   className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 cursor-pointer text-xs"
                 >
                   <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
