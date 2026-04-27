@@ -1,7 +1,8 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { X } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import {
   Select,
@@ -16,11 +17,13 @@ import { useModelsStore } from "@/stores/models-store"
 import { useChatStream } from "@/features/chat/hooks/use-chat-stream"
 import { ChatMessageList } from "@/features/chat/components/chat-message-list"
 import { ChatInput } from "@/features/chat/components/chat-input"
+import { ConversationList } from "@/features/chat/components/conversation-list"
 import { MobileNav } from "@/features/mobile/components/mobile-nav"
 import { useChatTools } from "@/features/chat/hooks/use-chat-tools"
 import { listSkills } from "@/services/models"
 import { listKnowledge, queryKnowledge } from "@/services/knowledge"
 import { listDatasources } from "@/services/database"
+import { createSession, loadSession } from "@/services/chat"
 import type { ChatMessage, ContentPart } from "@/services/chat"
 
 export default function MobileChatPage() {
@@ -30,10 +33,13 @@ export default function MobileChatPage() {
     input,
     loading,
     model,
+    sessionId,
     setInput,
     addMessage,
     setLoading,
-    resetChat,
+    setSessionId,
+    loadSessionMessages,
+    resetToNewChat,
   } = useChatStore()
   const { models } = useModelsStore()
 
@@ -52,6 +58,7 @@ export default function MobileChatPage() {
   const [skillModalOpen, setSkillModalOpen] = useState(false)
   const [knowledgeModalOpen, setKnowledgeModalOpen] = useState(false)
   const [databaseModalOpen, setDatabaseModalOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   const [selectedSkill, setSelectedSkill] = useState<string>()
   const [selectedKnowledge, setSelectedKnowledge] = useState<string>()
@@ -89,6 +96,25 @@ export default function MobileChatPage() {
       setLoading(false)
     },
   })
+
+  // Restore session on mount
+  useEffect(() => {
+    if (sessionId && messages.length <= 1 && messages[0]?.role === "system") {
+      loadSession(sessionId)
+        .then((res) => {
+          const msgs = res.messages
+            .filter((m) => m.type === "user" || m.type === "assistant")
+            .map((m) => ({
+              role: (m.type === "user" ? "user" : "assistant") as "user" | "assistant",
+              content: m.content,
+            }))
+          if (msgs.length > 0) {
+            loadSessionMessages(msgs)
+          }
+        })
+        .catch(() => {})
+    }
+  }, [sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const modelConfig = models.find((m) => m.name === model)
 
@@ -145,6 +171,12 @@ export default function MobileChatPage() {
     const extInfo: Record<string, unknown> = {}
     let selectParam: string | undefined
 
+    // Detect client type: Electron desktop app or web browser
+    extInfo.client_type =
+      typeof window !== "undefined" && "electronAPI" in window
+        ? "desktop"
+        : "web"
+
     const skillAtt = attachments.find((a) => a.type === "skill")
     if (skillAtt) {
       selectParam = skillAtt.name
@@ -154,6 +186,18 @@ export default function MobileChatPage() {
     const dbAtt = attachments.find((a) => a.type === "database")
     if (dbAtt) {
       extInfo.database_name = dbAtt.name
+    }
+
+    // Create session if needed
+    let currentSessionId = sessionId
+    if (!currentSessionId) {
+      try {
+        const { session_id } = await createSession()
+        currentSessionId = session_id
+        setSessionId(session_id)
+      } catch {
+        // Continue without session
+      }
     }
 
     addMessage({ role: "user", content: input.trim() })
@@ -171,6 +215,7 @@ export default function MobileChatPage() {
         : { model_name: model, base_url: "", api_key: "" },
       selectParam,
       extInfo,
+      session_id: currentSessionId,
     })
   }
 
@@ -178,7 +223,12 @@ export default function MobileChatPage() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <MobileNav showNewChat onNewChat={resetChat} />
+      <MobileNav
+        showNewChat
+        onNewChat={resetToNewChat}
+        showHistory
+        onHistory={() => setHistoryOpen(true)}
+      />
       <div className="flex-1 overflow-hidden">
         {hasConversation ? (
           <ChatMessageList messages={messages} loading={loading} />
@@ -225,6 +275,38 @@ export default function MobileChatPage() {
           }}
         />
       </div>
+
+      {/* History Drawer */}
+      {historyOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setHistoryOpen(false)}>
+          <div
+            className="absolute bottom-0 left-0 right-0 max-h-[70vh] bg-surface rounded-t-2xl overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <span className="font-semibold text-sm">Conversations</span>
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(false)}
+                className="h-8 w-8 flex items-center justify-center rounded hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-2">
+              <ConversationList
+                activeId={sessionId}
+                collapsed={false}
+                onSelect={() => setHistoryOpen(false)}
+                onNewChat={() => {
+                  resetToNewChat()
+                  setHistoryOpen(false)
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <Dialog open={skillModalOpen} onOpenChange={setSkillModalOpen}>
         <DialogContent>

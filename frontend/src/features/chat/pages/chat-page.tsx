@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -21,6 +21,7 @@ import { useChatTools } from "@/features/chat/hooks/use-chat-tools"
 import { listSkillsDetail, type SkillInfo } from "@/services/models"
 import { listKnowledge, queryKnowledge } from "@/services/knowledge"
 import { listDatasources } from "@/services/database"
+import { createSession, loadSession } from "@/services/chat"
 import type { ChatMessage, ContentPart } from "@/services/chat"
 
 export default function ChatPage() {
@@ -30,10 +31,13 @@ export default function ChatPage() {
     input,
     loading,
     model,
+    sessionId,
     setInput,
     addMessage,
     setLoading,
     setModel,
+    setSessionId,
+    loadSessionMessages,
   } = useChatStore()
   const { models } = useModelsStore()
 
@@ -137,6 +141,12 @@ export default function ChatPage() {
     const extInfo: Record<string, unknown> = {}
     let selectParam: string | undefined
 
+    // Detect client type: Electron desktop app or web browser
+    extInfo.client_type =
+      typeof window !== "undefined" && "electronAPI" in window
+        ? "desktop"
+        : "web"
+
     const skillAtt = attachments.find((a) => a.type === "skill")
     if (skillAtt) {
       selectParam = skillAtt.name
@@ -153,6 +163,18 @@ export default function ChatPage() {
     setLoading(true)
     clearAttachments()
 
+    // Create a new session if we don't have one yet
+    let currentSessionId = sessionId
+    if (!currentSessionId) {
+      try {
+        const { session_id } = await createSession()
+        currentSessionId = session_id
+        setSessionId(session_id)
+      } catch {
+        // Continue without session persistence
+      }
+    }
+
     sendChatStream({
       messages: newMessages,
       model,
@@ -166,8 +188,30 @@ export default function ChatPage() {
         : { model_name: model, base_url: "", api_key: "", model_type: "llm" },
       selectParam,
       extInfo,
+      session_id: currentSessionId,
     })
   }
+
+  // Restore session messages on mount if we have a sessionId but no messages
+  useEffect(() => {
+    if (sessionId && messages.length <= 1 && messages[0]?.role === "system") {
+      loadSession(sessionId)
+        .then((res) => {
+          const msgs = res.messages
+            .filter((m) => m.type === "user" || m.type === "assistant")
+            .map((m) => ({
+              role: (m.type === "user" ? "user" : "assistant") as "user" | "assistant",
+              content: m.content,
+            }))
+          if (msgs.length > 0) {
+            loadSessionMessages(msgs)
+          }
+        })
+        .catch(() => {
+          // Session not found or error — start fresh
+        })
+    }
+  }, [sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasConversation =
     messages.filter((m) => m.role !== "system").length > 0
@@ -200,13 +244,26 @@ export default function ChatPage() {
       ) : (
         <div className="flex-1">
           <ChatWelcome
-            onSelect={(prompt) => {
+            onSelect={async (prompt) => {
               setInput(prompt)
-              setTimeout(() => {
+              setTimeout(async () => {
                 const userMsg = { role: "user" as const, content: prompt }
                 addMessage(userMsg)
                 setInput("")
                 setLoading(true)
+
+                // Create session for the new chat
+                let currentSessionId = sessionId
+                if (!currentSessionId) {
+                  try {
+                    const { session_id } = await createSession()
+                    currentSessionId = session_id
+                    setSessionId(session_id)
+                  } catch {
+                    // Continue without session
+                  }
+                }
+
                 sendChatStream({
                   messages: [
                     { role: "system" as const, content: messages.find((m) => m.role === "system")?.content || "" },
@@ -221,6 +278,13 @@ export default function ChatPage() {
                         model_type: modelConfig.type,
                       }
                     : { model_name: model, base_url: "", api_key: "", model_type: "llm" },
+                  extInfo: {
+                    client_type:
+                      typeof window !== "undefined" && "electronAPI" in window
+                        ? "desktop"
+                        : "web",
+                  },
+                  session_id: currentSessionId,
                 })
               }, 0)
             }}
