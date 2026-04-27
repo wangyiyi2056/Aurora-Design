@@ -4,6 +4,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { VisChart } from "../../../components/vis/vis-chart"
 import { VisDashboard } from "../../../components/vis/vis-dashboard"
+import { HtmlPreview } from "./html-preview"
 
 interface MessageRendererProps {
   content: string
@@ -78,6 +79,10 @@ export default function MessageRenderer({ content }: MessageRendererProps) {
 
           if (language === "vis-db-chart" || language === "vis-dashboard") {
             return <VisBlock language={language} codeString={codeString} />
+          }
+
+          if (language === "html" || language === "web") {
+            return <HtmlPreview html={codeString} />
           }
 
           return (

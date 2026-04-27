@@ -17,6 +17,8 @@ from chatbi_core.prompt.sections import (
     get_output_efficiency_section,
     get_environment_section,
     get_session_section,
+    get_html_report_section,
+    get_chart_vis_section,
 )
 
 from chatbi_core.prompt.context import (
@@ -47,6 +49,8 @@ __all__ = [
     "get_output_efficiency_section",
     "get_environment_section",
     "get_session_section",
+    "get_html_report_section",
+    "get_chart_vis_section",
     "PromptContext",
     "ContextProvider",
     "get_date_context",

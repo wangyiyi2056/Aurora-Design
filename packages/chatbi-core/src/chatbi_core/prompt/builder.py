@@ -16,6 +16,7 @@ from chatbi_core.prompt.sections import (
     get_environment_section,
     get_session_section,
     get_chart_vis_section,
+    get_html_report_section,
 )
 from chatbi_core.prompt.context import ContextProvider, PromptContext
 
@@ -119,6 +120,12 @@ class PromptBuilder:
             chart_section = get_chart_vis_section()
             if chart_section.content:
                 sections.append(chart_section.content)
+
+        # HTML report generation (ChatBI-specific)
+        if self.include_chart_vis:
+            report_section = get_html_report_section()
+            if report_section.content:
+                sections.append(report_section.content)
 
         return sections
 

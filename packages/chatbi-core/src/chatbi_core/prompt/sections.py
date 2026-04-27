@@ -140,6 +140,44 @@ In code: default to writing no comments. Never write multi-paragraph docstrings 
     return PromptSection(name="output_efficiency", content=content, is_dynamic=False)
 
 
+def get_html_report_section() -> PromptSection:
+    """Instructions for generating HTML analysis reports."""
+    content = """When you have analyzed a file (Excel, CSV, etc.) and need to present a comprehensive analysis report, you MUST output a ```web code block containing a complete, self-contained HTML page. The HTML must be well-designed with modern CSS styling and interactive charts using ECharts.
+
+The HTML report must follow these rules:
+1. Use `<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>` for charts
+2. Include a clear title, summary section, and structured analysis sections
+3. Use modern CSS with good typography, spacing, and responsive layout
+4. Embed chart data directly in `<script>` tags — do NOT use placeholder templates
+5. All data shown in charts must come from the actual file analysis results
+6. Include at minimum:
+   - A hero/summary section with key metrics
+   - Data overview (rows, columns, completeness)
+   - Distribution charts for key numeric columns (bar charts)
+   - Category breakdowns (pie charts for categorical columns)
+   - A findings/conclusions section with actionable insights
+7. Use a professional color palette — avoid default chart colors
+8. Make the report print-friendly with @media print styles
+
+```web
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>/* your styles */</style>
+</head>
+<body>...report content with echarts.init() calls...</body>
+</html>
+```
+
+Important:
+- The HTML MUST be self-contained (no external CSS or JS beyond the ECharts CDN)
+- Use inline styles or a <style> block for all styling
+- Initialize charts in a window.onload or DOMContentLoaded handler
+- Call chart.resize() on window.resize for responsiveness"""
+    return PromptSection(name="html_report", content=content, is_dynamic=True)
+
+
 def get_chart_vis_section() -> PromptSection:
     """ChatBI-specific visualization prompt."""
     content = """When you have analyzed CSV data and want to present a visualization, you MUST output a ```vis-db-chart code block with the following JSON structure:
