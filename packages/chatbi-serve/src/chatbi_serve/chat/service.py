@@ -230,6 +230,50 @@ class EnhancedChatService:
             return OpenAILLM(cfg)
         return self.registry.get_llm(req.model)
 
+    def _read_tabular_file(self, file_path: Path) -> str:
+        """Read Excel/CSV file and return readable text for the LLM."""
+        suffix = file_path.suffix.lower()
+
+        if suffix == ".csv":
+            import csv
+            import io
+
+            raw = file_path.read_text(encoding="utf-8-sig", errors="replace")
+            reader = csv.reader(io.StringIO(raw))
+            rows = list(reader)
+            if not rows:
+                return "[Empty CSV file]"
+            return self._format_table(rows[0], rows[1:])
+
+        if suffix in (".xlsx", ".xls"):
+            import pandas as pd
+
+            df = pd.read_excel(str(file_path), engine="openpyxl", keep_default_na=False)
+            if df.empty:
+                return "[Empty Excel file]"
+            headers = [str(h) for h in df.columns]
+            rows = [
+                [str(df.iloc[i, j]) for j in range(len(headers))]
+                for i in range(len(df))
+            ]
+            return self._format_table(headers, rows)
+
+        # Fallback: try to read as text
+        return file_path.read_text(encoding="utf-8", errors="replace")
+
+    @staticmethod
+    def _format_table(headers: list, rows: list) -> str:
+        """Format tabular data as a readable pipe-separated table."""
+        lines = []
+        lines.append("| " + " | ".join(headers) + " |")
+        lines.append("|" + "|".join(["---" for _ in headers]) + "|")
+        for row in rows[:200]:  # cap at 200 rows to avoid token blowout
+            cells = [str(c).replace("\n", " ").replace("|", "\\|") for c in row]
+            lines.append("| " + " | ".join(cells) + " |")
+        if len(rows) > 200:
+            lines.append(f"\n... ({len(rows) - 200} more rows omitted)")
+        return "\n".join(lines)
+
     def _resolve_content_parts(
         self, content: Union[str, List[ContentPart]]
     ) -> Union[str, List[Dict[str, Any]]]:
@@ -247,7 +291,12 @@ class EnhancedChatService:
             elif part.type == "file_url" and part.file_url is not None:
                 file_path = Path(part.file_url.url)
                 if file_path.exists():
-                    text = file_path.read_text(encoding="utf-8", errors="replace")
+                    try:
+                        text = self._read_tabular_file(file_path)
+                    except Exception:
+                        text = file_path.read_text(
+                            encoding="utf-8", errors="replace"
+                        )
                 else:
                     text = f"[File not found: {part.file_url.url}]"
                 resolved.append(
