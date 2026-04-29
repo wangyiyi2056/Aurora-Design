@@ -15,32 +15,21 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         from pathlib import Path
 
-        from chatbi_core.agent.skill.base import SkillRegistry
+        from chatbi_core.component import SystemApp
         from chatbi_core.config.settings import Settings
-        from chatbi_core.model.adapter.openai_adapter import OpenAILLM
         from chatbi_core.model.adapter.anthropic_adapter import AnthropicLLM
+        from chatbi_core.model.adapter.openai_adapter import OpenAILLM
         from chatbi_core.model.adapter.openai_embeddings import OpenAIEmbeddings
         from chatbi_core.model.registry import ModelRegistry
         from chatbi_core.schema.model import LLMConfig
+        from chatbi_serve.apps.service import AppService
         from chatbi_serve.chat.service import ChatService
         from chatbi_serve.datasource.schema import DBConfig
         from chatbi_serve.datasource.service import DatasourceService
-        from chatbi_serve.skills.anomaly_detection_skill import AnomalyDetectionSkill
-        from chatbi_serve.skills.csv_skill import CSVAnalysisSkill
-        from chatbi_serve.skills.chart_skill import SQLChartSkill, SQLDashboardSkill
-        from chatbi_serve.skills.data_analysis_skill import DataAnalysisSkill
-        from chatbi_serve.skills.data_skills import (
-            DatabaseSchemaSkill,
-            PythonAnalysisSkill,
-            SQLExecuteSkill,
-        )
-        from chatbi_serve.skills.database_summary_skill import DatabaseSummarySkill
-        from chatbi_serve.skills.excel_skill import Excel2TableSkill
-        from chatbi_serve.skills.indicator_skill import IndicatorSkill
-        from chatbi_serve.skills.metric_info_skill import MetricInfoSkill
-        from chatbi_serve.skills.report_skill import ReportSkill
-        from chatbi_serve.skills.volatility_analysis_skill import VolatilityAnalysisSkill
-        from chatbi_serve.skills.web_search_skill import WebSearchSkill
+        from chatbi_serve.knowledge.service import KnowledgeService
+        from chatbi_serve.metadata import MetadataStore
+        from chatbi_serve.models.service import ModelConfigService
+        from chatbi_serve.skills.service import SkillService
 
         config_path = Path("configs/chatbi.toml")
         if not config_path.exists():
@@ -51,6 +40,13 @@ def create_app() -> FastAPI:
             if config_path.exists()
             else Settings()
         )
+        system_app = SystemApp(app)
+        app.state.system_app = system_app
+
+        metadata_store = MetadataStore()
+        system_app.register_instance(metadata_store)
+        app.state.metadata_store = metadata_store
+
         registry = ModelRegistry()
         for cfg in settings.llm_configs:
             model_type = cfg.get("model_type", "openai")
@@ -82,67 +78,29 @@ def create_app() -> FastAPI:
                 llm_config = LLMConfig(**cfg)
                 registry.register_llm(cfg["model_name"], AnthropicLLM(llm_config))
         app.state.model_registry = registry
+        model_config_service = ModelConfigService(metadata_store, registry)
+        system_app.register_instance(model_config_service)
 
-        datasource_service = DatasourceService()
+        datasource_service = DatasourceService(metadata_store)
         for ds_cfg in settings.datasource_configs:
             datasource_service.add_connection(DBConfig(**ds_cfg))
+        system_app.register_instance(datasource_service)
         app.state.datasource_service = datasource_service
 
         default_ds = settings.default_datasource if hasattr(settings, "default_datasource") else ""
 
-        skill_registry = SkillRegistry()
-        skill_registry.register(CSVAnalysisSkill())
-        skill_registry.register(
-            SQLExecuteSkill(
-                datasource_service=datasource_service,
-                datasource_name=default_ds,
-            )
-        )
-        skill_registry.register(
-            DatabaseSchemaSkill(
-                datasource_service=datasource_service,
-                datasource_name=default_ds,
-            )
-        )
-        skill_registry.register(PythonAnalysisSkill())
-        skill_registry.register(WebSearchSkill())
-        skill_registry.register(
-            Excel2TableSkill(
-                datasource_service=datasource_service,
-                datasource_name=default_ds,
-            )
-        )
-        try:
-            default_llm = registry.get_llm()
-        except RuntimeError:
-            default_llm = None
-        skill_registry.register(
-            SQLChartSkill(
-                llm=default_llm,
-                datasource_service=datasource_service,
-                datasource_name=default_ds,
-            )
-        )
-        skill_registry.register(
-            SQLDashboardSkill(
-                llm=default_llm,
-                datasource_service=datasource_service,
-                datasource_name=default_ds,
-            )
-        )
-        skill_registry.register(IndicatorSkill())
-        skill_registry.register(AnomalyDetectionSkill())
-        skill_registry.register(MetricInfoSkill())
-        skill_registry.register(VolatilityAnalysisSkill())
-        skill_registry.register(ReportSkill())
-        skill_registry.register(DataAnalysisSkill())
-        skill_registry.register(
-            DatabaseSummarySkill(
-                datasource_service=datasource_service,
-                datasource_name=default_ds,
-            )
-        )
+        skill_service = SkillService(datasource_service, registry, default_ds)
+        system_app.register_instance(skill_service)
+        skill_registry = skill_service.registry
         app.state.skill_registry = skill_registry
+
+        knowledge_service = KnowledgeService(metadata_store, registry)
+        system_app.register_instance(knowledge_service)
+        app.state.knowledge_service = knowledge_service
+
+        app_service = AppService(metadata_store)
+        system_app.register_instance(app_service)
+        app.state.app_service = app_service
 
         # Initialize MCP client
         from chatbi_core.mcp.client import MCPClient
@@ -164,11 +122,14 @@ def create_app() -> FastAPI:
         app.state.chat_service = ChatService(
             registry, skill_registry, mcp_client=mcp_client
         )
+        system_app.register_instance(app.state.chat_service, name="chat_service")
 
-        app.state.knowledge_stores = {}
+        system_app.on_init()
+        system_app.after_init()
         yield
 
         # Shutdown
+        system_app.before_stop()
         mcp_client.disconnect_all()
 
     app = FastAPI(title="ChatBI", lifespan=lifespan)
@@ -181,3 +142,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(api_router, prefix="/api/v1")
     return app
+
+
+# Create app instance for uvicorn
+app = create_app()

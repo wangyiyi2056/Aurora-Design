@@ -1,30 +1,103 @@
-import { useState, Suspense, lazy } from "react"
+import { useState, Suspense, lazy, Component, type ReactNode } from "react"
 import { User, Bot, Check, Copy } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
+import type { MessagePart, ToolPart, ReasoningPart } from "@/stores/chat-store"
+import { ToolCard } from "./tool-card"
+import { ReasoningDisplay } from "./reasoning-display"
 
 const MessageRenderer = lazy(() => import("./message-renderer"))
 
-interface ChatMessageItemProps {
-  role: "user" | "assistant" | "system"
-  content: string
+/**
+ * Simple ErrorBoundary for lazy-loaded components.
+ * Catches rendering errors and displays a fallback message.
+ */
+class MessageRendererErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <span className="text-muted-foreground text-xs">
+          Failed to render message content
+        </span>
+      )
+    }
+    return this.props.children
+  }
 }
 
-export function ChatMessageItem({ role, content }: ChatMessageItemProps) {
+interface ChatMessageItemProps {
+  role: "user" | "assistant" | "system"
+  content: string | MessagePart[]
+  /** Start time for reasoning duration display */
+  startTime?: number
+  /** End time for reasoning duration display */
+  endTime?: number
+  /** Additional thinking content (legacy prop for backward compatibility) */
+  thinkingContent?: string
+  /** Whether this message is currently streaming */
+  streaming?: boolean
+}
+
+// Helper to get text content from MessagePart[]
+function getTextContent(content: string | MessagePart[]): string {
+  if (typeof content === "string") return content
+  return content.filter(p => p.type === "text").map(p => (p as { text: string }).text).join("")
+}
+
+// Helper to get tool parts from MessagePart[]
+function getToolParts(content: string | MessagePart[]): ToolPart[] {
+  if (typeof content === "string") return []
+  return content.filter(p => p.type === "tool") as ToolPart[]
+}
+
+// Helper to get reasoning parts from MessagePart[]
+function getReasoningParts(content: string | MessagePart[]): ReasoningPart[] {
+  if (typeof content === "string") return []
+  return content.filter(p => p.type === "reasoning") as ReasoningPart[]
+}
+
+export function ChatMessageItem({
+  role,
+  content,
+  startTime,
+  endTime,
+  thinkingContent,
+  streaming = false,
+}: ChatMessageItemProps) {
   const isUser = role === "user"
   const [copied, setCopied] = useState(false)
   const { t } = useTranslation("chat")
 
+  // Get string content for display/copy
+  const textContent = getTextContent(content)
+  // Get tool and reasoning parts
+  const toolParts = getToolParts(content)
+  const reasoningParts = getReasoningParts(content)
+  // Has multi-part content
+  const hasToolParts = toolParts.length > 0
+  const hasReasoningParts = reasoningParts.length > 0 || !!thinkingContent
+  // Combined reasoning content
+  const combinedReasoning = reasoningParts.map(p => p.text).join("\n") || thinkingContent || ""
+
   if (role === "system") {
     return (
       <div className="text-center text-muted-foreground/50 text-[11px] py-2 tracking-wide uppercase">
-        {content}
+        {textContent}
       </div>
     )
   }
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(content)
+    await navigator.clipboard.writeText(textContent)
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
@@ -51,6 +124,34 @@ export function ChatMessageItem({ role, content }: ChatMessageItemProps) {
 
       {/* Bubble */}
       <div className="relative max-w-[80%] flex flex-col">
+        {/* Reasoning parts - displayed above the bubble for assistant messages */}
+        {!isUser && hasReasoningParts && combinedReasoning && (
+          <div className="mb-2">
+            <ReasoningDisplay
+              content={combinedReasoning}
+              startTime={startTime}
+              endTime={endTime}
+              expanded={streaming}
+              className="shadow-sm"
+            />
+          </div>
+        )}
+
+        {/* Tool parts - displayed above the bubble for assistant messages */}
+        {!isUser && hasToolParts && (
+          <div className="mb-2 space-y-2">
+            {toolParts.map((part) => (
+              <ToolCard
+                key={part.id}
+                part={part}
+                compact
+                defaultOpen={part.state.status === "error" || streaming}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Text content bubble */}
         <div
           className={cn(
             "text-sm px-4 py-3 transition-all duration-200",
@@ -59,9 +160,11 @@ export function ChatMessageItem({ role, content }: ChatMessageItemProps) {
               : "assistant-bubble text-foreground rounded-[18px] rounded-tl-[6px]"
           )}
         >
-          {isUser ? content : (
+          {isUser ? textContent : (
             <Suspense fallback={<div className="text-muted-foreground">Loading content...</div>}>
-              <MessageRenderer content={content} />
+              <MessageRendererErrorBoundary>
+                <MessageRenderer content={textContent} />
+              </MessageRendererErrorBoundary>
             </Suspense>
           )}
         </div>

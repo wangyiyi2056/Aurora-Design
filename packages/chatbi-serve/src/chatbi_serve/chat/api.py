@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse
 from chatbi_serve.chat.schema import (
     ChatRequest,
     ChatResponse,
+    ReactAgentRequest,
     SessionCreateResponse,
     SessionListResponse,
     SessionLoadResponse,
@@ -28,6 +29,16 @@ async def chat_completions(
             media_type="text/event-stream",
         )
     return await service.chat(req, session_id=req.session_id)
+
+
+@router.post("/react-agent")
+async def react_agent_stream(
+    req: ReactAgentRequest, service: ChatService = Depends(get_chat_service)
+) -> StreamingResponse:
+    return StreamingResponse(
+        service.react_agent_stream(req),
+        media_type="text/event-stream",
+    )
 
 
 # --- Session Management Endpoints ---

@@ -46,6 +46,21 @@ class ChatRequest(BaseModel):
         populate_by_name = True
 
 
+class ReactAgentRequest(BaseModel):
+    user_input: str
+    conv_uid: Optional[str] = None
+    chat_mode: Optional[str] = None
+    model_name: Optional[str] = None
+    select_param: Optional[str] = None
+    temperature: Optional[float] = None
+    max_new_tokens: Optional[int] = None
+    model_config_field: Optional[ModelConfig] = Field(None, alias="model_config")
+    ext_info: Optional[Dict[str, Any]] = None
+
+    class Config:
+        populate_by_name = True
+
+
 class ChatChoice(BaseModel):
     index: int = 0
     message: ChatMessage

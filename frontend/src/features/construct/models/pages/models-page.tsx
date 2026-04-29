@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { Edit, Trash2, Plug, Plus, Loader2 } from "lucide-react"
@@ -32,12 +33,18 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ConstructShell } from "@/features/construct/components/construct-shell"
-import { useModelsStore, type ModelItem } from "@/stores/models-store"
-import { testModelConnection } from "@/services/model-test"
+import {
+  createModelConfig,
+  deleteModelConfig,
+  listModelConfigs,
+  testSavedModelConnection,
+  updateModelConfig,
+  type ModelItem,
+} from "@/services/models"
 
 const modelTypes = [
-  { value: "llm", label: "LLM (OpenAI)" },
-  { value: "anthropic", label: "LLM (Anthropic/Kimi)" },
+  { value: "llm", label: "LLM (OpenAI Compatible)" },
+  { value: "anthropic", label: "LLM (Anthropic)" },
   { value: "embedding", label: "Embedding" },
   { value: "rerank", label: "Rerank" },
 ]
@@ -51,7 +58,21 @@ interface FormData {
 
 export default function ModelsPage() {
   const { t } = useTranslation(["construct", "common"])
-  const { models, addModel, updateModel, removeModel } = useModelsStore()
+  const qc = useQueryClient()
+  const modelsQuery = useQuery({
+    queryKey: ["models", "list"],
+    queryFn: listModelConfigs,
+  })
+  const models = modelsQuery.data?.items || []
+  const invalidateModels = () => qc.invalidateQueries({ queryKey: ["models", "list"] })
+  const createMutation = useMutation({ mutationFn: createModelConfig, onSuccess: invalidateModels })
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateModelConfig>[1] }) =>
+      updateModelConfig(id, payload),
+    onSuccess: invalidateModels,
+  })
+  const deleteMutation = useMutation({ mutationFn: deleteModelConfig, onSuccess: invalidateModels })
+  const testMutation = useMutation({ mutationFn: testSavedModelConnection, onSuccess: invalidateModels })
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingModel, setEditingModel] = useState<ModelItem | null>(null)
   const [testingId, setTestingId] = useState<string | null>(null)
@@ -61,7 +82,7 @@ export default function ModelsPage() {
     name: "",
     type: "llm",
     baseUrl: "http://127.0.0.1:8000/v1",
-    apiKey: "",
+    apiKey: "123456",
   })
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
@@ -70,33 +91,37 @@ export default function ModelsPage() {
     const errors: Record<string, string> = {}
     if (!formData.name.trim()) errors.name = t("models.nameRequired")
     if (!formData.baseUrl.trim()) errors.baseUrl = t("models.baseUrlRequired")
-    if (!formData.apiKey.trim()) errors.apiKey = t("models.apiKeyRequired")
+    if (!editingModel && !formData.apiKey.trim()) errors.apiKey = t("models.apiKeyRequired")
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!validateForm()) return
-    addModel({
+    await createMutation.mutateAsync({
       name: formData.name,
       type: formData.type,
-      baseUrl: formData.baseUrl,
-      apiKey: formData.apiKey,
+      base_url: formData.baseUrl,
+      api_key: formData.apiKey,
     })
     setIsModalOpen(false)
     resetForm()
     toast.success(t("models.addSuccess"))
   }
 
-  const handleEdit = () => {
+  const handleEdit = async () => {
     if (!editingModel) return
     if (!validateForm()) return
-    updateModel(editingModel.id, {
+    await updateMutation.mutateAsync({
+      id: editingModel.id,
+      payload: {
       name: formData.name,
       type: formData.type,
-      baseUrl: formData.baseUrl,
-      apiKey: formData.apiKey,
-      status: "untested",
+      base_url: formData.baseUrl,
+      ...(formData.apiKey.trim() && !formData.apiKey.includes("...")
+        ? { api_key: formData.apiKey }
+        : {}),
+      },
     })
     setIsModalOpen(false)
     setEditingModel(null)
@@ -110,7 +135,7 @@ export default function ModelsPage() {
       name: item.name,
       type: item.type,
       baseUrl: item.baseUrl,
-      apiKey: item.apiKey,
+      apiKey: "",
     })
     setFormErrors({})
     setIsModalOpen(true)
@@ -127,21 +152,18 @@ export default function ModelsPage() {
       name: "",
       type: "llm",
       baseUrl: "http://127.0.0.1:8000/v1",
-      apiKey: "",
+      apiKey: "123456",
     })
     setFormErrors({})
   }
 
   const handleTest = async (item: ModelItem) => {
     setTestingId(item.id)
-    updateModel(item.id, { status: "testing" })
     try {
-      await testModelConnection(item.baseUrl, item.apiKey, item.type)
-      updateModel(item.id, { status: "available", statusMessage: undefined })
+      await testMutation.mutateAsync(item.id)
       toast.success(t("models.testSuccess"))
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("models.testFailed")
-      updateModel(item.id, { status: "error", statusMessage: msg })
       toast.error(msg)
     } finally {
       setTestingId(null)
@@ -149,7 +171,7 @@ export default function ModelsPage() {
   }
 
   const handleDelete = (id: string) => {
-    removeModel(id)
+    deleteMutation.mutate(id)
     setDeleteConfirmOpen(null)
   }
 

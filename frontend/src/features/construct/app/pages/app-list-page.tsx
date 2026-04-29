@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,15 +15,8 @@ import {
 import { Tag } from "@/components/ui/tag"
 import { Steps } from "@/components/ui/steps"
 import { ConstructShell } from "@/features/construct/components/construct-shell"
-
-interface AppItem {
-  id: string
-  name: string
-  description: string
-  type: string
-  model: string
-  published: boolean
-}
+import { createApp, listApps } from "@/services/apps"
+import { listModelConfigs } from "@/services/models"
 
 const appTypes = [
   { value: "chat", label: "Chat" },
@@ -45,9 +39,19 @@ interface FormData {
 
 export default function AppListPage() {
   const { t } = useTranslation("construct")
-  const [apps, setApps] = useState<AppItem[]>([
-    { id: "1", name: "Data Analyst", description: "Analyze sales data", type: "chat", model: "gpt-4", published: true },
-  ])
+  const qc = useQueryClient()
+  const appsQuery = useQuery({ queryKey: ["apps", "list"], queryFn: listApps })
+  const modelsQuery = useQuery({ queryKey: ["models", "list"], queryFn: listModelConfigs })
+  const apps = appsQuery.data?.items || []
+  const modelOptions = modelsQuery.data?.items.map((item) => ({
+    value: item.name,
+    label: item.name,
+  }))
+  const availableModels = modelOptions?.length ? modelOptions : models
+  const createMutation = useMutation({
+    mutationFn: createApp,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["apps", "list"] }),
+  })
   const [creating, setCreating] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
 
@@ -75,15 +79,11 @@ export default function AppListPage() {
     return Object.keys(errors).length === 0
   }
 
-  const handleSave = () => {
-    setApps((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        ...formData,
-        published: currentStep === 2,
-      },
-    ])
+  const handleSave = async () => {
+    await createMutation.mutateAsync({
+      ...formData,
+      published: currentStep === 2,
+    })
     setCreating(false)
     setCurrentStep(0)
     setFormData({ name: "", description: "", type: "chat", model: "gpt-4" })
@@ -198,7 +198,7 @@ export default function AppListPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {models.map((opt) => (
+                    {availableModels.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>
                         {opt.label}
                       </SelectItem>

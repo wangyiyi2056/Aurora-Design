@@ -24,7 +24,7 @@ import { listSkills } from "@/services/models"
 import { listKnowledge, queryKnowledge } from "@/services/knowledge"
 import { listDatasources } from "@/services/database"
 import { createSession, loadSession } from "@/services/chat"
-import type { ChatMessage, ContentPart } from "@/services/chat"
+import type { APIChatMessage, ContentPart } from "@/services/chat"
 
 export default function MobileChatPage() {
   const { t } = useTranslation(["chat", "common"])
@@ -164,9 +164,19 @@ export default function MobileChatPage() {
     const existingSystem =
       messages.find((m) => m.role === "system")?.content || ""
 
-    const newMessages: ChatMessage[] = [
-      { role: "system", content: existingSystem },
-      ...messages.filter((m) => m.role !== "system"),
+    // Convert store messages to API format
+    const storeMessages = messages.filter((m) => m.role !== "system").map((m) => ({
+      role: m.role as "user" | "assistant" | "system",
+      content: typeof m.content === "string"
+        ? m.content
+        : m.content
+            .filter(p => p.type === "text")
+            .map(p => ({ type: "text" as const, text: (p as { text: string }).text })),
+    }))
+
+    const newMessages: APIChatMessage[] = [
+      { role: "system", content: typeof existingSystem === "string" ? existingSystem : "" },
+      ...storeMessages,
       { role: "user", content: contentParts },
     ]
 
@@ -202,13 +212,13 @@ export default function MobileChatPage() {
     chatStream.mutate({
       messages: newMessages,
       model,
-      modelConfig: modelConfig
+      modelConfig: modelConfig?.apiKey && !modelConfig.apiKey.includes("...")
         ? {
             model_name: modelConfig.name,
             base_url: modelConfig.baseUrl,
             api_key: modelConfig.apiKey,
           }
-        : { model_name: model, base_url: "", api_key: "" },
+        : undefined,
       selectParam,
       extInfo,
       session_id: currentSessionId,

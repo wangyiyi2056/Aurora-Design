@@ -8,10 +8,14 @@ export interface ContentPart {
   file_url?: { url: string; file_name: string }
 }
 
-export interface ChatMessage {
+// API request message format (for backend communication)
+export interface APIChatMessage {
   role: "user" | "assistant" | "system" | "tool"
   content: string | ContentPart[]
 }
+
+// Alias for backward compatibility
+export type ChatMessage = APIChatMessage
 
 export interface ModelConfig {
   model_name: string
@@ -23,7 +27,7 @@ export interface ModelConfig {
 export interface ChatCompleteOptions {
   messages: ChatMessage[]
   model: string
-  modelConfig: ModelConfig
+  modelConfig?: ModelConfig
   stream?: boolean
   selectParam?: string
   extInfo?: Record<string, unknown>

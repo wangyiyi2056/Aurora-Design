@@ -1,10 +1,46 @@
-"""Models API endpoint for testing model connections."""
+"""Models API endpoints for persisted model configuration and connection tests."""
 
 import httpx
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
+
+from chatbi_serve.metadata import ModelConfigEntity
+from chatbi_serve.models.service import ModelConfigService, mask_api_key
 
 router = APIRouter(prefix="/models", tags=["models"])
+
+
+class ModelConfigCreate(BaseModel):
+    name: str
+    type: str = "llm"
+    base_url: str = ""
+    api_key: str = ""
+    is_default: bool = False
+
+
+class ModelConfigUpdate(BaseModel):
+    name: str | None = None
+    type: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    is_default: bool | None = None
+    status: str | None = None
+    status_message: str | None = None
+
+
+class ModelConfigResponse(BaseModel):
+    id: str
+    name: str
+    type: str
+    base_url: str
+    api_key: str
+    is_default: bool
+    status: str
+    status_message: str | None = None
+
+
+class ModelConfigListResponse(BaseModel):
+    items: list[ModelConfigResponse] = Field(default_factory=list)
 
 
 class ModelTestRequest(BaseModel):
@@ -17,6 +53,64 @@ class ModelTestResponse(BaseModel):
     success: bool
     message: str
     model_info: dict | None = None
+
+
+def get_model_config_service(request: Request) -> ModelConfigService:
+    return request.app.state.system_app.get_component(
+        "model_config_service", ModelConfigService
+    )
+
+
+def model_to_response(entity: ModelConfigEntity, masked: bool = True) -> ModelConfigResponse:
+    return ModelConfigResponse(
+        id=entity.id,
+        name=entity.name,
+        type=entity.type,
+        base_url=entity.base_url,
+        api_key=mask_api_key(entity.api_key) if masked else entity.api_key,
+        is_default=entity.is_default,
+        status=entity.status,
+        status_message=entity.status_message,
+    )
+
+
+@router.get("", response_model=ModelConfigListResponse)
+async def list_model_configs(
+    service: ModelConfigService = Depends(get_model_config_service),
+) -> ModelConfigListResponse:
+    return ModelConfigListResponse(
+        items=[model_to_response(entity) for entity in service.list()]
+    )
+
+
+@router.post("", response_model=ModelConfigResponse)
+async def create_model_config(
+    req: ModelConfigCreate,
+    service: ModelConfigService = Depends(get_model_config_service),
+) -> ModelConfigResponse:
+    entity = service.create(**req.model_dump())
+    return model_to_response(entity)
+
+
+@router.put("/{model_id}", response_model=ModelConfigResponse)
+async def update_model_config(
+    model_id: str,
+    req: ModelConfigUpdate,
+    service: ModelConfigService = Depends(get_model_config_service),
+) -> ModelConfigResponse:
+    try:
+        entity = service.update(model_id, **req.model_dump(exclude_unset=True))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Model config not found")
+    return model_to_response(entity)
+
+
+@router.delete("/{model_id}")
+async def delete_model_config(
+    model_id: str,
+    service: ModelConfigService = Depends(get_model_config_service),
+) -> dict:
+    return {"success": service.delete(model_id)}
 
 
 @router.post("/test", response_model=ModelTestResponse)
@@ -66,6 +160,7 @@ async def test_model_connection(req: ModelTestRequest):
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Connection failed: {str(e)}")
 
+
     else:
         # OpenAI-style API test
         try:
@@ -94,3 +189,27 @@ async def test_model_connection(req: ModelTestRequest):
             )
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Connection failed: {str(e)}")
+
+
+@router.post("/{model_id}/test", response_model=ModelTestResponse)
+async def test_saved_model_connection(
+    model_id: str,
+    service: ModelConfigService = Depends(get_model_config_service),
+) -> ModelTestResponse:
+    try:
+        entity = service.get(model_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Model config not found")
+    try:
+        response = await test_model_connection(
+            ModelTestRequest(
+                base_url=entity.base_url,
+                api_key=entity.api_key,
+                model_type=entity.type,
+            )
+        )
+    except HTTPException as exc:
+        service.set_test_status(model_id, False, str(exc.detail))
+        raise
+    service.set_test_status(model_id, response.success, response.message)
+    return response

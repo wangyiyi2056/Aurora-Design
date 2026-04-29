@@ -1,26 +1,55 @@
 from typing import Dict, List, Optional
 
+from chatbi_core.component import BaseService
 from chatbi_core.datasource.base import BaseConnector
 from chatbi_core.datasource.rdbms.duckdb import DuckDBConnector
 from chatbi_core.datasource.rdbms.mysql import MySQLConnector
 from chatbi_core.datasource.rdbms.postgresql import PostgreSQLConnector
 from chatbi_core.datasource.rdbms.sqlite import SQLiteConnector
 from chatbi_serve.datasource.schema import DBConfig
+from chatbi_serve.metadata import DatasourceEntity, MetadataStore
 
 
-class DatasourceService:
-    def __init__(self):
+class DatasourceService(BaseService):
+    name = "datasource_service"
+
+    def __init__(self, metadata_store: MetadataStore | None = None):
+        self.metadata_store = metadata_store
         self._connectors: Dict[str, BaseConnector] = {}
+        if metadata_store is not None:
+            self._load_saved_connections()
 
     def add_connection(self, config: DBConfig) -> None:
         connector = self._build_connector(config)
         self._connectors[config.name] = connector
+        if self.metadata_store is not None:
+            with self.metadata_store.session() as session:
+                entity = session.get(DatasourceEntity, config.name)
+                if entity is None:
+                    entity = DatasourceEntity(name=config.name, db_type=config.db_type)
+                    session.add(entity)
+                entity.db_type = config.db_type
+                entity.host = config.host
+                entity.port = config.port
+                entity.user = config.user
+                entity.password = config.password
+                entity.database = config.database
+                entity.extra = config.extra
+                session.commit()
 
     def remove_connection(self, name: str) -> bool:
+        removed = False
         if name in self._connectors:
             del self._connectors[name]
-            return True
-        return False
+            removed = True
+        if self.metadata_store is not None:
+            with self.metadata_store.session() as session:
+                entity = session.get(DatasourceEntity, name)
+                if entity is not None:
+                    session.delete(entity)
+                    session.commit()
+                    removed = True
+        return removed
 
     def get_connector(self, name: str) -> BaseConnector:
         if name not in self._connectors:
@@ -61,3 +90,18 @@ class DatasourceService:
                 database=config.database or "mysql",
             )
         raise ValueError(f"Unsupported db_type: {db_type}")
+
+    def _load_saved_connections(self) -> None:
+        with self.metadata_store.session() as session:
+            for entity in session.query(DatasourceEntity).all():
+                config = DBConfig(
+                    name=entity.name,
+                    db_type=entity.db_type,
+                    host=entity.host,
+                    port=entity.port,
+                    user=entity.user,
+                    password=entity.password,
+                    database=entity.database,
+                    extra=entity.extra or {},
+                )
+                self._connectors[entity.name] = self._build_connector(config)

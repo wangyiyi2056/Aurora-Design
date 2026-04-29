@@ -93,6 +93,14 @@ module.exports = {
           "0%, 100%": { opacity: "0.4" },
           "50%": { opacity: "1" },
         },
+        "collapsible-open": {
+          from: { height: "0", opacity: "0" },
+          to: { height: "var(--radix-collapsible-content-height)", opacity: "1" },
+        },
+        "collapsible-closed": {
+          from: { height: "var(--radix-collapsible-content-height)", opacity: "1" },
+          to: { height: "0", opacity: "0" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -100,6 +108,8 @@ module.exports = {
         "message-fade-in": "message-fade-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         "bounce-dot": "bounce-dot 1.4s ease-in-out infinite both",
         "pulse-glow": "pulse-glow 2s ease-in-out infinite",
+        "collapsible-open": "collapsible-open 0.2s ease-out",
+        "collapsible-closed": "collapsible-closed 0.15s ease-in",
       },
     },
   },

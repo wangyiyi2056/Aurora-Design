@@ -1,9 +1,14 @@
 """Enhanced Chat Service with Claude Code architecture."""
 
 import json
+import logging
+import re
 import time
+from html import escape
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
+
+logger = logging.getLogger(__name__)
 
 from chatbi_core.agent.skill.base import SkillRegistry
 from chatbi_core.session import SessionManager, SessionMessage, Session
@@ -19,12 +24,15 @@ from chatbi_core.model.registry import ModelRegistry
 from chatbi_core.schema.message import Message, ToolCall
 from chatbi_core.schema.model import LLMConfig
 from chatbi_core.mode import ChatMode
+from chatbi_serve.excel.pipeline import ExcelAnalysisPipeline
 from chatbi_serve.chat.schema import (
     ChatChoice,
     ChatMessage,
     ChatRequest,
     ChatResponse,
     ContentPart,
+    FileUrlPart,
+    ReactAgentRequest,
 )
 
 # Plan mode system (ported from Claude Code)
@@ -196,6 +204,9 @@ class EnhancedChatService:
                 api_base=req.model_config_field.base_url,
                 api_key=req.model_config_field.api_key,
             )
+            # Kimi Coding API uses OpenAI format, force OpenAI adapter
+            if "kimi.com/coding" in (req.model_config_field.base_url or ""):
+                return OpenAILLM(cfg)
             if model_type == "anthropic":
                 return AnthropicLLM(cfg)
             return OpenAILLM(cfg)
@@ -255,6 +266,302 @@ class EnhancedChatService:
 
         # Fallback: try to read as text
         return file_path.read_text(encoding="utf-8", errors="replace")
+
+    @staticmethod
+    def _is_tabular_file_name(file_name: str) -> bool:
+        return Path(file_name).suffix.lower() in {".csv", ".xlsx", ".xls"}
+
+    def _extract_latest_tabular_attachment(
+        self, req: ChatRequest
+    ) -> tuple[str, str] | None:
+        """Return (file_path, file_name) for the latest user tabular file attachment."""
+        for message in reversed(req.messages):
+            if message.role != "user" or not isinstance(message.content, list):
+                continue
+            for part in message.content:
+                if part.type != "file_url" or part.file_url is None:
+                    continue
+                file_name = part.file_url.file_name or Path(part.file_url.url).name
+                if self._is_tabular_file_name(file_name):
+                    return part.file_url.url, file_name
+        return None
+
+    def _extract_latest_user_question(self, req: ChatRequest) -> str:
+        """Extract text question from the latest user message."""
+        for message in reversed(req.messages):
+            if message.role != "user":
+                continue
+            if isinstance(message.content, str):
+                return message.content.strip()
+            texts: list[str] = []
+            for part in message.content:
+                if part.type == "text" and part.text:
+                    texts.append(part.text)
+            return " ".join(texts).strip()
+        return ""
+
+    async def _run_excel_analysis(
+        self,
+        req: ChatRequest,
+        emit_step: Optional[Callable[[str, str, Optional[str]], None]] = None,
+    ) -> str | None:
+        """Run deterministic Excel/CSV analysis when the request carries a table file."""
+        attachment = self._extract_latest_tabular_attachment(req)
+        if not attachment:
+            return None
+
+        file_path, file_name = attachment
+        if not Path(file_path).exists():
+            return f"File not found: {file_path}"
+
+        question = self._extract_latest_user_question(req)
+        if not question:
+            question = "请分析这份表格数据"
+
+        llm = self._get_llm(req)
+        pipeline = ExcelAnalysisPipeline(
+            llm=llm,
+            file_path=file_path,
+            file_name=file_name,
+            database=":memory:",
+            table_name="data_analysis_table",
+            language="zh",
+            emit_step=emit_step,
+        )
+        try:
+            return await pipeline.analyze(question)
+        finally:
+            pipeline.close()
+
+    @staticmethod
+    def _sse_event(payload: dict[str, Any]) -> str:
+        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    @staticmethod
+    def _strip_vis_chart_blocks(text: str) -> str:
+        return re.sub(r"```vis-chart\s*[\s\S]*?```", "", text or "").strip()
+
+    @staticmethod
+    def _extract_vis_chart_payloads(text: str) -> list[dict[str, Any]]:
+        payloads: list[dict[str, Any]] = []
+        for match in re.finditer(r"```vis-chart\s*([\s\S]*?)```", text or ""):
+            try:
+                payload = json.loads(match.group(1).strip())
+                if isinstance(payload, dict):
+                    payloads.append(payload)
+            except json.JSONDecodeError:
+                continue
+        return payloads
+
+    @classmethod
+    def _build_report_html(cls, analysis_text: str, question: str) -> str:
+        charts = cls._extract_vis_chart_payloads(analysis_text)
+        summary = cls._strip_vis_chart_blocks(analysis_text) or "分析完成。"
+        chart_sections: list[str] = []
+        for idx, chart in enumerate(charts, start=1):
+            data = chart.get("data") or []
+            sql = chart.get("sql") or ""
+            columns = list(data[0].keys()) if isinstance(data, list) and data else []
+            rows = []
+            for row in data[:100] if isinstance(data, list) else []:
+                rows.append(
+                    "<tr>"
+                    + "".join(f"<td>{escape(str(row.get(col, '')))}</td>" for col in columns)
+                    + "</tr>"
+                )
+            table = (
+                "<table><thead><tr>"
+                + "".join(f"<th>{escape(str(col))}</th>" for col in columns)
+                + "</tr></thead><tbody>"
+                + "".join(rows)
+                + "</tbody></table>"
+                if columns
+                else "<p class='muted'>暂无表格数据</p>"
+            )
+            chart_sections.append(
+                f"""
+                <section class="card">
+                  <div class="card-title">结果 {idx} · {escape(str(chart.get('type', 'table')))}</div>
+                  {table}
+                  <details><summary>SQL</summary><pre>{escape(str(sql))}</pre></details>
+                </section>
+                """
+            )
+        if not chart_sections:
+            chart_sections.append("<section class='card'><p class='muted'>没有生成可视化数据。</p></section>")
+        return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Report</title>
+  <style>
+    :root {{ color-scheme: light; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    body {{ margin: 0; background: #f7f8fb; color: #1f2937; }}
+    .shell {{ max-width: 1120px; margin: 0 auto; padding: 32px; }}
+    .hero {{ background: #101828; color: white; padding: 28px; border-radius: 18px; }}
+    .hero h1 {{ margin: 0 0 10px; font-size: 28px; }}
+    .hero p {{ margin: 0; color: #d0d5dd; line-height: 1.7; }}
+    .grid {{ display: grid; gap: 18px; margin-top: 20px; }}
+    .card {{ background: white; border: 1px solid #e5e7eb; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(15,23,42,.06); }}
+    .card-title {{ font-weight: 700; margin-bottom: 14px; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
+    th, td {{ border-bottom: 1px solid #edf0f3; padding: 10px 12px; text-align: left; }}
+    th {{ color: #667085; background: #f9fafb; }}
+    pre {{ white-space: pre-wrap; background: #111827; color: #e5e7eb; padding: 14px; border-radius: 10px; overflow: auto; }}
+    details {{ margin-top: 16px; }}
+    summary {{ cursor: pointer; color: #2563eb; font-weight: 600; }}
+    .muted {{ color: #667085; }}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <h1>数据分析报告</h1>
+      <p><strong>问题：</strong>{escape(question)}</p>
+    </section>
+    <section class="card">
+      <div class="card-title">分析摘要</div>
+      <p>{escape(summary).replace(chr(10), "<br />")}</p>
+    </section>
+    <div class="grid">{''.join(chart_sections)}</div>
+  </main>
+</body>
+</html>"""
+
+    def _react_agent_chat_request(self, req: ReactAgentRequest) -> ChatRequest:
+        file_path = (req.ext_info or {}).get("file_path", "")
+        file_name = (req.ext_info or {}).get("file_name") or Path(str(file_path)).name
+        content: list[ContentPart] = []
+        if file_path:
+            content.append(
+                ContentPart(
+                    type="file_url",
+                    file_url=FileUrlPart(url=str(file_path), file_name=str(file_name)),
+                )
+            )
+        content.append(ContentPart(type="text", text=req.user_input))
+        return ChatRequest(
+            model=req.model_name,
+            messages=[ChatMessage(role="user", content=content)],
+            stream=True,
+            model_config=req.model_config_field,
+            ext_info=req.ext_info,
+            session_id=req.conv_uid,
+        )
+
+    async def react_agent_stream(self, req: ReactAgentRequest) -> AsyncIterator[str]:
+        """DB-GPT compatible ReAct stream for tabular report analysis."""
+        chat_req = self._react_agent_chat_request(req)
+        question = req.user_input.strip() or "Analyze the uploaded file."
+        file_path = str((req.ext_info or {}).get("file_path", ""))
+        steps = [
+            ("step-read-file", "读取文件", "load_file", {"file_path": file_path}),
+            ("step-learn-structure", "学习数据结构", "excel_learning", {"file_path": file_path}),
+            ("step-generate-sql", "生成 SQL", "generate_sql", {"question": question}),
+            ("step-execute-sql", "执行 SQL", "execute_sql", {"engine": "duckdb"}),
+            ("step-render-report", "渲染 Report.html", "html_interpreter", {"title": "Report"}),
+        ]
+        active_started: set[str] = set()
+
+        def start_step(index: int) -> str:
+            step_id, title, _action, _input = steps[index]
+            active_started.add(step_id)
+            return self._sse_event(
+                {
+                    "type": "step.start",
+                    "step": index + 1,
+                    "id": step_id,
+                    "title": title,
+                    "detail": title,
+                    "phase": "analysis",
+                }
+            )
+
+        for idx in range(2):
+            step_id, title, action, action_input = steps[idx]
+            yield start_step(idx)
+            yield self._sse_event(
+                {
+                    "type": "step.meta",
+                    "id": step_id,
+                    "title": title,
+                    "thought": f"准备{title}",
+                    "action": action,
+                    "action_input": action_input,
+                }
+            )
+
+        analysis_text = await self._run_excel_analysis(chat_req)
+        if analysis_text is None:
+            analysis_text = "未检测到可分析的 Excel/CSV 文件。"
+
+        for idx in range(2):
+            step_id = steps[idx][0]
+            yield self._sse_event({"type": "step.done", "id": step_id, "status": "done"})
+
+        for idx in range(2, 4):
+            step_id, title, action, action_input = steps[idx]
+            yield start_step(idx)
+            yield self._sse_event(
+                {
+                    "type": "step.meta",
+                    "id": step_id,
+                    "title": title,
+                    "thought": f"根据用户问题执行{title}",
+                    "action": action,
+                    "action_input": action_input,
+                }
+            )
+            if idx == 2:
+                for payload in self._extract_vis_chart_payloads(analysis_text):
+                    if payload.get("sql"):
+                        yield self._sse_event(
+                            {
+                                "type": "step.chunk",
+                                "id": step_id,
+                                "output_type": "code",
+                                "content": payload["sql"],
+                            }
+                        )
+            else:
+                for payload in self._extract_vis_chart_payloads(analysis_text):
+                    yield self._sse_event(
+                        {
+                            "type": "step.chunk",
+                            "id": step_id,
+                            "output_type": "json",
+                            "content": payload,
+                        }
+                    )
+            yield self._sse_event({"type": "step.done", "id": step_id, "status": "done"})
+
+        report_html = self._build_report_html(analysis_text, question)
+        render_step = steps[4]
+        yield start_step(4)
+        yield self._sse_event(
+            {
+                "type": "step.meta",
+                "id": render_step[0],
+                "title": render_step[1],
+                "thought": "将分析结果整理为右侧可预览的 HTML 报告",
+                "action": render_step[2],
+                "action_input": render_step[3],
+            }
+        )
+        yield self._sse_event(
+            {
+                "type": "step.chunk",
+                "id": render_step[0],
+                "output_type": "html",
+                "content": {"html": report_html, "title": "Report"},
+            }
+        )
+        yield self._sse_event({"type": "step.done", "id": render_step[0], "status": "done"})
+
+        summary = self._strip_vis_chart_blocks(analysis_text) or "分析完成，已生成 Report.html。"
+        yield self._sse_event({"type": "final", "content": summary})
+        yield self._sse_event({"type": "done"})
 
     @staticmethod
     def _format_table(headers: list, rows: list) -> str:
@@ -513,6 +820,29 @@ class EnhancedChatService:
             session = await self.start_session()
             session_id = session.id
 
+        excel_result = await self._run_excel_analysis(req)
+        if excel_result is not None:
+            question = self._extract_latest_user_question(req)
+            self.session_manager.append_message(
+                session_id,
+                SessionMessage(type="user", content=question, role="user"),
+            )
+            self.session_manager.append_message(
+                session_id,
+                SessionMessage(type="assistant", content=excel_result, role="assistant"),
+            )
+            return ChatResponse(
+                id=f"chatbi-{int(time.time() * 1000)}",
+                created=int(time.time()),
+                model=req.model or "excel-analysis",
+                choices=[
+                    ChatChoice(
+                        message=ChatMessage(role="assistant", content=excel_result),
+                        finish_reason="stop",
+                    )
+                ],
+            )
+
         messages = self._build_messages(req)
 
         # Add memory context as system message
@@ -696,6 +1026,46 @@ class EnhancedChatService:
             session = await self.start_session()
             session_id = session.id
 
+        if self._extract_latest_tabular_attachment(req):
+            pipeline_events: list[dict[str, Any]] = []
+
+            def emit_step(step_id: str, status: str, detail: Optional[str] = None) -> None:
+                event: dict[str, Any] = {
+                    "type": "pipeline_step",
+                    "step_id": step_id,
+                    "step_name": step_id,
+                    "status": status,
+                }
+                if detail:
+                    event["detail"] = detail[:200]
+                pipeline_events.append(event)
+
+            try:
+                excel_result = await self._run_excel_analysis(req, emit_step=emit_step)
+            except Exception as e:
+                excel_result = f"Excel analysis failed: {e}"
+
+            question = self._extract_latest_user_question(req)
+            self.session_manager.append_message(
+                session_id,
+                SessionMessage(type="user", content=question, role="user"),
+            )
+            self.session_manager.append_message(
+                session_id,
+                SessionMessage(type="assistant", content=excel_result or "", role="assistant"),
+            )
+
+            for event in pipeline_events:
+                yield f"data: {json.dumps(event)}\n\n"
+
+            resp_id = f"chatbi-{int(time.time() * 1000)}"
+            yield f"data: {json.dumps({'type': 'text_start'})}\n\n"
+            if excel_result:
+                yield f"data: {json.dumps({'type': 'text_delta', 'content': excel_result})}\n\n"
+            yield f"data: {json.dumps({'type': 'text_end', 'id': resp_id, 'created': int(time.time()), 'model': req.model or 'excel-analysis', 'finish_reason': 'stop', 'usage': None})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
         messages = self._build_messages(req)
 
         # Add memory context
@@ -791,9 +1161,38 @@ class EnhancedChatService:
                             continue
                         yield f"data: {json.dumps({'type': 'tool_call_start', 'tool_name': tc.function.get('name', ''), 'arguments': tc.function.get('arguments', '{}')})}\n\n"
 
+                    # For excel_analyze skill, set up emit_step callback to collect pipeline events
+                    excel_skill = None
+                    pipeline_events: list[dict] = []
+                    if self.skill_registry:
+                        for tc in output.tool_calls:
+                            tool_name = tc.function.get("name", "")
+                            if tool_name == "excel_analyze":
+                                excel_skill = self.skill_registry.get("excel_analyze")
+                                logger.info(f"[DEBUG] Got excel_skill: {excel_skill}, has set_emit_step: {hasattr(excel_skill, 'set_emit_step')}")
+                                if excel_skill and hasattr(excel_skill, "set_emit_step"):
+                                    def emit_step(step_id: str, status: str, detail: Optional[str] = None):
+                                        logger.info(f"[DEBUG] emit_step called: {step_id} -> {status}")
+                                        event_data = {
+                                            "type": "pipeline_step",
+                                            "step_id": step_id,
+                                            "step_name": step_id,
+                                            "status": status,
+                                        }
+                                        if detail:
+                                            event_data["detail"] = detail[:100]
+                                        pipeline_events.append(event_data)
+                                    excel_skill.set_emit_step(emit_step)
+                                    logger.info(f"[DEBUG] emit_step callback set on excel_skill")
+
                     tool_results = await self._execute_tool_calls(
                         output.tool_calls, session_id
                     )
+
+                    # Emit collected pipeline_step events from excel_analyze
+                    logger.info(f"[DEBUG] Pipeline events collected: {len(pipeline_events)}")
+                    for event in pipeline_events:
+                        yield f"data: {json.dumps(event)}\n\n"
 
                     # Emit tool_call_result events
                     for tr in tool_results:
@@ -835,11 +1234,38 @@ class EnhancedChatService:
         created = int(time.time())
         model_name = llm.config.model_name
 
-        yield f"data: {json.dumps({'type': 'text_start'})}\n\n"
+        is_reasoning_started = False
+        is_reasoning_ended = False
+        is_text_started = False
+
         async for chunk in llm.achat_stream(messages):
-            yield f"data: {json.dumps({'type': 'text_delta', 'content': chunk.text})}\n\n"
-            if chunk.finish_reason:
-                yield f"data: {json.dumps({'type': 'text_end', 'finish_reason': chunk.finish_reason})}\n\n"
+            # Handle reasoning content (thinking) separately
+            if chunk.is_reasoning:
+                if not is_reasoning_started:
+                    yield f"data: {json.dumps({'type': 'reasoning_start'})}\n\n"
+                    is_reasoning_started = True
+                # Don't send reasoning content, just indicate thinking is ongoing
+                continue
+            else:
+                # Actual content starts - end reasoning phase if it was started
+                if is_reasoning_started and not is_reasoning_ended:
+                    yield f"data: {json.dumps({'type': 'reasoning_end'})}\n\n"
+                    is_reasoning_ended = True
+
+                # Send text_start before first content chunk
+                if not is_text_started:
+                    yield f"data: {json.dumps({'type': 'text_start'})}\n\n"
+                    is_text_started = True
+
+                if chunk.text:
+                    yield f"data: {json.dumps({'type': 'text_delta', 'content': chunk.text})}\n\n"
+                if chunk.finish_reason:
+                    yield f"data: {json.dumps({'type': 'text_end', 'finish_reason': chunk.finish_reason})}\n\n"
+
+        # If only reasoning happened without content, still send proper events
+        if is_reasoning_started and not is_reasoning_ended:
+            yield f"data: {json.dumps({'type': 'reasoning_end'})}\n\n"
+
         yield "data: [DONE]\n\n"
 
     def get_status(self) -> dict:

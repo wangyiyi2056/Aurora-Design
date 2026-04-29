@@ -1,40 +1,22 @@
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"
-import { HtmlPreview } from "./html-preview"
+import { getCodeComponents } from "./code-renderers"
 
 interface MessageRendererProps {
   content: string
 }
 
 export default function MessageRenderer({ content }: MessageRendererProps) {
+  // Get custom code components with language renderers
+  const codeComponents = getCodeComponents()
+
   return (
     <div className="message-content">
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        code({ className, children, ...props }) {
-          const match = /language-(\w+)/.exec(className || "")
-          const language = match ? match[1] : "text"
-          const codeString = String(children).replace(/\n$/, "")
-
-          if (language === "html" || language === "web") {
-            return <HtmlPreview html={codeString} />
-          }
-
-          return (
-            <SyntaxHighlighter
-              style={vscDarkPlus}
-              language={language}
-              PreTag="div"
-              className="rounded-lg text-sm my-2"
-              {...(props as any)}
-            >
-              {codeString}
-            </SyntaxHighlighter>
-          )
-        },
+        // Use custom code renderers for special languages
+        ...codeComponents,
         p({ children }) {
           return <p className="m-0 leading-relaxed">{children}</p>
         },

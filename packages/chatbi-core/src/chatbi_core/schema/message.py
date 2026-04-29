@@ -25,4 +25,5 @@ class ModelOutput:
     usage: Optional[Dict[str, int]] = None
     finish_reason: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None
+    is_reasoning: bool = False  # True for reasoning_content, False for actual content
     extra: Dict[str, Any] = field(default_factory=dict)

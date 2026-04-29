@@ -1,4 +1,4 @@
-import { Paperclip, Zap, BookOpen, Database, ChevronUp, Loader2, Plus, ChevronDown, Check } from "lucide-react"
+import { Paperclip, Zap, BookOpen, Database, ChevronUp, Loader2, Plus, ChevronDown, Check, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Tag } from "@/components/ui/tag"
@@ -11,8 +11,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
-import { useModelsStore } from "@/stores/models-store"
 import { cn } from "@/lib/utils"
+import { useQuery } from "@tanstack/react-query"
+import { listModelConfigs } from "@/services/models"
 
 interface ChatAttachmentTag {
   type: "file" | "skill" | "knowledge" | "database"
@@ -24,6 +25,8 @@ interface ChatInputProps {
   onChange: (value: string) => void
   onSend: () => void
   loading: boolean
+  streaming?: boolean
+  onAbort?: () => void
   attachments?: ChatAttachmentTag[]
   onRemoveAttachment?: (index: number) => void
   onAttachFile?: () => void
@@ -35,7 +38,6 @@ interface ChatInputProps {
 }
 
 const builtinModels = [
-  { value: "kimi-for-coding", label: "Kimi K2.6" },
   { value: "gpt-4o-mini", label: "GPT-4o Mini" },
   { value: "gpt-4o", label: "GPT-4o" },
 ]
@@ -45,6 +47,8 @@ export function ChatInput({
   onChange,
   onSend,
   loading,
+  streaming,
+  onAbort,
   attachments,
   onRemoveAttachment,
   onAttachFile,
@@ -55,7 +59,12 @@ export function ChatInput({
   onModelChange,
 }: ChatInputProps) {
   const { t } = useTranslation("chat")
-  const { models } = useModelsStore()
+  const { data: modelsData } = useQuery({
+    queryKey: ["models", "list"],
+    queryFn: listModelConfigs,
+    staleTime: 30_000,
+  })
+  const models = modelsData?.items || []
 
   const customModels = models
     .filter((m) => (m.type === "llm" || m.type === "anthropic") && m.status === "available")
@@ -143,10 +152,7 @@ export function ChatInput({
                   Tools
                 </DropdownMenuLabel>
                 <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault()
-                    setTimeout(() => onAttachFile?.(), 0)
-                  }}
+                  onClick={() => onAttachFile?.()}
                   className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 cursor-pointer text-xs"
                 >
                   <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
@@ -245,20 +251,32 @@ export function ChatInput({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <Button
-            variant="default"
-            size="icon"
-            onClick={onSend}
-            disabled={!value.trim() || loading}
-            aria-label={t("chat.send")}
-            className="rounded-full h-9 w-9 gradient-btn border-0 shadow-lg shadow-blue-500/20"
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ChevronUp className="h-4 w-4" />
-            )}
-          </Button>
+          {streaming && onAbort ? (
+            <Button
+              variant="destructive"
+              size="icon"
+              onClick={onAbort}
+              aria-label={t("chat.stop")}
+              className="rounded-full h-9 w-9 bg-red-500 hover:bg-red-600 border-0 shadow-lg shadow-red-500/20"
+            >
+              <Square className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button
+              variant="default"
+              size="icon"
+              onClick={onSend}
+              disabled={!value.trim() || loading}
+              aria-label={t("chat.send")}
+              className="rounded-full h-9 w-9 gradient-btn border-0 shadow-lg shadow-blue-500/20"
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ChevronUp className="h-4 w-4" />
+              )}
+            </Button>
+          )}
         </div>
       </div>
       <div className="text-center mt-2">

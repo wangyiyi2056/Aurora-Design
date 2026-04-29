@@ -13,12 +13,18 @@ class OpenAILLM(BaseLLM):
     def __init__(self, config: LLMConfig):
         super().__init__(config)
         extra_headers: Dict[str, str] = {}
-        # Kimi coding API requires specific User-Agent
-        if "kimi.com/coding" in (config.api_base or ""):
+        api_base = config.api_base or ""
+
+        # Kimi coding API requires specific User-Agent and /v1 path
+        if "kimi.com/coding" in api_base:
             extra_headers["User-Agent"] = "KimiCLI/1.0"
+            # Ensure /v1 is in the path for Kimi Coding API
+            if not api_base.rstrip("/").endswith("/v1"):
+                api_base = api_base.rstrip("/") + "/v1"
+
         self.client = openai.AsyncOpenAI(
             api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
-            base_url=config.api_base,
+            base_url=api_base,
             default_headers=extra_headers if extra_headers else None,
         )
 
@@ -117,13 +123,21 @@ class OpenAILLM(BaseLLM):
             if not choices:
                 continue
             delta_data = choices[0].get("delta", {})
+
+            # Check for actual content first
             content = delta_data.get("content", "") or ""
+            is_reasoning = False
+
+            # If no content, check for reasoning_content
             if not content:
                 content = delta_data.get("reasoning_content", "") or ""
+                is_reasoning = True
+
             finish_reason = choices[0].get("finish_reason")
             if not content and not finish_reason:
                 continue
             yield ModelOutput(
                 text=content,
                 finish_reason=finish_reason,
+                is_reasoning=is_reasoning,
             )
