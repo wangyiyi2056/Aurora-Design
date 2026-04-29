@@ -5,10 +5,7 @@
     "database": "Database",
     "knowledge": "Knowledge",
     "skills": "Skills",
-    "models": "Models",
-    "flow": "Flow",
-    "prompt": "Prompt",
-    "dbgpts": "Dbgpts"
+    "models": "Models"
   },
   "skill": {
     "title": "Skills Management",
@@ -62,34 +59,6 @@
     "title": "Agent / Skills",
     "empty": "No skills registered."
   },
-  "awel": {
-    "title": "AWEL",
-    "operators": "Operators",
-    "runFlow": "Run Flow",
-    "run": "Run",
-    "canvas": "Canvas",
-    "nodePalette": "Node Palette",
-    "properties": "Properties",
-    "nodes": {
-      "start": "Start",
-      "llm": "LLM",
-      "end": "End",
-      "condition": "Condition"
-    },
-    "placeholder": "Workflow canvas placeholder (reactflow integration pending)"
-  },
-  "prompt": {
-    "title": "Prompt Management",
-    "name": "Name",
-    "content": "Content",
-    "variables": "Variables",
-    "preview": "Preview",
-    "add": "Add Prompt",
-    "save": "Save",
-    "delete": "Delete",
-    "empty": "No prompts yet",
-    "placeholder": "Enter prompt content, use {{variable}} for variables"
-  },
   "app": {
     "title": "App Management",
     "name": "App Name",
@@ -138,16 +107,6 @@
     "add": "Add Model",
     "edit": "Edit Model",
     "empty": "No models yet"
-  },
-  "dbgpts": {
-    "title": "Plugin Management",
-    "hub": "Hub",
-    "my": "My Plugins",
-    "install": "Install",
-    "uninstall": "Uninstall",
-    "update": "Update",
-    "emptyHub": "No plugins available",
-    "emptyMy": "No installed plugins"
   },
   "evaluation": {
     "title": "Model Evaluation",

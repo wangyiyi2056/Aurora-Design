@@ -8,9 +8,6 @@ import DatabaseListPage from "@/features/construct/database/pages/database-list-
 import KnowledgePage from "@/features/construct/knowledge/pages/knowledge-page"
 import SkillsPage from "@/features/construct/skills/pages/skills-page"
 import ModelsPage from "@/features/construct/models/pages/models-page"
-import FlowPage from "@/features/construct/flow/pages/flow-page"
-import PromptPage from "@/features/construct/prompt/pages/prompt-page"
-import DbgptsPage from "@/features/construct/dbgpts/pages/dbgpts-page"
 import EvaluationListPage from "@/features/evaluation/pages/evaluation-list-page"
 import MobileChatPage from "@/features/mobile/pages/mobile-chat-page"
 
@@ -31,9 +28,6 @@ export default function App() {
               <Route path="/construct/knowledge" element={<KnowledgePage />} />
               <Route path="/construct/skills" element={<SkillsPage />} />
               <Route path="/construct/models" element={<ModelsPage />} />
-              <Route path="/construct/flow" element={<FlowPage />} />
-              <Route path="/construct/prompt" element={<PromptPage />} />
-              <Route path="/construct/dbgpts" element={<DbgptsPage />} />
               <Route path="/models_evaluation" element={<EvaluationListPage />} />
             </Routes>
           </Shell>

@@ -84,3 +84,4 @@ frontend/dist-electron/
 
 # E2E test screenshots
 frontend/e2e/screenshots/
+data/

@@ -30,9 +30,6 @@ export function Sidebar() {
     "/construct/knowledge",
     "/construct/skills",
     "/construct/models",
-    "/construct/flow",
-    "/construct/prompt",
-    "/construct/dbgpts",
   ].some((p) => location.pathname.startsWith(p))
 
   const navItems = [

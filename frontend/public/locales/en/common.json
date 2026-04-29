@@ -6,8 +6,7 @@
     "construct": "Construct",
     "datasource": "Datasource",
     "knowledge": "Knowledge",
-    "agent": "Agent",
-    "awel": "AWEL"
+    "agent": "Agent"
   },
   "sidebar": {
     "expand": "Expand sidebar",

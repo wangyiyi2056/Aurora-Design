@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom"
-import { MessageSquare, Database, BookOpen, Bot, Workflow } from "lucide-react"
+import { MessageSquare, Database, BookOpen, Bot } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useChatStore } from "@/stores/chat-store"
 
@@ -13,7 +13,6 @@ export default function ExplorePage() {
     { icon: Database, label: t("explore.datasource"), desc: t("explore.datasourceDesc"), action: "/construct/database" },
     { icon: BookOpen, label: t("explore.knowledge"), desc: t("explore.knowledgeDesc"), action: "/construct/knowledge" },
     { icon: Bot, label: t("explore.agent"), desc: t("explore.agentDesc"), action: "/construct/skills" },
-    { icon: Workflow, label: t("explore.awel"), desc: t("explore.awelDesc"), action: "/construct/flow" },
   ]
 
   const handleClick = (action: string) => {

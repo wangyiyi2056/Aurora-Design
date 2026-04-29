@@ -6,8 +6,7 @@
     "construct": "构建",
     "datasource": "数据源",
     "knowledge": "知识库",
-    "agent": "智能体",
-    "awel": "工作流"
+    "agent": "智能体"
   },
   "sidebar": {
     "expand": "展开侧边栏",
