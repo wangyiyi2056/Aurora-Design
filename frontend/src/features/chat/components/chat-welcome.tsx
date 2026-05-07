@@ -1,5 +1,6 @@
-import { Database, BookOpen, Bot, Sparkles, ArrowUpRight } from "lucide-react"
+import { Database, BookOpen, Bot, ArrowUpRight } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { BrandLogo } from "@/components/brand/brand-logo"
 
 interface ChatWelcomeProps {
   onSelect: (prompt: string) => void
@@ -20,8 +21,8 @@ export function ChatWelcome({ onSelect }: ChatWelcomeProps) {
       <div className="relative hero-aura">
         <div className="absolute inset-0 bg-primary/25 blur-[80px] rounded-full scale-[2.5]" />
         <div className="absolute inset-0 bg-[#00c6ff]/20 blur-[50px] rounded-full scale-150 animate-pulse-glow" />
-        <div className="relative flex h-[72px] w-[72px] items-center justify-center rounded-[22px] gradient-avatar text-white shadow-xl shadow-blue-500/30 ring-1 ring-white/20">
-          <Sparkles className="h-9 w-9" />
+        <div className="relative flex h-[72px] w-[72px] items-center justify-center rounded-[22px] bg-card shadow-xl shadow-blue-500/30 ring-1 ring-white/20">
+          <BrandLogo className="h-12 w-12" />
         </div>
       </div>
 

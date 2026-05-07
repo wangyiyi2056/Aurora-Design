@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from sandbox.executor.docker import DockerCodeExecutor
 
-app = FastAPI(title="ChatBI Sandbox")
+app = FastAPI(title="Aurora Sandbox")
 executor = DockerCodeExecutor()
 
 

@@ -1,1 +1,1 @@
-"""ChatBI sandbox execution environment."""
+"""Aurora sandbox execution environment."""

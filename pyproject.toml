@@ -1,17 +1,17 @@
 [project]
-name = "chatbi"
+name = "aurora"
 version = "0.1.0"
-description = "ChatBI: Agentic AI Data Platform"
+description = "Aurora: Agentic AI Data Platform"
 requires-python = ">=3.10"
 
 [tool.uv.workspace]
 members = ["packages/*"]
 
 [tool.uv.sources]
-chatbi-core = { workspace = true }
-chatbi-serve = { workspace = true }
-chatbi-ext = { workspace = true }
-chatbi-app = { workspace = true }
+aurora-core = { workspace = true }
+aurora-serve = { workspace = true }
+aurora-ext = { workspace = true }
+aurora-app = { workspace = true }
 
 [dependency-groups]
 dev = [

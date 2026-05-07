@@ -5,6 +5,7 @@ import { getToolStatusText, ToolIcon } from "./ui/tool-icon"
 import { CollapsibleBox } from "./ui/collapsible"
 import type { ToolPart } from "@/stores/chat-store"
 import { getToolRenderer, toToolRenderProps } from "../runtime/tool-renderers"
+import type { AgentEvent } from "../types"
 
 /**
  * ToolCard - Tool execution visualization component.
@@ -153,7 +154,12 @@ function normalizeText(value: unknown): string {
  */
 export interface ToolCardProps {
   /** Tool part data from chat store */
-  part: ToolPart
+  part?: ToolPart
+  use?: Extract<AgentEvent, { kind: "tool_use" }>
+  result?: Extract<AgentEvent, { kind: "tool_result" }>
+  runStreaming?: boolean
+  projectFileNames?: Set<string>
+  onRequestOpenFile?: (name: string) => void
   /** Initial open state for collapsible */
   defaultOpen?: boolean
   /** Controlled open state */
@@ -344,7 +350,10 @@ function ToolContent({
  * ToolCard - Main component for displaying tool execution.
  */
 export function ToolCard({
-  part,
+  part: providedPart,
+  use,
+  result,
+  runStreaming = false,
   defaultOpen = false,
   open,
   onOpenChange,
@@ -352,6 +361,28 @@ export function ToolCard({
   showTime = true,
   compact = false,
 }: ToolCardProps) {
+  const part =
+    providedPart ??
+    (use
+      ? ({
+          id: use.id,
+          type: "tool",
+          tool: use.name,
+          callID: use.id,
+          state: {
+            status: result ? (result.isError ? "error" : "completed") : runStreaming ? "running" : "pending",
+            input:
+              use.input && typeof use.input === "object" && !Array.isArray(use.input)
+                ? (use.input as Record<string, unknown>)
+                : { value: use.input },
+            output: result?.content,
+            error: result?.isError ? result.content : undefined,
+          },
+        } as ToolPart)
+      : undefined)
+
+  if (!part) return null
+
   const customRenderer = getToolRenderer(part.tool)
   const custom = customRenderer?.(toToolRenderProps(part))
   if (custom) return <>{custom}</>

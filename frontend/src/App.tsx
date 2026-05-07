@@ -12,12 +12,10 @@ import PromptPage from "@/features/construct/prompt/pages/prompt-page"
 import SkillsPage from "@/features/construct/skills/pages/skills-page"
 import ModelsPage from "@/features/construct/models/pages/models-page"
 import EvaluationListPage from "@/features/evaluation/pages/evaluation-list-page"
-import MobileChatPage from "@/features/mobile/pages/mobile-chat-page"
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/mobile/chat" element={<MobileChatPage />} />
       <Route
         path="*"
         element={

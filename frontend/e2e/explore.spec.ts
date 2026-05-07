@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 test('explore page loads with title', async ({ page }) => {
   await page.goto('/')
-  await expect(page.locator('h1')).toContainText('ChatBI')
+  await expect(page.locator('h1')).toContainText('Aurora Design')
   await expect(page.getByRole('button', { name: /New Chat|新对话/ })).toBeVisible()
 })
 

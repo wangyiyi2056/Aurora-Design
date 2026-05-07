@@ -1,6 +1,6 @@
 import pytest
 
-from chatbi_core.datasource.rdbms.sqlite import SQLiteConnector
+from aurora_core.datasource.rdbms.sqlite import SQLiteConnector
 
 
 def test_sqlite_connector_in_memory():

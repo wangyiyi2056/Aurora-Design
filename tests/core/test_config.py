@@ -1,6 +1,6 @@
-from chatbi_core.config.base import BaseParameters
-from chatbi_core.config.loader import load_toml_config
-from chatbi_core.config.settings import Settings
+from aurora_core.config.base import BaseParameters
+from aurora_core.config.loader import load_toml_config
+from aurora_core.config.settings import Settings
 
 
 from dataclasses import dataclass

@@ -19,7 +19,7 @@ interface SharedAgentReport {
 function readSharedReport(id?: string): SharedAgentReport | null {
   if (!id) return null
   try {
-    const raw = localStorage.getItem(`chatbi-share-${id}`)
+    const raw = localStorage.getItem(`aurora-share-${id}`)
     if (!raw) return null
     const parsed = JSON.parse(raw) as SharedAgentReport
     return parsed?.type === "react-agent-report" ? parsed : null

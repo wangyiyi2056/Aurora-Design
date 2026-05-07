@@ -1,11 +1,11 @@
 from fastapi.testclient import TestClient
 
-from chatbi_serve.server import create_app
+from aurora_serve.server import create_app
 
 
 def test_sessions_use_storage_dir_and_support_title_updates(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
-    monkeypatch.setenv("CHATBI_STORAGE_DIR", str(tmp_path / "storage"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
 
     with TestClient(create_app()) as client:
         create_resp = client.post("/api/v1/chat/sessions")

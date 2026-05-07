@@ -1,1 +1,0 @@
-"""ChatBI extension capabilities."""

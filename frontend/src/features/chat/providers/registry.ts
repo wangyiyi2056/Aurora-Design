@@ -1,19 +1,86 @@
 import { uploadFile } from "@/services/files"
 
-export function projectRawUrl(path: string): string {
-  return path
+import type {
+  ChatAttachment,
+  CodexPetSummary,
+  CodexPetsResponse,
+  ProjectFile,
+  ProjectMetadata,
+} from "../types"
+
+export function projectRawUrl(projectIdOrPath: string, maybePath?: string): string {
+  if (!maybePath) return projectIdOrPath
+  return `/api/v1/files/raw?project=${encodeURIComponent(projectIdOrPath)}&path=${encodeURIComponent(maybePath)}`
 }
 
-export async function uploadProjectFiles(files: File[]): Promise<
-  Array<{ path: string; name: string; kind: "image" | "file"; size?: number }>
-> {
-  const uploaded = await Promise.all(
-    files.map(async (file) => ({ source: file, uploaded: await uploadFile(file) }))
-  )
-  return uploaded.map(({ source, uploaded }) => ({
-    path: uploaded.file_path,
-    name: uploaded.file_name,
-    kind: source.type.startsWith("image/") ? "image" : "file",
-    size: source.size,
-  }))
+export function projectFileUrl(projectId: string, name: string): string {
+  return projectRawUrl(projectId, name)
+}
+
+export interface UploadProjectFilesResult {
+  uploaded: ChatAttachment[]
+  failed: Array<{ name: string; code?: string; error?: string }>
+  error?: string
+}
+
+export async function uploadProjectFiles(
+  _projectId: string,
+  files: File[]
+): Promise<UploadProjectFilesResult> {
+  const uploaded: ChatAttachment[] = []
+  const failed: UploadProjectFilesResult["failed"] = []
+
+  for (const file of files) {
+    try {
+      const result = await uploadFile(file)
+      uploaded.push({
+        path: result.file_path,
+        name: result.file_name,
+        kind: file.type.startsWith("image/") ? "image" : "file",
+        size: file.size,
+      })
+    } catch (error) {
+      failed.push({
+        name: file.name,
+        error: error instanceof Error ? error.message : "upload failed",
+      })
+    }
+  }
+
+  return {
+    uploaded,
+    failed,
+    error: failed.length > 0 ? "upload failed" : undefined,
+  }
+}
+
+export async function openFolderDialog(): Promise<string | null> {
+  return null
+}
+
+export async function fetchCodexPets(): Promise<CodexPetsResponse> {
+  return { pets: [], rootDir: "" }
+}
+
+export function codexPetSpritesheetUrl(pet: CodexPetSummary): string {
+  return pet.spritesheetUrl
+}
+
+export function looksLikeImage(path: string): boolean {
+  return /\.(png|jpe?g|gif|webp|svg)$/i.test(path)
+}
+
+export function fileToProjectFile(file: ChatAttachment): ProjectFile {
+  return {
+    name: file.name,
+    path: file.path,
+    kind: file.kind,
+    size: file.size ?? 0,
+  }
+}
+
+export async function patchProjectMetadata(
+  metadata: ProjectMetadata
+): Promise<{ metadata: ProjectMetadata }> {
+  return { metadata }
 }

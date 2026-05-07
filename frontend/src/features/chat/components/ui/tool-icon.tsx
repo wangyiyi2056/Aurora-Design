@@ -24,7 +24,7 @@ import {
 import { cn } from "@/lib/utils"
 
 /**
- * Tool icon mapping for ChatBI.
+ * Tool icon mapping for Aurora Design.
  * Maps tool names to appropriate Lucide icons with consistent styling.
  */
 

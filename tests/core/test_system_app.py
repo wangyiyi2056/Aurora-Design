@@ -1,4 +1,4 @@
-from chatbi_core.component import BaseComponent, SystemApp
+from aurora_core.component import BaseComponent, SystemApp
 
 
 class DemoComponent(BaseComponent):

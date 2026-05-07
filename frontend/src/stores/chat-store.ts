@@ -103,7 +103,7 @@ interface ChatState {
 
 const initialSystemMessage: ChatMessage = {
   role: "system",
-  content: "Welcome to ChatBI. Ask anything about data or general questions.",
+  content: "Welcome to Aurora Design. Ask anything about data or general questions.",
 }
 
 export const useChatStore = create<ChatState>()(
@@ -278,6 +278,6 @@ export const useChatStore = create<ChatState>()(
 
       setDebugPipelineEnabled: (enabled) => set({ debugPipelineEnabled: enabled }),
     }),
-    { name: "chatbi-chat-store" }
+    { name: "aurora-chat-store" }
   )
 )

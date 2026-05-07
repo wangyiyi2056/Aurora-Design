@@ -1,8 +1,9 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import type { Locale } from "@/i18n/types"
 
 type ThemeMode = "dark" | "light"
-type Language = "zh" | "en"
+type Language = Locale
 
 interface GlobalState {
   theme: ThemeMode
@@ -17,13 +18,13 @@ export const useGlobalStore = create<GlobalState>()(
   persist(
     (set) => ({
       theme: "dark",
-      language: "zh",
+      language: "zh-CN",
       sidebarCollapsed: false,
       setTheme: (theme) => set({ theme }),
       setLanguage: (language) => set({ language }),
       toggleSidebar: () =>
         set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
     }),
-    { name: "chatbi-global-store" }
+    { name: "aurora-global-store" }
   )
 )

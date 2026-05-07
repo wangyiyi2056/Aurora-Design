@@ -1,12 +1,12 @@
 import pytest
 
-from chatbi_core.model.base import BaseLLM
-from chatbi_core.model.registry import ModelRegistry
-from chatbi_core.schema.message import Message, ModelOutput
-from chatbi_core.schema.model import LLMConfig
-from chatbi_serve.agent.sql_agent import SQLAgent
-from chatbi_serve.datasource.schema import DBConfig
-from chatbi_serve.datasource.service import DatasourceService
+from aurora_core.model.base import BaseLLM
+from aurora_core.model.registry import ModelRegistry
+from aurora_core.schema.message import Message, ModelOutput
+from aurora_core.schema.model import LLMConfig
+from aurora_serve.agent.sql_agent import SQLAgent
+from aurora_serve.datasource.schema import DBConfig
+from aurora_serve.datasource.service import DatasourceService
 
 
 class FakeLLM(BaseLLM):

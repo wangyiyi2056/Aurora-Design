@@ -1,6 +1,6 @@
 import pytest
 
-from chatbi_core.awel import DAGBuilder, DAGExecutor, MapOperator
+from aurora_core.awel import DAGBuilder, DAGExecutor, MapOperator
 
 
 class AddOneOperator(MapOperator):

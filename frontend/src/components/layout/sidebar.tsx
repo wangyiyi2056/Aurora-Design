@@ -10,16 +10,18 @@ import {
   Moon,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import i18n from "@/lib/i18n"
+import i18n, { normalizeLanguage } from "@/lib/i18n"
 import { useGlobalStore } from "@/stores/global-store"
 import { useChatStore } from "@/stores/chat-store"
 import { ConversationList } from "@/features/chat/components/conversation-list"
+import { BrandLogo } from "@/components/brand/brand-logo"
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar, language, setLanguage, theme, setTheme } = useGlobalStore()
   const location = useLocation()
   const navigate = useNavigate()
   const { t } = useTranslation()
+  const currentLanguage = normalizeLanguage(language)
 
   const sessionId = useChatStore((s) => s.sessionId)
   const resetToNewChat = useChatStore((s) => s.resetToNewChat)
@@ -50,20 +52,17 @@ export function Sidebar() {
       data-collapsed={sidebarCollapsed}
       className="flex flex-col border-r border-border bg-surface transition-all duration-fast data-[collapsed='true']:w-16 data-[collapsed='false']:w-[200px]"
     >
-      <div className="flex h-14 items-center justify-between border-b border-border px-4">
-        {!sidebarCollapsed && (
-          <span className="text-lg font-semibold tracking-tight text-text">
-            {t("appName")}
-          </span>
+      <div className={`flex h-14 items-center border-b border-border px-4 ${sidebarCollapsed ? "justify-center" : ""}`}>
+        {sidebarCollapsed ? (
+          <BrandLogo className="h-7 w-7" />
+        ) : (
+          <div className="flex min-w-0 items-center gap-2">
+            <BrandLogo className="h-7 w-7" />
+            <span className="truncate text-lg font-semibold tracking-tight text-text">
+              {t("appName")}
+            </span>
+          </div>
         )}
-        <button
-          onClick={toggleSidebar}
-          className="flex h-8 w-8 items-center justify-center rounded text-text-secondary transition-colors hover:bg-surface-hover hover:text-text"
-          aria-label={sidebarCollapsed ? t("sidebar.expand") : t("sidebar.collapse")}
-          title={sidebarCollapsed ? t("sidebar.expand") : t("sidebar.collapse")}
-        >
-          {sidebarCollapsed ? <ArrowRightToLine className="h-4 w-4" /> : <ArrowLeftToLine className="h-4 w-4" />}
-        </button>
       </div>
       <nav className="flex flex-col gap-1 p-3">
         {navItems.map((item) => (
@@ -110,7 +109,7 @@ export function Sidebar() {
         </button>
         <button
           onClick={() => {
-            const next = language === "zh" ? "en" : "zh"
+            const next = currentLanguage === "zh-CN" ? "en" : "zh-CN"
             setLanguage(next)
             i18n.changeLanguage(next)
           }}
@@ -119,7 +118,16 @@ export function Sidebar() {
           title={t("sidebar.toggleLanguage")}
         >
           <Globe className="h-4 w-4" />
-          {!sidebarCollapsed && <span>{language === "zh" ? "中文" : "English"}</span>}
+          {!sidebarCollapsed && <span>{currentLanguage === "zh-CN" ? "中文" : "English"}</span>}
+        </button>
+        <button
+          onClick={toggleSidebar}
+          className={`flex items-center gap-2 rounded px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text w-full ${sidebarCollapsed ? "justify-center" : ""}`}
+          aria-label={sidebarCollapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+          title={sidebarCollapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+        >
+          {sidebarCollapsed ? <ArrowRightToLine className="h-4 w-4" /> : <ArrowLeftToLine className="h-4 w-4" />}
+          {!sidebarCollapsed && <span>{t("sidebar.collapse")}</span>}
         </button>
       </div>
     </aside>

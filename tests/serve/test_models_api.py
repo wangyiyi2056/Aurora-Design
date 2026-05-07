@@ -1,12 +1,12 @@
 from fastapi.testclient import TestClient
 
-from chatbi_core.model.adapter.openai_adapter import OpenAILLM
-from chatbi_serve.chat.schema import ChatChoice, ChatMessage, ChatResponse
-from chatbi_serve.server import create_app
+from aurora_core.model.adapter.openai_adapter import OpenAILLM
+from aurora_serve.chat.schema import ChatChoice, ChatMessage, ChatResponse
+from aurora_serve.server import create_app
 
 
 def test_model_config_crud_persists_and_masks_api_key(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
 
     with TestClient(create_app()) as client:
         create_resp = client.post(
@@ -46,7 +46,7 @@ def test_model_config_crud_persists_and_masks_api_key(tmp_path, monkeypatch):
 
 
 def test_deleted_model_config_is_removed_from_runtime_registry(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
 
     with TestClient(create_app()) as client:
         create_resp = client.post(
@@ -73,7 +73,7 @@ def test_deleted_model_config_is_removed_from_runtime_registry(tmp_path, monkeyp
 
 
 def test_model_config_allows_local_openai_model_without_api_key(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     with TestClient(create_app()) as client:
@@ -92,8 +92,27 @@ def test_model_config_allows_local_openai_model_without_api_key(tmp_path, monkey
         assert client.app.state.model_registry.get_llm("local-openai")
 
 
+def test_model_config_registers_daemon_model_without_api_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
+
+    with TestClient(create_app()) as client:
+        create_resp = client.post(
+            "/api/v1/models",
+            json={
+                "name": "Local Codex",
+                "type": "daemon",
+                "base_url": "codex",
+                "api_key": "",
+            },
+        )
+
+        assert create_resp.status_code == 200
+        llm = client.app.state.model_registry.get_llm("Local Codex")
+        assert llm.config.model_type == "daemon"
+
+
 def test_duplicate_model_name_returns_conflict(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
 
     with TestClient(create_app()) as client:
         payload = {
@@ -110,7 +129,7 @@ def test_duplicate_model_name_returns_conflict(tmp_path, monkeypatch):
 
 
 def test_kimi_coding_model_is_registered_with_openai_adapter(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
 
     with TestClient(create_app()) as client:
         create_resp = client.post(
@@ -129,7 +148,7 @@ def test_kimi_coding_model_is_registered_with_openai_adapter(tmp_path, monkeypat
 
 
 def test_app_crud_and_publish_persists(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
 
     with TestClient(create_app()) as client:
         create_resp = client.post(
@@ -160,7 +179,7 @@ def test_app_crud_and_publish_persists(tmp_path, monkeypatch):
 
 
 def test_app_run_reuses_chat_service_with_app_bindings(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
 
     app = create_app()
 
@@ -171,7 +190,7 @@ def test_app_run_reuses_chat_service_with_app_bindings(tmp_path, monkeypatch):
         async def chat(self, req, session_id=None):
             self.last_req = req
             return ChatResponse(
-                id="chatbi-test",
+                id="aurora-test",
                 created=1,
                 model=req.model or "unknown",
                 choices=[

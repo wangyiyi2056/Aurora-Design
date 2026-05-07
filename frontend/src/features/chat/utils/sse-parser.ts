@@ -1,10 +1,10 @@
 /**
  * Chat SSE Parser State
  *
- * Parses SSE events from chatBI backend and converts them to MessagePart[]
+ * Parses SSE events from aurora backend and converts them to MessagePart[]
  * for rendering in the UI.
  *
- * SSE Event Types (from chatBI backend):
+ * SSE Event Types (from aurora backend):
  * - text_start: Start of text content
  * - text_delta: Streaming text chunk
  * - text_end: End of text content

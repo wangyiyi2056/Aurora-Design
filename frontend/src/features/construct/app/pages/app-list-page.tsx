@@ -18,18 +18,12 @@ import { ConstructShell } from "@/features/construct/components/construct-shell"
 import { createApp, listApps } from "@/services/apps"
 import { listDatasources } from "@/services/database"
 import { listKnowledge } from "@/services/knowledge"
-import { listModelConfigs, listSkillsDetail } from "@/services/models"
+import { listAgents, listSkillsDetail } from "@/services/models"
 
 const appTypes = [
   { value: "chat", label: "Chat" },
   { value: "agent", label: "Agent" },
   { value: "rag", label: "RAG" },
-]
-
-const models = [
-  { value: "gpt-4", label: "GPT-4" },
-  { value: "gpt-3.5", label: "GPT-3.5" },
-  { value: "local", label: "Local Model" },
 ]
 
 interface FormData {
@@ -50,7 +44,7 @@ export default function AppListPage() {
   const { t } = useTranslation("construct")
   const qc = useQueryClient()
   const appsQuery = useQuery({ queryKey: ["apps", "list"], queryFn: listApps })
-  const modelsQuery = useQuery({ queryKey: ["models", "list"], queryFn: listModelConfigs })
+  const agentsQuery = useQuery({ queryKey: ["agents", "list"], queryFn: listAgents })
   const knowledgeQuery = useQuery({ queryKey: ["knowledge", "list"], queryFn: listKnowledge })
   const datasourceQuery = useQuery({ queryKey: ["database", "datasources"], queryFn: listDatasources })
   const skillsQuery = useQuery({ queryKey: ["skills", "list"], queryFn: listSkillsDetail })
@@ -58,11 +52,10 @@ export default function AppListPage() {
   const knowledgeBases = knowledgeQuery.data || []
   const datasources = datasourceQuery.data?.items || []
   const skills = skillsQuery.data?.skills || []
-  const modelOptions = modelsQuery.data?.items.map((item) => ({
-    value: item.name,
-    label: item.name,
-  }))
-  const availableModels = modelOptions?.length ? modelOptions : models
+  const availableModels =
+    agentsQuery.data?.agents
+      .filter((agent) => agent.available)
+      .map((agent) => ({ value: agent.id, label: agent.name })) || []
   const createMutation = useMutation({
     mutationFn: createApp,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["apps", "list"] }),
@@ -74,7 +67,7 @@ export default function AppListPage() {
     name: "",
     description: "",
     type: "chat",
-    model: "gpt-4",
+    model: availableModels[0]?.value || "codex",
     knowledge_ids: [],
     datasource_ids: [],
     skill_names: [],

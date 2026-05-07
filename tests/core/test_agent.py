@@ -1,8 +1,8 @@
 import pytest
 
-from chatbi_core.agent.base import Action, AgentMessage
-from chatbi_core.agent.memory.short_term import MemoryItem, ShortTermMemory
-from chatbi_core.agent.skill.base import BaseSkill, SkillRegistry
+from aurora_core.agent.base import Action, AgentMessage
+from aurora_core.agent.memory.short_term import MemoryItem, ShortTermMemory
+from aurora_core.agent.skill.base import BaseSkill, SkillRegistry
 
 
 class FakeSkill(BaseSkill):

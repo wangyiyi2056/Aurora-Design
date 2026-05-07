@@ -14,7 +14,7 @@ function findProjectRoot(): string {
   }
   // In production, project is bundled as extraResources
   const resourcesPath = process.resourcesPath
-  const bundledProject = path.join(resourcesPath, "chatbi-project")
+  const bundledProject = path.join(resourcesPath, "aurora-project")
   if (fs.existsSync(bundledProject)) {
     return bundledProject
   }
@@ -34,7 +34,7 @@ function commandExists(cmd: string): boolean {
 function startBackend(): Promise<number> {
   return new Promise((resolve, reject) => {
     const projectRoot = findProjectRoot()
-    const configPath = path.join(projectRoot, "configs", "chatbi.toml")
+    const configPath = path.join(projectRoot, "configs", "aurora.toml")
 
     let command: string
     let args: string[]
@@ -43,20 +43,20 @@ function startBackend(): Promise<number> {
     const bundledUv = path.join(projectRoot, ".venv", "bin", "uv")
     if (fs.existsSync(bundledUv)) {
       command = bundledUv
-      args = ["run", "uvicorn", "chatbi_app.main:app", "--port", "0", "--host", "127.0.0.1"]
+      args = ["run", "uvicorn", "aurora_app.main:app", "--port", "0", "--host", "127.0.0.1"]
     }
     // 2. Fall back to system uv
     else if (commandExists("uv")) {
       command = "uv"
-      args = ["run", "uvicorn", "chatbi_app.main:app", "--port", "0", "--host", "127.0.0.1"]
+      args = ["run", "uvicorn", "aurora_app.main:app", "--port", "0", "--host", "127.0.0.1"]
     }
     // 3. Fall back to system python with uvicorn
     else if (commandExists("python3")) {
       command = "python3"
-      args = ["-m", "uvicorn", "chatbi_app.main:app", "--port", "0", "--host", "127.0.0.1"]
+      args = ["-m", "uvicorn", "aurora_app.main:app", "--port", "0", "--host", "127.0.0.1"]
     } else if (commandExists("python")) {
       command = "python"
-      args = ["-m", "uvicorn", "chatbi_app.main:app", "--port", "0", "--host", "127.0.0.1"]
+      args = ["-m", "uvicorn", "aurora_app.main:app", "--port", "0", "--host", "127.0.0.1"]
     } else {
       reject(
         new Error(
@@ -74,7 +74,7 @@ function startBackend(): Promise<number> {
       cwd: projectRoot,
       env: {
         ...process.env,
-        CHATBI_CONFIG: configPath,
+        AURORA_CONFIG: configPath,
       },
       stdio: ["ignore", "pipe", "pipe"],
     })
@@ -200,7 +200,7 @@ async function createWindow() {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error("[Electron] Failed to start:", message)
-    dialog.showErrorBox("ChatBI Backend Error", message)
+    dialog.showErrorBox("Aurora Design Backend Error", message)
     app.quit()
   }
 }

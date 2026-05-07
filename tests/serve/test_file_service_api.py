@@ -1,11 +1,11 @@
 from fastapi.testclient import TestClient
 
-from chatbi_serve.server import create_app
+from aurora_serve.server import create_app
 
 
 def test_uploaded_file_metadata_survives_restart(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
-    monkeypatch.setenv("CHATBI_STORAGE_DIR", str(tmp_path / "storage"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
 
     with TestClient(create_app()) as client:
         resp = client.post(

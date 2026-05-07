@@ -1,14 +1,14 @@
 import pytest
 
-from chatbi_ext.rag import (
+from aurora_ext.rag import (
     ChunkManager,
     ChunkParameters,
     EmbeddingAssembler,
     KnowledgeFactory,
 )
-from chatbi_ext.rag.knowledge.base import Document
-from chatbi_ext.rag.retriever.bm25_retriever import BM25Retriever
-from chatbi_ext.storage.chroma_store import ChromaVectorStore
+from aurora_ext.rag.knowledge.base import Document
+from aurora_ext.rag.retriever.bm25_retriever import BM25Retriever
+from aurora_ext.storage.chroma_store import ChromaVectorStore
 
 
 class FakeEmbeddings:
@@ -21,7 +21,7 @@ class FakeKnowledge:
     def load(self):
         return [
             Document(
-                content="ChatBI is an agentic AI data platform.", metadata={"src": "doc1"}
+                content="Aurora is an agentic AI data platform.", metadata={"src": "doc1"}
             ),
             Document(
                 content="It supports SQL generation and RAG.", metadata={"src": "doc2"}
@@ -39,8 +39,8 @@ def test_chunk_manager():
 @pytest.mark.asyncio
 async def test_bm25_retriever():
     docs = [
-        Document(content="ChatBI supports SQL", metadata={}),
-        Document(content="ChatBI supports RAG", metadata={}),
+        Document(content="Aurora supports SQL", metadata={}),
+        Document(content="Aurora supports RAG", metadata={}),
     ]
     retriever = BM25Retriever(docs, top_k=2)
     results = await retriever.retrieve("RAG")

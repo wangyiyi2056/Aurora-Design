@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom"
 import { ChevronLeft, Plus, Clock, Sun, Moon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useGlobalStore } from "@/stores/global-store"
+import { BrandLogo } from "@/components/brand/brand-logo"
 
 interface MobileNavProps {
   title?: string
@@ -46,6 +47,7 @@ export function MobileNav({
             <ChevronLeft className="h-5 w-5" />
           </button>
         )}
+        {!title && <BrandLogo className="h-6 w-6" />}
         <span className="font-medium">{title || t("appName")}</span>
       </div>
       <div className="flex items-center gap-2">

@@ -1,4 +1,4 @@
-# ChatBI
+# Aurora
 
 > [English](README.md) | [中文](README.zh.md)
 
@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/wangyiyi2056/chatBI">
+  <a href="https://github.com/wangyiyi2056/aurora">
     <img src="https://img.shields.io/badge/visibility-private-black?style=flat-square" alt="private repo">
   </a>
 </p>
@@ -16,17 +16,17 @@
 
 ---
 
-**ChatBI** 是一个智能 AI 数据平台，让你能够通过统一的 API 和现代化的 Web 界面与数据对话、构建知识库、编排工作流，并在安全沙箱中执行代码。
+**Aurora** 是一个智能 AI 数据平台，让你能够通过统一的 API 和现代化的 Web 界面与数据对话、构建知识库、编排工作流，并在安全沙箱中执行代码。
 
 ## 架构
 
 ```
 packages/
-├── chatbi-core/      # 核心框架：配置、模型抽象、组件注册中心
-├── chatbi-serve/     # FastAPI 服务层：对话、数据源、Agent、知识库、AWEL API
-├── chatbi-ext/       # 扩展层：RAG Pipeline、向量存储、AWEL 算子
-├── chatbi-sandbox/   # 沙箱执行环境（Docker 隔离）
-└── chatbi-app/       # 应用入口：Uvicorn 启动脚本
+├── aurora-core/      # 核心框架：配置、模型抽象、组件注册中心
+├── aurora-serve/     # FastAPI 服务层：对话、数据源、Agent、知识库、AWEL API
+├── aurora-ext/       # 扩展层：RAG Pipeline、向量存储、AWEL 算子
+├── aurora-sandbox/   # 沙箱执行环境（Docker 隔离）
+└── aurora-app/       # 应用入口：Uvicorn 启动脚本
 frontend/             # Vite + React 18 + TypeScript 5 前端界面
 ```
 
@@ -40,10 +40,10 @@ uv sync --all-packages
 
 ### 2. 配置模型
 
-编辑 `configs/chatbi.toml`：
+编辑 `configs/aurora.toml`：
 
 ```toml
-app_name = "ChatBI"
+app_name = "Aurora"
 debug = true
 port = 8000
 default_llm = "gpt-4o-mini"
@@ -52,7 +52,7 @@ default_llm = "gpt-4o-mini"
 model_name = "gpt-4o-mini"
 model_type = "openai"
 api_base = "https://api.openai.com/v1"
-# api_key 推荐通过环境变量 CHATBI_API_KEY 传入
+# api_key 推荐通过环境变量 AURORA_API_KEY 传入
 temperature = 0.7
 max_tokens = 2048
 ```
@@ -60,13 +60,13 @@ max_tokens = 2048
 ### 3. 启动服务
 
 ```bash
-uv run uvicorn chatbi_app.main:app --reload
+uv run uvicorn aurora_app.main:app --reload
 ```
 
 或：
 
 ```bash
-uv run chatbi
+uv run aurora
 ```
 
 ### 4. 测试对话接口
@@ -125,7 +125,7 @@ curl -X POST "http://localhost:8000/api/v1/knowledge/upload?name=docs" \
 知识库问答：
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/knowledge/docs/query?query=What%20is%20ChatBI"
+curl -X POST "http://localhost:8000/api/v1/knowledge/docs/query?query=What%20is%20Aurora"
 ```
 
 ### 7. Agent / Skill
@@ -184,7 +184,6 @@ npm run dev
 
 - **Explore** — 入口导航页
 - **Chat** — 桌面端对话界面（支持流式输出、Markdown 渲染、虚拟滚动）
-- **Mobile Chat** — 移动端专属聊天界面（`/mobile/chat`）
 - **Share** — 分享对话只读页
 - **Construct** — 构建中心
   - **App** — 应用构建器（向导式表单）

@@ -1,4 +1,4 @@
-# ChatBI Frontend
+# Aurora Frontend
 
 基于 Vite + React 18 + TypeScript 5 的现代化前端应用。
 

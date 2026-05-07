@@ -1,6 +1,6 @@
-appId: com.chatbi.app
-productName: ChatBI
-copyright: Copyright © 2025 ChatBI
+appId: com.aurora.app
+productName: Aurora Design
+copyright: Copyright © 2025 Aurora Design
 directories:
   output: dist-electron
   buildResources: build
@@ -9,7 +9,7 @@ files:
   - dist/**
 extraResources:
   - from: "../"
-    to: "chatbi-project"
+    to: "aurora-project"
     filter:
       - "configs/**"
       - "packages/**"

@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from chatbi_serve.server import create_app
+from aurora_serve.server import create_app
 
 
 @pytest.fixture
@@ -63,7 +63,7 @@ def test_datasource_lifecycle(client):
 
 
 def test_datasource_detail_and_update(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
     first_db = tmp_path / "first.db"
     second_db = tmp_path / "second.db"
 

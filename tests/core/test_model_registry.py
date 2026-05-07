@@ -1,9 +1,9 @@
 import pytest
 
-from chatbi_core.model.base import BaseLLM
-from chatbi_core.model.registry import ModelRegistry
-from chatbi_core.schema.message import Message, ModelOutput
-from chatbi_core.schema.model import LLMConfig
+from aurora_core.model.base import BaseLLM
+from aurora_core.model.registry import ModelRegistry
+from aurora_core.schema.message import Message, ModelOutput
+from aurora_core.schema.model import LLMConfig
 
 
 class FakeLLM(BaseLLM):

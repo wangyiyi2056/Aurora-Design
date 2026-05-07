@@ -49,7 +49,7 @@ class DockerCodeExecutor:
             output_dir = Path(tmpdir) / "output"
             output_dir.mkdir(exist_ok=True)
 
-            container_name = f"chatbi-sandbox-{uuid.uuid4().hex[:8]}"
+            container_name = f"aurora-sandbox-{uuid.uuid4().hex[:8]}"
             cmd = [
                 "docker",
                 "run",

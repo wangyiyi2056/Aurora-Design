@@ -1,8 +1,8 @@
 import pytest
 
-from chatbi_core.model.adapter.openai_adapter import OpenAILLM
-from chatbi_core.schema.message import Message
-from chatbi_core.schema.model import LLMConfig
+from aurora_core.model.adapter.openai_adapter import OpenAILLM
+from aurora_core.schema.message import Message
+from aurora_core.schema.model import LLMConfig
 
 
 def test_openai_llm_init():

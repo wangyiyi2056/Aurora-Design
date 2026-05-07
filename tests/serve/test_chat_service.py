@@ -1,14 +1,14 @@
 import pytest
 import sqlite3
 
-from chatbi_core.model.base import BaseLLM
-from chatbi_core.model.registry import ModelRegistry
-from chatbi_core.schema.message import Message, ModelOutput
-from chatbi_core.schema.model import LLMConfig
-from chatbi_serve.chat.schema import ChatRequest, ChatMessage, ModelConfig
-from chatbi_serve.chat.service import ChatService
-from chatbi_serve.datasource.schema import DBConfig
-from chatbi_serve.datasource.service import DatasourceService
+from aurora_core.model.base import BaseLLM
+from aurora_core.model.registry import ModelRegistry
+from aurora_core.schema.message import Message, ModelOutput
+from aurora_core.schema.model import LLMConfig
+from aurora_serve.chat.schema import ChatRequest, ChatMessage, ModelConfig
+from aurora_serve.chat.service import ChatService
+from aurora_serve.datasource.schema import DBConfig
+from aurora_serve.datasource.service import DatasourceService
 
 
 class FakeLLM(BaseLLM):
@@ -246,18 +246,18 @@ async def test_chat_service_injects_knowledge_context_from_ext_info():
     class KnowledgeAwareLLM(FakeLLM):
         async def achat(self, messages, **kwargs):
             combined = "\n".join(str(message.content) for message in messages)
-            if "Knowledge context" in combined and "ChatBI stores metadata" in combined:
+            if "Knowledge context" in combined and "Aurora stores metadata" in combined:
                 return ModelOutput(text="used knowledge context")
             return ModelOutput(text="missing knowledge context")
 
     class FakeKnowledgeService:
         async def query(self, name: str, query: str, top_k: int = 5):
             assert name == "docs"
-            assert query == "How does ChatBI store metadata?"
+            assert query == "How does Aurora store metadata?"
             return {
                 "results": [
                     {
-                        "content": "ChatBI stores metadata in SQLite.",
+                        "content": "Aurora stores metadata in SQLite.",
                         "metadata": {"source": "doc.txt"},
                     }
                 ]
@@ -270,7 +270,7 @@ async def test_chat_service_injects_knowledge_context_from_ext_info():
     resp = await service.chat(
         ChatRequest(
             model="fake",
-            messages=[ChatMessage(role="user", content="How does ChatBI store metadata?")],
+            messages=[ChatMessage(role="user", content="How does Aurora store metadata?")],
             ext_info={"knowledge_ids": ["docs"]},
         )
     )
@@ -283,13 +283,13 @@ async def test_chat_service_stream_injects_knowledge_context_from_ext_info():
     class KnowledgeAwareLLM(FakeLLM):
         async def achat(self, messages, **kwargs):
             combined = "\n".join(str(message.content) for message in messages)
-            if "Knowledge context" in combined and "ChatBI stores metadata" in combined:
+            if "Knowledge context" in combined and "Aurora stores metadata" in combined:
                 return ModelOutput(text="used knowledge")
             return ModelOutput(text="missing knowledge")
 
         async def achat_stream(self, messages, **kwargs):
             combined = "\n".join(str(message.content) for message in messages)
-            if "Knowledge context" in combined and "ChatBI stores metadata" in combined:
+            if "Knowledge context" in combined and "Aurora stores metadata" in combined:
                 yield ModelOutput(text="used knowledge")
             else:
                 yield ModelOutput(text="missing knowledge")
@@ -299,7 +299,7 @@ async def test_chat_service_stream_injects_knowledge_context_from_ext_info():
             return {
                 "results": [
                     {
-                        "content": "ChatBI stores metadata in SQLite.",
+                        "content": "Aurora stores metadata in SQLite.",
                         "metadata": {"source": "doc.txt"},
                     }
                 ]
@@ -313,7 +313,7 @@ async def test_chat_service_stream_injects_knowledge_context_from_ext_info():
     async for chunk in service.chat_stream(
         ChatRequest(
             model="fake",
-            messages=[ChatMessage(role="user", content="How does ChatBI store metadata?")],
+            messages=[ChatMessage(role="user", content="How does Aurora store metadata?")],
             stream=True,
             ext_info={"knowledge_base": "docs"},
         )

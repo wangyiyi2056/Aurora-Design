@@ -2,8 +2,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from chatbi_core.schema.message import ModelOutput
-from chatbi_serve.server import create_app
+from aurora_core.schema.message import ModelOutput
+from aurora_serve.server import create_app
 
 
 class FakeEmbeddings:
@@ -12,7 +12,7 @@ class FakeEmbeddings:
 
 
 def test_datasource_configs_survive_app_restart(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
     sqlite_path = tmp_path / "source.db"
 
     with TestClient(create_app()) as client:
@@ -34,10 +34,10 @@ def test_datasource_configs_survive_app_restart(tmp_path, monkeypatch):
 
 
 def test_knowledge_metadata_survives_app_restart(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
-    monkeypatch.setenv("CHATBI_STORAGE_DIR", str(tmp_path / "storage"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
     doc_path = tmp_path / "doc.txt"
-    doc_path.write_text("ChatBI supports RAG and SQL.", encoding="utf-8")
+    doc_path.write_text("Aurora supports RAG and SQL.", encoding="utf-8")
 
     with TestClient(create_app()) as client:
         client.app.state.model_registry.register_embeddings("fake", FakeEmbeddings())
@@ -54,8 +54,8 @@ def test_knowledge_metadata_survives_app_restart(tmp_path, monkeypatch):
 
 
 def test_knowledge_upload_persists_chunking_options(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
-    monkeypatch.setenv("CHATBI_STORAGE_DIR", str(tmp_path / "storage"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
     doc_path = tmp_path / "chunked.txt"
     doc_path.write_text("A" * 160, encoding="utf-8")
 
@@ -81,8 +81,8 @@ def test_knowledge_upload_persists_chunking_options(tmp_path, monkeypatch):
 
 
 def test_knowledge_documents_and_delete_endpoints(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
-    monkeypatch.setenv("CHATBI_STORAGE_DIR", str(tmp_path / "storage"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
     doc_path = tmp_path / "doc.txt"
     doc_path.write_text("alpha beta gamma", encoding="utf-8")
 

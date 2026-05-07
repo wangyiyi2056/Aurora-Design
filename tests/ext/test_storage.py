@@ -1,4 +1,4 @@
-from chatbi_ext.storage.chroma_store import ChromaVectorStore
+from aurora_ext.storage.chroma_store import ChromaVectorStore
 
 
 def test_chroma_store_add_and_search():
@@ -6,7 +6,7 @@ def test_chroma_store_add_and_search():
     vectors = [[1.0] + [0.0] * 383, [0.0] * 384]
     ids = store.add_vectors(
         vectors=vectors,
-        texts=["hello world", "chatbi is great"],
+        texts=["hello world", "aurora is great"],
         metadatas=[{"tag": "a"}, {"tag": "b"}],
     )
     assert len(ids) == 2

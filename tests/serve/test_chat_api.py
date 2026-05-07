@@ -1,11 +1,11 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from chatbi_core.model.adapter.openai_adapter import OpenAILLM
-from chatbi_core.model.registry import ModelRegistry
-from chatbi_core.schema.model import LLMConfig
-from chatbi_serve.chat.service import ChatService
-from chatbi_serve.server import create_app
+from aurora_core.model.adapter.openai_adapter import OpenAILLM
+from aurora_core.model.registry import ModelRegistry
+from aurora_core.schema.model import LLMConfig
+from aurora_serve.chat.service import ChatService
+from aurora_serve.server import create_app
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ def client():
         calls = 0
 
         async def achat(self, messages, **kwargs):
-            from chatbi_core.schema.message import ModelOutput
+            from aurora_core.schema.message import ModelOutput
 
             self.calls += 1
             if self.calls == 1 and "column_analysis" in str(messages[0].content):
@@ -43,7 +43,7 @@ def client():
             return ModelOutput(text="hello from fake")
 
         async def achat_stream(self, messages, **kwargs):
-            from chatbi_core.schema.message import ModelOutput
+            from aurora_core.schema.message import ModelOutput
 
             yield ModelOutput(text="hello")
             yield ModelOutput(text=" from fake")

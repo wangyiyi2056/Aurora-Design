@@ -1,4 +1,4 @@
-# ChatBI
+# Aurora
 
 > [English](README.md) | [中文](README.zh.md)
 
@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/wangyiyi2056/chatBI">
+  <a href="https://github.com/wangyiyi2056/aurora">
     <img src="https://img.shields.io/badge/visibility-private-black?style=flat-square" alt="private repo">
   </a>
 </p>
@@ -16,17 +16,17 @@
 
 ---
 
-**ChatBI** is an agentic AI data platform that lets you chat with your data, build knowledge bases, orchestrate workflows, and run sandboxed code — all through a unified API and modern web interface.
+**Aurora** is an agentic AI data platform that lets you chat with your data, build knowledge bases, orchestrate workflows, and run sandboxed code — all through a unified API and modern web interface.
 
 ## Architecture
 
 ```
 packages/
-├── chatbi-core/      # Core framework: config, model abstraction, component registry
-├── chatbi-serve/     # FastAPI service layer: chat, datasource, agent, knowledge, AWEL APIs
-├── chatbi-ext/       # Extensions: RAG pipeline, vector store, AWEL operators
-├── chatbi-sandbox/   # Sandboxed execution environment (Docker-isolated)
-└── chatbi-app/       # Application entrypoint: Uvicorn bootstrap scripts
+├── aurora-core/      # Core framework: config, model abstraction, component registry
+├── aurora-serve/     # FastAPI service layer: chat, datasource, agent, knowledge, AWEL APIs
+├── aurora-ext/       # Extensions: RAG pipeline, vector store, AWEL operators
+├── aurora-sandbox/   # Sandboxed execution environment (Docker-isolated)
+└── aurora-app/       # Application entrypoint: Uvicorn bootstrap scripts
 frontend/             # Vite + React 18 + TypeScript 5 web interface
 ```
 
@@ -40,10 +40,10 @@ uv sync --all-packages
 
 ### 2. Configure the model
 
-Edit `configs/chatbi.toml`:
+Edit `configs/aurora.toml`:
 
 ```toml
-app_name = "ChatBI"
+app_name = "Aurora"
 debug = true
 port = 8000
 default_llm = "gpt-4o-mini"
@@ -52,7 +52,7 @@ default_llm = "gpt-4o-mini"
 model_name = "gpt-4o-mini"
 model_type = "openai"
 api_base = "https://api.openai.com/v1"
-# api_key is recommended via env var CHATBI_API_KEY
+# api_key is recommended via env var AURORA_API_KEY
 temperature = 0.7
 max_tokens = 2048
 ```
@@ -60,13 +60,13 @@ max_tokens = 2048
 ### 3. Start the server
 
 ```bash
-uv run uvicorn chatbi_app.main:app --reload
+uv run uvicorn aurora_app.main:app --reload
 ```
 
 Or:
 
 ```bash
-uv run chatbi
+uv run aurora
 ```
 
 ### 4. Test the chat API
@@ -125,7 +125,7 @@ curl -X POST "http://localhost:8000/api/v1/knowledge/upload?name=docs" \
 Query the knowledge base:
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/knowledge/docs/query?query=What%20is%20ChatBI"
+curl -X POST "http://localhost:8000/api/v1/knowledge/docs/query?query=What%20is%20Aurora"
 ```
 
 ### 7. Agent / Skill
@@ -184,7 +184,6 @@ The frontend runs at `http://localhost:3000` by default, proxying `/api` request
 
 - **Explore** — Entry navigation page
 - **Chat** — Desktop chat interface (streaming, Markdown, virtual scrolling)
-- **Mobile Chat** — Mobile-optimized chat (`/mobile/chat`)
 - **Share** — Read-only shared conversation page
 - **Construct** — Builder hub
   - **App** — App builder (wizard form)

@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from chatbi_core.model.base import BaseLLM
-from chatbi_core.schema.message import Message, ModelOutput
-from chatbi_core.schema.model import LLMConfig
-from chatbi_serve.excel.api_call import ApiCall
-from chatbi_serve.excel.pipeline import ExcelAnalysisPipeline
-from chatbi_serve.excel.reader import ExcelReader
+from aurora_core.model.base import BaseLLM
+from aurora_core.schema.message import Message, ModelOutput
+from aurora_core.schema.model import LLMConfig
+from aurora_serve.excel.api_call import ApiCall
+from aurora_serve.excel.pipeline import ExcelAnalysisPipeline
+from aurora_serve.excel.reader import ExcelReader
 
 
 class FakeExcelLLM(BaseLLM):

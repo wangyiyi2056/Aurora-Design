@@ -16,12 +16,12 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "chatbi",
-    "chatbi-app",
-    "chatbi-core",
-    "chatbi-ext",
-    "chatbi-sandbox",
-    "chatbi-serve",
+    "aurora",
+    "aurora-app",
+    "aurora-core",
+    "aurora-ext",
+    "aurora-sandbox",
+    "aurora-serve",
 ]
 
 [[package]]
@@ -288,7 +288,7 @@ wheels = [
 ]
 
 [[package]]
-name = "chatbi"
+name = "aurora"
 version = "0.1.0"
 source = { virtual = "." }
 
@@ -309,24 +309,24 @@ dev = [
 ]
 
 [[package]]
-name = "chatbi-app"
+name = "aurora-app"
 version = "0.1.0"
-source = { editable = "packages/chatbi-app" }
+source = { editable = "packages/aurora-app" }
 dependencies = [
-    { name = "chatbi-ext" },
-    { name = "chatbi-serve" },
+    { name = "aurora-ext" },
+    { name = "aurora-serve" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "chatbi-ext", editable = "packages/chatbi-ext" },
-    { name = "chatbi-serve", editable = "packages/chatbi-serve" },
+    { name = "aurora-ext", editable = "packages/aurora-ext" },
+    { name = "aurora-serve", editable = "packages/aurora-serve" },
 ]
 
 [[package]]
-name = "chatbi-core"
+name = "aurora-core"
 version = "0.1.0"
-source = { editable = "packages/chatbi-core" }
+source = { editable = "packages/aurora-core" }
 dependencies = [
     { name = "duckdb" },
     { name = "openai" },
@@ -351,22 +351,22 @@ requires-dist = [
 ]
 
 [[package]]
-name = "chatbi-ext"
+name = "aurora-ext"
 version = "0.1.0"
-source = { editable = "packages/chatbi-ext" }
+source = { editable = "packages/aurora-ext" }
 dependencies = [
-    { name = "chatbi-core" },
+    { name = "aurora-core" },
     { name = "chromadb" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "chatbi-core", editable = "packages/chatbi-core" },
+    { name = "aurora-core", editable = "packages/aurora-core" },
     { name = "chromadb", specifier = ">=0.5" },
 ]
 
 [[package]]
-name = "chatbi-sandbox"
+name = "aurora-sandbox"
 version = "0.1.0"
 source = { editable = "packages/sandbox" }
 dependencies = [
@@ -383,13 +383,13 @@ requires-dist = [
 ]
 
 [[package]]
-name = "chatbi-serve"
+name = "aurora-serve"
 version = "0.1.0"
-source = { editable = "packages/chatbi-serve" }
+source = { editable = "packages/aurora-serve" }
 dependencies = [
     { name = "beautifulsoup4" },
-    { name = "chatbi-core" },
-    { name = "chatbi-ext" },
+    { name = "aurora-core" },
+    { name = "aurora-ext" },
     { name = "fastapi" },
     { name = "openpyxl" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -401,8 +401,8 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12" },
-    { name = "chatbi-core", editable = "packages/chatbi-core" },
-    { name = "chatbi-ext", editable = "packages/chatbi-ext" },
+    { name = "aurora-core", editable = "packages/aurora-core" },
+    { name = "aurora-ext", editable = "packages/aurora-ext" },
     { name = "fastapi", specifier = ">=0.110" },
     { name = "openpyxl", specifier = ">=3.1" },
     { name = "pandas", specifier = ">=2.0" },

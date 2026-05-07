@@ -1,7 +1,7 @@
 [project]
-name = "chatbi-sandbox"
+name = "aurora-sandbox"
 version = "0.1.0"
-description = "ChatBI sandbox execution environment"
+description = "Aurora sandbox execution environment"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",

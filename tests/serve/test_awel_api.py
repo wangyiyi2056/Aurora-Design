@@ -1,11 +1,11 @@
 from fastapi.testclient import TestClient
 
-from chatbi_serve.server import create_app
+from aurora_serve.server import create_app
 
 
 def test_awel_flow_crud_and_run_history(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
-    monkeypatch.setenv("CHATBI_STORAGE_DIR", str(tmp_path / "storage"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
 
     with TestClient(create_app()) as client:
         operators = client.get("/api/v1/awel/operators")
@@ -61,8 +61,8 @@ def test_awel_flow_crud_and_run_history(tmp_path, monkeypatch):
 
 
 def test_legacy_awel_run_still_works(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
-    monkeypatch.setenv("CHATBI_STORAGE_DIR", str(tmp_path / "storage"))
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
 
     with TestClient(create_app()) as client:
         resp = client.post("/api/v1/awel/run", json={"initial_input": "hello"})

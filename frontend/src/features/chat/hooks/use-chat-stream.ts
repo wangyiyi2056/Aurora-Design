@@ -1,5 +1,7 @@
 import { useMutation } from "@tanstack/react-query"
 import { chatComplete, type APIChatMessage, type ModelConfig } from "@/services/chat"
+import { streamByokProvider } from "@/providers/registry"
+import type { ApiProtocol, ByokConfig } from "@/stores/provider-store"
 import { useChatStore } from "@/stores/chat-store"
 import { ChatSSEState, parseSSEChunk, extractPipelineSteps } from "@/features/chat/utils/sse-parser"
 
@@ -124,6 +126,48 @@ async function executeStreamRequest(
   }
 
   try {
+    const byokConfig = modelConfigToByok(params.modelConfig)
+    if (byokConfig) {
+      let byokError: Error | null = null
+      parser.processEvent({ type: "text_start" })
+      setStreamingParts(parser.toMessageParts())
+      setStreamingStatus("Streaming")
+
+      await streamByokProvider(byokConfig.protocol, byokConfig, params.messages, combinedSignal, {
+        onDelta: (delta) => {
+          parser.processEvent({ type: "text_delta", content: delta })
+          setStreamingParts(parser.toMessageParts())
+          setStreamingStatus(parser.getCurrentStatus())
+        },
+        onDone: () => {
+          parser.processEvent({ type: "text_end", model: byokConfig.model })
+        },
+        onError: (error) => {
+          byokError = error
+        },
+      })
+      if (byokError) throw byokError
+
+      const parts = parser.toMessageParts()
+      const finalContent = parser.getFinalContent()
+      if (parts.length > 0) {
+        addMessage({
+          role: "assistant",
+          content: parts,
+          startTime: parser.getStartTime(),
+          endTime: parser.getEndTime(),
+        })
+      } else if (finalContent) {
+        addMessage({
+          role: "assistant",
+          content: finalContent,
+          startTime: parser.getStartTime(),
+          endTime: parser.getEndTime(),
+        })
+      }
+      return
+    }
+
     const resp = await fetch("/api/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -249,4 +293,20 @@ async function executeStreamRequest(
     setStreamingStatus(null)
     setAbortController(null)
   }
+}
+
+function modelConfigToByok(modelConfig?: ModelConfig): ByokConfig | null {
+  const protocol = modelConfig?.model_type
+  if (!isApiProtocol(protocol)) return null
+  return {
+    protocol,
+    baseUrl: modelConfig?.base_url ?? "",
+    apiKey: modelConfig?.api_key ?? "",
+    model: modelConfig?.model_name ?? "",
+    apiVersion: modelConfig?.api_version ?? "",
+  }
+}
+
+function isApiProtocol(value: unknown): value is ApiProtocol {
+  return value === "openai" || value === "anthropic" || value === "azure" || value === "google"
 }
