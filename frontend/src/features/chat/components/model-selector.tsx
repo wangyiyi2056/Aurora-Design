@@ -5,7 +5,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useModelsStore } from "@/stores/models-store"
+import { useQuery } from "@tanstack/react-query"
+import { listModelConfigs } from "@/services/models"
 
 interface ModelSelectorProps {
   value: string
@@ -18,7 +19,12 @@ const builtinModels = [
 ]
 
 export function ModelSelector({ value, onChange }: ModelSelectorProps) {
-  const { models } = useModelsStore()
+  const { data } = useQuery({
+    queryKey: ["models", "list"],
+    queryFn: listModelConfigs,
+    staleTime: 30_000,
+  })
+  const models = data?.items || []
   const customModels = models
     .filter((m) => (m.type === "llm" || m.type === "anthropic") && m.status === "available")
     .map((m) => ({

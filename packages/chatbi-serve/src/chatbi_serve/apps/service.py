@@ -16,6 +16,10 @@ class AppService(BaseService):
         with self.metadata_store.session() as session:
             return list(session.query(AppEntity).order_by(AppEntity.created_at).all())
 
+    def get(self, app_id: str) -> AppEntity | None:
+        with self.metadata_store.session() as session:
+            return session.get(AppEntity, app_id)
+
     def create(
         self,
         *,

@@ -57,7 +57,7 @@ export default function KnowledgePage() {
   const handleUpload = async () => {
     const file = fileRef.current?.files?.[0]
     if (!file || !name) return
-    await upload.mutateAsync({ name, file })
+    await upload.mutateAsync({ name, file, chunkConfig })
     setName("")
     if (fileRef.current) fileRef.current.value = ""
   }

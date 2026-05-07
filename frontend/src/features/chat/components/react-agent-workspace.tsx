@@ -174,6 +174,17 @@ export function ReactAgentWorkspace({
     iframeRef.current?.contentWindow?.print()
   }
 
+  const downloadReport = () => {
+    if (!htmlArtifact) return
+    const blob = new Blob([String(htmlArtifact.content || "")], { type: "text/html;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = htmlArtifact.name || "Report.html"
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="flex h-[calc(100vh-48px)] min-h-0 w-full overflow-hidden bg-background">
       <aside className="flex min-w-[360px] basis-[40%] flex-col border-r bg-white">
@@ -230,6 +241,10 @@ export function ReactAgentWorkspace({
               <Download className="h-3.5 w-3.5" />
               导出 PDF
             </Button>
+            <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs" onClick={downloadReport} disabled={!htmlArtifact}>
+              <FileText className="h-3.5 w-3.5" />
+              下载 HTML
+            </Button>
             <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs" onClick={onRerun} disabled={!onRerun}>
               <RefreshCw className="h-3.5 w-3.5" />
               重新执行
@@ -283,13 +298,21 @@ export function ReactAgentWorkspace({
           <TabsContent value="files" className="m-0 min-h-0 flex-1 overflow-auto p-5">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {artifacts.map((artifact) => (
-                <div key={artifact.id} className="rounded-lg border p-4">
+                <button
+                  key={artifact.id}
+                  type="button"
+                  className="rounded-lg border p-4 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40"
+                  onClick={() => {
+                    if (artifact.type === "html") onPanelViewChange("html-preview")
+                    if (artifact.type === "summary") onPanelViewChange("summary")
+                  }}
+                >
                   <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-md bg-muted text-muted-foreground">
                     {artifact.type === "html" ? <Eye className="h-4 w-4" /> : <Table2 className="h-4 w-4" />}
                   </div>
                   <div className="truncate text-sm font-semibold">{artifact.name}</div>
                   <div className="mt-1 text-xs text-muted-foreground">{artifact.type}</div>
-                </div>
+                </button>
               ))}
               {artifacts.length === 0 && (
                 <div className="col-span-full rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">

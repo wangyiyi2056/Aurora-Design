@@ -13,14 +13,13 @@ import {
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { useChatStore } from "@/stores/chat-store"
-import { useModelsStore } from "@/stores/models-store"
 import { useChatStream } from "@/features/chat/hooks/use-chat-stream"
 import { ChatMessageList } from "@/features/chat/components/chat-message-list"
 import { ChatInput } from "@/features/chat/components/chat-input"
 import { ConversationList } from "@/features/chat/components/conversation-list"
 import { MobileNav } from "@/features/mobile/components/mobile-nav"
 import { useChatTools } from "@/features/chat/hooks/use-chat-tools"
-import { listSkills } from "@/services/models"
+import { listModelConfigs, listSkills } from "@/services/models"
 import { listKnowledge, queryKnowledge } from "@/services/knowledge"
 import { listDatasources } from "@/services/database"
 import { createSession, loadSession } from "@/services/chat"
@@ -41,8 +40,6 @@ export default function MobileChatPage() {
     loadSessionMessages,
     resetToNewChat,
   } = useChatStore()
-  const { models } = useModelsStore()
-
   const {
     attachments,
     fileInputRef,
@@ -116,7 +113,21 @@ export default function MobileChatPage() {
     }
   }, [sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const modelConfig = models.find((m) => m.name === model)
+  const modelsQuery = useQuery({
+    queryKey: ["models", "list"],
+    queryFn: listModelConfigs,
+    staleTime: 30_000,
+  })
+  const modelConfig = modelsQuery.data?.items.find((m) => m.name === model)
+  const inlineModelConfig =
+    modelConfig?.apiKey && !modelConfig.apiKey.includes("...")
+      ? {
+          model_name: modelConfig.name,
+          base_url: modelConfig.baseUrl,
+          api_key: modelConfig.apiKey,
+          model_type: modelConfig.type,
+        }
+      : undefined
 
   const send = async () => {
     if (!input.trim() || loading) return
@@ -212,13 +223,7 @@ export default function MobileChatPage() {
     chatStream.mutate({
       messages: newMessages,
       model,
-      modelConfig: modelConfig?.apiKey && !modelConfig.apiKey.includes("...")
-        ? {
-            model_name: modelConfig.name,
-            base_url: modelConfig.baseUrl,
-            api_key: modelConfig.apiKey,
-          }
-        : undefined,
+      modelConfig: inlineModelConfig,
       selectParam,
       extInfo,
       session_id: currentSessionId,

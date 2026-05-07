@@ -9,6 +9,7 @@ from chatbi_serve.chat.schema import (
     SessionListResponse,
     SessionLoadResponse,
     SessionMetaResponse,
+    SessionTitleUpdateRequest,
 )
 from chatbi_serve.chat.service import ChatService
 
@@ -112,3 +113,33 @@ async def delete_session(
     if not ok:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"detail": "ok"}
+
+
+@router.patch("/sessions/{session_id}/title", response_model=SessionLoadResponse)
+async def update_session_title(
+    session_id: str,
+    req: SessionTitleUpdateRequest,
+    service: ChatService = Depends(get_chat_service),
+) -> SessionLoadResponse:
+    ok = service.set_session_title(session_id, req.title)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = service.load_session_full(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    meta = SessionMetaResponse(
+        id=session.id,
+        title=session.title,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+        message_count=session.message_count,
+    )
+    messages: list[dict] = []
+    for msg in session.messages:
+        msg_dict: dict = {"type": msg.type, "content": str(msg.content) if msg.content else ""}
+        if msg.tool_name:
+            msg_dict["tool_name"] = msg.tool_name
+        if msg.tool_call_id:
+            msg_dict["tool_call_id"] = msg.tool_call_id
+        messages.append(msg_dict)
+    return SessionLoadResponse(session=meta, messages=messages)

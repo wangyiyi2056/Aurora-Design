@@ -15,6 +15,9 @@ export function ConstructShell({ children }: ConstructShellProps) {
     { key: "/construct/app", label: t("construct.app") },
     { key: "/construct/database", label: t("construct.database") },
     { key: "/construct/knowledge", label: t("construct.knowledge") },
+    { key: "/construct/flow", label: t("construct.flow") },
+    { key: "/construct/prompt", label: t("construct.prompt") },
+    { key: "/construct/plugins", label: t("construct.plugins") },
     { key: "/construct/skills", label: t("construct.skills") },
     { key: "/construct/models", label: t("construct.models") },
   ]

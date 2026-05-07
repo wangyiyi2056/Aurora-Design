@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { useChatStore } from "@/stores/chat-store"
-import { useModelsStore } from "@/stores/models-store"
 import { sendChatStream } from "@/features/chat/hooks/use-chat-stream"
 import { ChatMessageList } from "@/features/chat/components/chat-message-list"
 import { ChatInput } from "@/features/chat/components/chat-input"
@@ -29,7 +28,7 @@ import {
   type ReactAgentPanelView,
   type ReactAgentSnapshot,
 } from "@/features/chat/utils/react-agent-workspace"
-import { listSkillsDetail, type SkillInfo } from "@/services/models"
+import { listModelConfigs, listSkillsDetail, type SkillInfo } from "@/services/models"
 import { listKnowledge, queryKnowledge } from "@/services/knowledge"
 import { listDatasources } from "@/services/database"
 import { createSession, loadSession } from "@/services/chat"
@@ -56,8 +55,6 @@ export default function ChatPage() {
     setAbortController,
     setDebugPipelineEnabled,
   } = useChatStore()
-  const { models } = useModelsStore()
-
   const {
     attachments,
     fileInputRef,
@@ -105,7 +102,21 @@ export default function ChatPage() {
     enabled: databaseModalOpen,
   })
 
-  const modelConfig = models.find((m) => m.name === model)
+  const modelsQuery = useQuery({
+    queryKey: ["models", "list"],
+    queryFn: listModelConfigs,
+    staleTime: 30_000,
+  })
+  const modelConfig = modelsQuery.data?.items.find((m) => m.name === model)
+  const inlineModelConfig =
+    modelConfig?.apiKey && !modelConfig.apiKey.includes("...")
+      ? {
+          model_name: modelConfig.name,
+          base_url: modelConfig.baseUrl,
+          api_key: modelConfig.apiKey,
+          model_type: modelConfig.type,
+        }
+      : undefined
 
   const syncAgentSnapshot = () => {
     const snapshot = agentStateRef.current?.getSnapshot()
@@ -152,14 +163,7 @@ export default function ChatPage() {
           user_input: question,
           conv_uid: currentSessionId,
           model_name: model,
-	          model_config: modelConfig?.apiKey && !modelConfig.apiKey.includes("...")
-	            ? {
-	                model_name: modelConfig.name,
-	                base_url: modelConfig.baseUrl,
-	                api_key: modelConfig.apiKey,
-	                model_type: modelConfig.type,
-	              }
-	            : undefined,
+          model_config: inlineModelConfig,
           ext_info: {
             file_path: file.path,
             file_name: file.name,
@@ -214,6 +218,7 @@ export default function ChatPage() {
 
   const send = async () => {
     if (!input.trim() || loading) return
+    const question = input.trim()
 
     const contentParts: ContentPart[] = []
 
@@ -223,10 +228,14 @@ export default function ChatPage() {
       (att) => att.content && /\.(csv|xlsx|xls)$/i.test(att.name)
     )
     if (tabularAttachment?.content) {
-      await sendReactAgent(input.trim(), {
+      await sendReactAgent(question, {
         name: tabularAttachment.name,
         path: tabularAttachment.content,
       })
+      return
+    }
+    if (agentSnapshot && lastAgentFileRef.current) {
+      await sendReactAgent(question, lastAgentFileRef.current)
       return
     }
 
@@ -249,7 +258,7 @@ export default function ChatPage() {
     if (knowledgeAtt) {
       setLoading(true)
       try {
-        const ctx = await queryKnowledge(knowledgeAtt.name, input.trim())
+        const ctx = await queryKnowledge(knowledgeAtt.name, question)
         const results = Array.isArray(ctx.results)
           ? ctx.results.map((r: { content: string }) => r.content).join("\n---\n")
           : JSON.stringify(ctx)
@@ -267,7 +276,7 @@ export default function ChatPage() {
     }
 
     // User text
-    contentParts.push({ type: "text", text: input.trim() })
+    contentParts.push({ type: "text", text: question })
 
     const existingSystem =
       messages.find((m) => m.role === "system")?.content || ""
@@ -303,7 +312,7 @@ export default function ChatPage() {
       extInfo.database_name = dbAtt.name
     }
 
-    addMessage({ role: "user", content: input.trim() })
+    addMessage({ role: "user", content: question })
     setInput("")
     setLoading(true)
     clearAttachments()
@@ -323,19 +332,12 @@ export default function ChatPage() {
     try {
       sendChatStream({
         messages: newMessages,
-      model,
-	      modelConfig: modelConfig?.apiKey && !modelConfig.apiKey.includes("...")
-	        ? {
-	            model_name: modelConfig.name,
-	            base_url: modelConfig.baseUrl,
-	            api_key: modelConfig.apiKey,
-	            model_type: modelConfig.type,
-	          }
-	        : undefined,
-      selectParam,
-      extInfo,
-      session_id: currentSessionId,
-    })
+        model,
+        modelConfig: inlineModelConfig,
+        selectParam,
+        extInfo,
+        session_id: currentSessionId,
+      })
     } catch (err) {
       addMessage({
         role: "assistant",
@@ -407,6 +409,33 @@ export default function ChatPage() {
       setDatabase(selectedDatabase)
       setDatabaseModalOpen(false)
     }
+  }
+
+  const shareAgentReport = async () => {
+    if (!agentSnapshot) return
+    const id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}`
+    localStorage.setItem(
+      `chatbi-share-${id}`,
+      JSON.stringify({
+        type: "react-agent-report",
+        id,
+        question: agentQuestion,
+        snapshot: agentSnapshot,
+        artifacts: agentArtifacts,
+        createdAt: Date.now(),
+      })
+    )
+    const url = `${window.location.origin}/share/${id}`
+    try {
+      await navigator.clipboard.writeText(url)
+      toast.success("分享链接已复制")
+    } catch {
+      toast.success("分享已生成")
+    }
+    window.open(url, "_blank", "noopener,noreferrer")
   }
 
   const sharedControls = (
@@ -551,6 +580,7 @@ export default function ChatPage() {
             ? () => sendReactAgent(agentQuestion, lastAgentFileRef.current as { name: string; path: string })
             : undefined
         }
+        onShare={shareAgentReport}
       />
     ) : (
     <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-48px)]">
@@ -606,14 +636,7 @@ export default function ChatPage() {
                       userMsg,
                     ] as APIChatMessage[],
                     model,
-                    modelConfig: modelConfig
-                      ? {
-                          model_name: modelConfig.name,
-                          base_url: modelConfig.baseUrl,
-                          api_key: modelConfig.apiKey,
-                          model_type: modelConfig.type,
-                        }
-                      : { model_name: model, base_url: "", api_key: "", model_type: "llm" },
+                    modelConfig: inlineModelConfig,
                     session_id: currentSessionId,
                   })
                 } catch (err) {

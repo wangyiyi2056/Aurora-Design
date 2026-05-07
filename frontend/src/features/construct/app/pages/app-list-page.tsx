@@ -16,7 +16,9 @@ import { Tag } from "@/components/ui/tag"
 import { Steps } from "@/components/ui/steps"
 import { ConstructShell } from "@/features/construct/components/construct-shell"
 import { createApp, listApps } from "@/services/apps"
-import { listModelConfigs } from "@/services/models"
+import { listDatasources } from "@/services/database"
+import { listKnowledge } from "@/services/knowledge"
+import { listModelConfigs, listSkillsDetail } from "@/services/models"
 
 const appTypes = [
   { value: "chat", label: "Chat" },
@@ -35,6 +37,13 @@ interface FormData {
   description: string
   type: string
   model: string
+  knowledge_ids: string[]
+  datasource_ids: string[]
+  skill_names: string[]
+}
+
+function toggleValue(values: string[], value: string) {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value]
 }
 
 export default function AppListPage() {
@@ -42,7 +51,13 @@ export default function AppListPage() {
   const qc = useQueryClient()
   const appsQuery = useQuery({ queryKey: ["apps", "list"], queryFn: listApps })
   const modelsQuery = useQuery({ queryKey: ["models", "list"], queryFn: listModelConfigs })
+  const knowledgeQuery = useQuery({ queryKey: ["knowledge", "list"], queryFn: listKnowledge })
+  const datasourceQuery = useQuery({ queryKey: ["database", "datasources"], queryFn: listDatasources })
+  const skillsQuery = useQuery({ queryKey: ["skills", "list"], queryFn: listSkillsDetail })
   const apps = appsQuery.data?.items || []
+  const knowledgeBases = knowledgeQuery.data || []
+  const datasources = datasourceQuery.data?.items || []
+  const skills = skillsQuery.data?.skills || []
   const modelOptions = modelsQuery.data?.items.map((item) => ({
     value: item.name,
     label: item.name,
@@ -60,6 +75,9 @@ export default function AppListPage() {
     description: "",
     type: "chat",
     model: "gpt-4",
+    knowledge_ids: [],
+    datasource_ids: [],
+    skill_names: [],
   })
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
@@ -86,7 +104,15 @@ export default function AppListPage() {
     })
     setCreating(false)
     setCurrentStep(0)
-    setFormData({ name: "", description: "", type: "chat", model: "gpt-4" })
+    setFormData({
+      name: "",
+      description: "",
+      type: "chat",
+      model: "gpt-4",
+      knowledge_ids: [],
+      datasource_ids: [],
+      skill_names: [],
+    })
     setFormErrors({})
   }
 
@@ -127,6 +153,15 @@ export default function AppListPage() {
                 <div className="flex flex-wrap gap-2">
                   <Tag>{item.type}</Tag>
                   <Tag variant="outline">{item.model}</Tag>
+                  {item.knowledge_ids.length > 0 && (
+                    <Tag variant="info">{t("app.knowledgeCount", { count: item.knowledge_ids.length })}</Tag>
+                  )}
+                  {item.datasource_ids.length > 0 && (
+                    <Tag variant="success">{t("app.datasourceCount", { count: item.datasource_ids.length })}</Tag>
+                  )}
+                  {item.skill_names.length > 0 && (
+                    <Tag variant="secondary">{t("app.skillCount", { count: item.skill_names.length })}</Tag>
+                  )}
                 </div>
               </Card>
             ))}
@@ -188,32 +223,116 @@ export default function AppListPage() {
             )}
 
             {currentStep === 1 && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t("app.model")}</label>
-                <Select
-                  value={formData.model}
-                  onValueChange={(v) => setFormData({ ...formData, model: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableModels.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t("app.model")}</label>
+                  <Select
+                    value={formData.model}
+                    onValueChange={(v) => setFormData({ ...formData, model: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableModels.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formErrors.model && (
+                    <p className="text-sm text-destructive">{formErrors.model}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t("app.knowledgeBindings")}</label>
+                  <div className="flex flex-wrap gap-2">
+                    {knowledgeBases.map((name) => (
+                      <Button
+                        key={name}
+                        type="button"
+                        variant={formData.knowledge_ids.includes(name) ? "default" : "outline"}
+                        size="sm"
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            knowledge_ids: toggleValue(formData.knowledge_ids, name),
+                          })
+                        }
+                      >
+                        {name}
+                      </Button>
                     ))}
-                  </SelectContent>
-                </Select>
-                {formErrors.model && (
-                  <p className="text-sm text-destructive">{formErrors.model}</p>
-                )}
-              </div>
+                    {knowledgeBases.length === 0 && (
+                      <span className="text-sm text-muted-foreground">{t("app.noKnowledge")}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t("app.datasourceBindings")}</label>
+                  <div className="flex flex-wrap gap-2">
+                    {datasources.map((item) => (
+                      <Button
+                        key={item.name}
+                        type="button"
+                        variant={formData.datasource_ids.includes(item.name) ? "default" : "outline"}
+                        size="sm"
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            datasource_ids: toggleValue(formData.datasource_ids, item.name),
+                          })
+                        }
+                      >
+                        {item.name}
+                      </Button>
+                    ))}
+                    {datasources.length === 0 && (
+                      <span className="text-sm text-muted-foreground">{t("app.noDatasource")}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t("app.skillBindings")}</label>
+                  <div className="flex flex-wrap gap-2">
+                    {skills.map((item) => (
+                      <Button
+                        key={item.name}
+                        type="button"
+                        variant={formData.skill_names.includes(item.name) ? "default" : "outline"}
+                        size="sm"
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            skill_names: toggleValue(formData.skill_names, item.name),
+                          })
+                        }
+                      >
+                        {item.name}
+                      </Button>
+                    ))}
+                    {skills.length === 0 && (
+                      <span className="text-sm text-muted-foreground">{t("app.noSkills")}</span>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
 
             {currentStep === 2 && (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">{t("app.reviewDesc")}</p>
+              <div className="space-y-3 py-4">
+                <p className="text-muted-foreground text-sm">{t("app.reviewDesc")}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Tag>{formData.type}</Tag>
+                  <Tag variant="outline">{formData.model}</Tag>
+                  <Tag variant="info">{t("app.knowledgeCount", { count: formData.knowledge_ids.length })}</Tag>
+                  <Tag variant="success">{t("app.datasourceCount", { count: formData.datasource_ids.length })}</Tag>
+                  <Tag variant="secondary">{t("app.skillCount", { count: formData.skill_names.length })}</Tag>
+                </div>
               </div>
             )}
 

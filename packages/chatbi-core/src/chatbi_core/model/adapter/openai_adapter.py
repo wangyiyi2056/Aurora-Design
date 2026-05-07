@@ -23,7 +23,7 @@ class OpenAILLM(BaseLLM):
                 api_base = api_base.rstrip("/") + "/v1"
 
         self.client = openai.AsyncOpenAI(
-            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+            api_key=config.api_key or os.getenv("OPENAI_API_KEY") or "EMPTY",
             base_url=api_base,
             default_headers=extra_headers if extra_headers else None,
         )

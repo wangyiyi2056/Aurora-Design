@@ -43,7 +43,14 @@ class KnowledgeService(BaseService):
             rows = session.query(KnowledgeBaseEntity).order_by(KnowledgeBaseEntity.created_at).all()
             return [row.name for row in rows]
 
-    async def upload(self, name: str, file: UploadFile) -> dict[str, object]:
+    async def upload(
+        self,
+        name: str,
+        file: UploadFile,
+        chunk_strategy: str = "fixed",
+        chunk_size: int = 500,
+        chunk_overlap: int = 50,
+    ) -> dict[str, object]:
         suffix = os.path.splitext(file.filename or "")[1] or ".txt"
         stored_name = f"{uuid4()}{suffix}"
         file_path = self.upload_dir / stored_name
@@ -51,7 +58,11 @@ class KnowledgeService(BaseService):
 
         collection_name = self._collection_name(name)
         knowledge = KnowledgeFactory.from_file_path(str(file_path))
-        chunk_manager = ChunkManager(ChunkParameters(chunk_size=500, chunk_overlap=50))
+        chunk_size = max(1, chunk_size)
+        chunk_overlap = max(0, min(chunk_overlap, chunk_size - 1))
+        chunk_manager = ChunkManager(
+            ChunkParameters(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        )
         embeddings = self.registry.get_embeddings()
         vector_store = ChromaVectorStore(
             collection_name=collection_name,
@@ -74,9 +85,15 @@ class KnowledgeService(BaseService):
                     collection_name=collection_name,
                     persist_directory=str(self.chroma_dir),
                     chunk_count=0,
+                    chunk_strategy=chunk_strategy,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
                 )
                 session.add(entity)
             entity.chunk_count = (entity.chunk_count or 0) + len(ids)
+            entity.chunk_strategy = chunk_strategy
+            entity.chunk_size = chunk_size
+            entity.chunk_overlap = chunk_overlap
             doc = KnowledgeDocumentEntity(
                 id=str(uuid4()),
                 knowledge_name=name,
@@ -86,16 +103,93 @@ class KnowledgeService(BaseService):
             )
             session.add(doc)
             session.commit()
-        return {"name": name, "chunks": len(ids)}
+        return {
+            "name": name,
+            "chunks": len(ids),
+            "chunk_strategy": chunk_strategy,
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
+        }
 
-    async def query(self, name: str, query: str) -> dict[str, object]:
-        retriever = self._retrievers.get(name) or self._restore_retriever(name)
+    def detail(self, name: str) -> dict[str, object] | None:
+        with self.metadata_store.session() as session:
+            entity = session.get(KnowledgeBaseEntity, name)
+            if entity is None:
+                return None
+            return {
+                "name": entity.name,
+                "collection_name": entity.collection_name,
+                "persist_directory": entity.persist_directory,
+                "chunks": entity.chunk_count,
+                "chunk_strategy": entity.chunk_strategy,
+                "chunk_size": entity.chunk_size,
+                "chunk_overlap": entity.chunk_overlap,
+            }
+
+    def list_documents(self, name: str) -> list[dict[str, object]]:
+        with self.metadata_store.session() as session:
+            docs = (
+                session.query(KnowledgeDocumentEntity)
+                .filter_by(knowledge_name=name)
+                .order_by(KnowledgeDocumentEntity.created_at.desc())
+                .all()
+            )
+            return [
+                {
+                    "id": doc.id,
+                    "knowledge_name": doc.knowledge_name,
+                    "file_name": doc.file_name,
+                    "file_path": doc.file_path,
+                    "chunks": doc.chunk_count,
+                    "created_at": doc.created_at,
+                    "updated_at": doc.updated_at,
+                }
+                for doc in docs
+            ]
+
+    async def query(self, name: str, query: str, top_k: int = 5) -> dict[str, object]:
+        retriever = self._retrievers.get(name) or self._restore_retriever(name, top_k=top_k)
         if retriever is None:
             return {"error": f"Knowledge base '{name}' not found"}
+        if hasattr(retriever, "top_k"):
+            retriever.top_k = top_k
         docs = await retriever.retrieve(query)
         return {"results": [{"content": d.content, "metadata": d.metadata} for d in docs]}
 
-    def _restore_retriever(self, name: str):
+    def delete_document(self, name: str, document_id: str) -> bool:
+        with self.metadata_store.session() as session:
+            doc = session.get(KnowledgeDocumentEntity, document_id)
+            if doc is None or doc.knowledge_name != name:
+                return False
+            file_path = Path(doc.file_path)
+            session.delete(doc)
+            kb = session.get(KnowledgeBaseEntity, name)
+            if kb is not None:
+                kb.chunk_count = max(0, (kb.chunk_count or 0) - (doc.chunk_count or 0))
+            session.commit()
+        if file_path.exists():
+            file_path.unlink()
+        self._retrievers.pop(name, None)
+        return True
+
+    def delete_knowledge_base(self, name: str) -> bool:
+        with self.metadata_store.session() as session:
+            kb = session.get(KnowledgeBaseEntity, name)
+            if kb is None:
+                return False
+            docs = session.query(KnowledgeDocumentEntity).filter_by(knowledge_name=name).all()
+            file_paths = [Path(doc.file_path) for doc in docs]
+            for doc in docs:
+                session.delete(doc)
+            session.delete(kb)
+            session.commit()
+        for file_path in file_paths:
+            if file_path.exists():
+                file_path.unlink()
+        self._retrievers.pop(name, None)
+        return True
+
+    def _restore_retriever(self, name: str, top_k: int = 5):
         with self.metadata_store.session() as session:
             entity = session.get(KnowledgeBaseEntity, name)
             if entity is None:
@@ -105,7 +199,7 @@ class KnowledgeService(BaseService):
                 persist_directory=entity.persist_directory,
             )
         embeddings = self.registry.get_embeddings()
-        retriever = EmbeddingRetriever(vector_store=vector_store, embeddings=embeddings, top_k=5)
+        retriever = EmbeddingRetriever(vector_store=vector_store, embeddings=embeddings, top_k=top_k)
         self._retrievers[name] = retriever
         return retriever
 

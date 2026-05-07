@@ -60,3 +60,44 @@ def test_datasource_lifecycle(client):
     resp = client.delete("/api/v1/datasource/test-sqlite")
     assert resp.status_code == 200
     assert resp.json()["success"] is True
+
+
+def test_datasource_detail_and_update(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHATBI_METADATA_DB", str(tmp_path / "chatbi.db"))
+    first_db = tmp_path / "first.db"
+    second_db = tmp_path / "second.db"
+
+    with TestClient(create_app()) as client:
+        create = client.post(
+            "/api/v1/datasource",
+            json={
+                "config": {
+                    "name": "editable",
+                    "db_type": "sqlite",
+                    "database": str(first_db),
+                }
+            },
+        )
+        assert create.status_code == 200
+
+        detail = client.get("/api/v1/datasource/editable")
+        assert detail.status_code == 200
+        assert detail.json()["config"]["database"] == str(first_db)
+
+        update = client.put(
+            "/api/v1/datasource/editable",
+            json={
+                "config": {
+                    "name": "editable",
+                    "db_type": "sqlite",
+                    "database": str(second_db),
+                }
+            },
+        )
+        assert update.status_code == 200
+        assert update.json()["name"] == "editable"
+
+    with TestClient(create_app()) as client:
+        detail = client.get("/api/v1/datasource/editable")
+        assert detail.status_code == 200
+        assert detail.json()["config"]["database"] == str(second_db)

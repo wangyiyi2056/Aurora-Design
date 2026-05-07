@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ImageUrlPart(BaseModel):
@@ -32,6 +32,8 @@ class ModelConfig(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     model: Optional[str] = None
     messages: List[ChatMessage]
     stream: bool = False
@@ -42,11 +44,10 @@ class ChatRequest(BaseModel):
     ext_info: Optional[Dict[str, Any]] = None
     session_id: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
-
 
 class ReactAgentRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     user_input: str
     conv_uid: Optional[str] = None
     chat_mode: Optional[str] = None
@@ -56,9 +57,6 @@ class ReactAgentRequest(BaseModel):
     max_new_tokens: Optional[int] = None
     model_config_field: Optional[ModelConfig] = Field(None, alias="model_config")
     ext_info: Optional[Dict[str, Any]] = None
-
-    class Config:
-        populate_by_name = True
 
 
 class ChatChoice(BaseModel):
@@ -97,3 +95,7 @@ class SessionLoadResponse(BaseModel):
 
 class SessionCreateResponse(BaseModel):
     session_id: str
+
+
+class SessionTitleUpdateRequest(BaseModel):
+    title: str

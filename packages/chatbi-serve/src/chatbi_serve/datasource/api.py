@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from chatbi_serve.datasource.schema import (
     DatasourceCreate,
@@ -63,6 +63,30 @@ async def delete_datasource(
 ) -> dict:
     ok = service.remove_connection(name)
     return {"success": ok}
+
+
+@router.get("/{name}")
+async def get_datasource(
+    name: str,
+    service: DatasourceService = Depends(get_datasource_service),
+) -> dict:
+    try:
+        config = service.get_config(name)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Datasource not found")
+    return {"name": config.name, "db_type": config.db_type, "config": config.model_dump()}
+
+
+@router.put("/{name}", response_model=DatasourceResponse)
+async def update_datasource(
+    name: str,
+    req: DatasourceCreate,
+    service: DatasourceService = Depends(get_datasource_service),
+) -> DatasourceResponse:
+    if req.config.name != name:
+        raise HTTPException(status_code=422, detail="Datasource name cannot be changed")
+    service.add_connection(req.config)
+    return DatasourceResponse(name=req.config.name, db_type=req.config.db_type)
 
 
 @router.post("/{name}/test", response_model=DatasourceResponse)

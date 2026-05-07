@@ -24,6 +24,10 @@
     "save": "Save",
     "run": "Run",
     "upload": "Upload",
-    "ask": "Ask"
+    "ask": "Ask",
+    "refresh": "Refresh"
+  },
+  "status": {
+    "loading": "Loading"
   }
 }

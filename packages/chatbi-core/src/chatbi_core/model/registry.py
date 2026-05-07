@@ -11,6 +11,9 @@ class ModelRegistry:
     def register_llm(self, name: str, instance: BaseLLM) -> None:
         self._llms[name] = instance
 
+    def unregister_llm(self, name: str) -> None:
+        self._llms.pop(name, None)
+
     def get_llm(self, name: Optional[str] = None) -> BaseLLM:
         if name is None:
             if not self._llms:
@@ -22,6 +25,9 @@ class ModelRegistry:
 
     def register_embeddings(self, name: str, instance: BaseEmbeddings) -> None:
         self._embeddings[name] = instance
+
+    def unregister_embeddings(self, name: str) -> None:
+        self._embeddings.pop(name, None)
 
     def get_embeddings(self, name: Optional[str] = None) -> BaseEmbeddings:
         if name is None:

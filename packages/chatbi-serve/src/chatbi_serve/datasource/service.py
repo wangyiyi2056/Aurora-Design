@@ -56,6 +56,25 @@ class DatasourceService(BaseService):
             raise KeyError(f"Datasource '{name}' not found")
         return self._connectors[name]
 
+    def get_config(self, name: str) -> DBConfig:
+        if self.metadata_store is not None:
+            with self.metadata_store.session() as session:
+                entity = session.get(DatasourceEntity, name)
+                if entity is None:
+                    raise KeyError(f"Datasource '{name}' not found")
+                return DBConfig(
+                    name=entity.name,
+                    db_type=entity.db_type,
+                    host=entity.host,
+                    port=entity.port,
+                    user=entity.user,
+                    password=entity.password,
+                    database=entity.database,
+                    extra=entity.extra or {},
+                )
+        connector = self.get_connector(name)
+        return DBConfig(name=name, db_type=connector.db_type)
+
     def list_connections(self) -> List[str]:
         return list(self._connectors.keys())
 

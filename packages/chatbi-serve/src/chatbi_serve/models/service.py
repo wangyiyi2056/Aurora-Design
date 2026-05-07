@@ -67,12 +67,16 @@ class ModelConfigService(BaseService):
             entity = session.get(ModelConfigEntity, model_id)
             if entity is None:
                 raise KeyError(model_id)
+            old_name = entity.name
+            old_type = entity.type
             if updates.get("is_default") is True:
                 self._clear_default(session)
             for field, value in updates.items():
                 if value is not None and hasattr(entity, field):
                     setattr(entity, field, value)
             session.commit()
+            if entity.name != old_name or entity.type != old_type:
+                self._unregister_runtime(old_name, old_type)
             self._register_runtime(entity)
             return entity
 
@@ -81,8 +85,11 @@ class ModelConfigService(BaseService):
             entity = session.get(ModelConfigEntity, model_id)
             if entity is None:
                 return False
+            name = entity.name
+            model_type = entity.type
             session.delete(entity)
             session.commit()
+            self._unregister_runtime(name, model_type)
             return True
 
     def set_test_status(
@@ -99,10 +106,12 @@ class ModelConfigService(BaseService):
             entity.is_default = False
 
     def _register_runtime(self, entity: ModelConfigEntity) -> None:
-        if not entity.api_key:
+        if not entity.api_key and not entity.base_url:
             return
         model_type = entity.type
         adapter_type = "anthropic" if model_type == "anthropic" else "openai"
+        if self._is_kimi_coding_base_url(entity.base_url):
+            adapter_type = "openai"
         config = LLMConfig(
             model_name=entity.name,
             model_type=adapter_type,
@@ -116,6 +125,16 @@ class ModelConfigService(BaseService):
             self.registry.register_llm(entity.name, AnthropicLLM(config))
         else:
             self.registry.register_llm(entity.name, OpenAILLM(config))
+
+    @staticmethod
+    def _is_kimi_coding_base_url(base_url: str | None) -> bool:
+        return "kimi.com/coding" in (base_url or "")
+
+    def _unregister_runtime(self, name: str, model_type: str) -> None:
+        if model_type == "embedding":
+            self.registry.unregister_embeddings(name)
+        else:
+            self.registry.unregister_llm(name)
 
 
 def mask_api_key(api_key: str | None) -> str:

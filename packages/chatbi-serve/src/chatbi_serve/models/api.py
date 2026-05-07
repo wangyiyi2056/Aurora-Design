@@ -3,6 +3,7 @@
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 
 from chatbi_serve.metadata import ModelConfigEntity
 from chatbi_serve.models.service import ModelConfigService, mask_api_key
@@ -74,6 +75,12 @@ def model_to_response(entity: ModelConfigEntity, masked: bool = True) -> ModelCo
     )
 
 
+def effective_model_type(model_type: str, base_url: str) -> str:
+    if "kimi.com/coding" in (base_url or ""):
+        return "llm"
+    return model_type
+
+
 @router.get("", response_model=ModelConfigListResponse)
 async def list_model_configs(
     service: ModelConfigService = Depends(get_model_config_service),
@@ -88,7 +95,10 @@ async def create_model_config(
     req: ModelConfigCreate,
     service: ModelConfigService = Depends(get_model_config_service),
 ) -> ModelConfigResponse:
-    entity = service.create(**req.model_dump())
+    try:
+        entity = service.create(**req.model_dump())
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Model '{req.name}' already exists")
     return model_to_response(entity)
 
 
@@ -117,8 +127,9 @@ async def delete_model_config(
 async def test_model_connection(req: ModelTestRequest):
     """Test model connection by calling the API endpoint."""
     base_url = req.base_url.rstrip("/")
+    model_type = effective_model_type(req.model_type, base_url)
 
-    if req.model_type == "anthropic":
+    if model_type == "anthropic":
         # Anthropic-style API test
         try:
             async with httpx.AsyncClient(timeout=15) as client:
@@ -205,7 +216,7 @@ async def test_saved_model_connection(
             ModelTestRequest(
                 base_url=entity.base_url,
                 api_key=entity.api_key,
-                model_type=entity.type,
+                model_type=effective_model_type(entity.type, entity.base_url),
             )
         )
     except HTTPException as exc:

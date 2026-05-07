@@ -20,11 +20,15 @@ from chatbi_core.permissions import PermissionManager, PermissionMode
 from chatbi_core.mcp.client import MCPClient
 from chatbi_core.model.adapter.openai_adapter import OpenAILLM
 from chatbi_core.model.adapter.anthropic_adapter import AnthropicLLM
+from chatbi_core.model.base import BaseLLM
 from chatbi_core.model.registry import ModelRegistry
 from chatbi_core.schema.message import Message, ToolCall
 from chatbi_core.schema.model import LLMConfig
 from chatbi_core.mode import ChatMode
 from chatbi_serve.excel.pipeline import ExcelAnalysisPipeline
+from chatbi_serve.agent.sql_agent import SQLAgent
+from chatbi_serve.datasource.service import DatasourceService
+from chatbi_serve.knowledge.service import KnowledgeService
 from chatbi_serve.chat.schema import (
     ChatChoice,
     ChatMessage,
@@ -91,13 +95,18 @@ class EnhancedChatService:
         project_path: Optional[str] = None,
         mcp_client: Optional["MCPClient"] = None,
         mode: ChatMode = ChatMode.BI,
+        session_base_path: Optional[str] = None,
+        datasource_service: Optional[DatasourceService] = None,
+        knowledge_service: Optional[KnowledgeService] = None,
     ):
         self.registry = model_registry
         self.skill_registry = skill_registry
         self.mcp_client = mcp_client
+        self.datasource_service = datasource_service
+        self.knowledge_service = knowledge_service
 
         # Initialize Claude Code architecture components
-        self.session_manager = SessionManager()
+        self.session_manager = SessionManager(base_path=session_base_path)
 
         # Build proper paths for project-level configs
         project_settings_file = None
@@ -197,6 +206,10 @@ class EnhancedChatService:
     def _get_llm(self, req: ChatRequest) -> Union[OpenAILLM, AnthropicLLM]:
         """Get LLM for request."""
         if req.model_config_field:
+            saved_llm = self._get_saved_llm_for_request(req)
+            if saved_llm is not None and not self._has_plain_inline_api_key(req.model_config_field.api_key):
+                return saved_llm
+
             model_type = req.model_config_field.model_type or "openai"
             cfg = LLMConfig(
                 model_name=req.model_config_field.model_name,
@@ -211,6 +224,35 @@ class EnhancedChatService:
                 return AnthropicLLM(cfg)
             return OpenAILLM(cfg)
         return self.registry.get_llm(req.model)
+
+    def _get_saved_llm_for_request(self, req: ChatRequest) -> BaseLLM | None:
+        for name in (req.model, req.model_config_field.model_name if req.model_config_field else None):
+            if not name:
+                continue
+            try:
+                return self.registry.get_llm(name)
+            except KeyError:
+                continue
+        return None
+
+    @staticmethod
+    def _has_plain_inline_api_key(api_key: str | None) -> bool:
+        if not api_key:
+            return False
+        return "..." not in api_key
+
+    def _effective_model_type(self, req: ChatRequest) -> str:
+        saved_llm = self._get_saved_llm_for_request(req)
+        if saved_llm is not None and (
+            not req.model_config_field
+            or not self._has_plain_inline_api_key(req.model_config_field.api_key)
+        ):
+            return saved_llm.config.model_type
+        if req.model_config_field:
+            if "kimi.com/coding" in (req.model_config_field.base_url or ""):
+                return "openai"
+            return req.model_config_field.model_type
+        return "openai"
 
     @staticmethod
     def _extract_text_content(content: Any) -> str:
@@ -332,6 +374,75 @@ class EnhancedChatService:
             return await pipeline.analyze(question)
         finally:
             pipeline.close()
+
+    async def _run_datasource_analysis(self, req: ChatRequest) -> str | None:
+        if not self.datasource_service:
+            return None
+        datasource_name = (req.ext_info or {}).get("database_name")
+        if not datasource_name:
+            return None
+        question = self._extract_latest_user_question(req)
+        if not question:
+            return None
+        agent = SQLAgent(self.registry, self.datasource_service, str(datasource_name))
+        if not agent.is_sql_question(question):
+            return None
+        ok, result = await agent.run(question, str(datasource_name))
+        if ok:
+            return result
+        return f"Datasource query failed: {result}"
+
+    def _knowledge_names_from_ext_info(self, req: ChatRequest) -> list[str]:
+        ext_info = req.ext_info or {}
+        raw = (
+            ext_info.get("knowledge_ids")
+            or ext_info.get("knowledge_names")
+            or ext_info.get("knowledge_base")
+            or ext_info.get("knowledge_name")
+        )
+        if raw is None:
+            return []
+        if isinstance(raw, str):
+            return [raw] if raw else []
+        if isinstance(raw, list):
+            return [str(item) for item in raw if item]
+        return []
+
+    async def _build_knowledge_context(self, req: ChatRequest) -> str:
+        if not self.knowledge_service:
+            return ""
+        names = self._knowledge_names_from_ext_info(req)
+        if not names:
+            return ""
+        question = self._extract_latest_user_question(req)
+        if not question:
+            return ""
+
+        sections: list[str] = []
+        top_k = int((req.ext_info or {}).get("knowledge_top_k") or 5)
+        for name in names:
+            try:
+                result = await self.knowledge_service.query(name, question, top_k=top_k)
+            except Exception as exc:
+                sections.append(f"[{name}] retrieval failed: {exc}")
+                continue
+            docs = result.get("results", []) if isinstance(result, dict) else []
+            if not docs:
+                continue
+            snippets = []
+            for idx, doc in enumerate(docs[:top_k], start=1):
+                content = doc.get("content", "") if isinstance(doc, dict) else str(doc)
+                metadata = doc.get("metadata", {}) if isinstance(doc, dict) else {}
+                source = metadata.get("source") or metadata.get("file_name") or metadata.get("path") or ""
+                prefix = f"{idx}. "
+                if source:
+                    prefix += f"[{source}] "
+                snippets.append(prefix + str(content))
+            if snippets:
+                sections.append(f"Knowledge base: {name}\n" + "\n".join(snippets))
+        if not sections:
+            return ""
+        return "Knowledge context:\n" + "\n\n".join(sections)
 
     @staticmethod
     def _sse_event(payload: dict[str, Any]) -> str:
@@ -671,10 +782,25 @@ class EnhancedChatService:
             messages.append(Message(role=m.role, content=resolved))
         return messages
 
-    def _build_tools(self) -> List[Dict[str, Any]] | None:
+    def _selected_tool_names(self, req: ChatRequest) -> set[str]:
+        names: set[str] = set()
+        if req.select_param:
+            names.add(req.select_param)
+        ext_info = req.ext_info or {}
+        raw = ext_info.get("skill_names") or ext_info.get("skill_name")
+        if isinstance(raw, str) and raw:
+            names.add(raw)
+        elif isinstance(raw, list):
+            names.update(str(item) for item in raw if item)
+        return names
+
+    def _build_tools(self, req: ChatRequest | None = None) -> List[Dict[str, Any]] | None:
         """Build tools for LLM using the new tool registry."""
         # Get active tools from the registry
         tools = self.tool_registry.get_active_tools()
+        selected_names = self._selected_tool_names(req) if req is not None else set()
+        if selected_names:
+            tools = [tool for tool in tools if tool.name in selected_names]
         if not tools:
             return None
 
@@ -843,7 +969,34 @@ class EnhancedChatService:
                 ],
             )
 
+        datasource_result = await self._run_datasource_analysis(req)
+        if datasource_result is not None:
+            question = self._extract_latest_user_question(req)
+            self.session_manager.append_message(
+                session_id,
+                SessionMessage(type="user", content=question, role="user"),
+            )
+            self.session_manager.append_message(
+                session_id,
+                SessionMessage(type="assistant", content=datasource_result, role="assistant"),
+            )
+            return ChatResponse(
+                id=f"chatbi-{int(time.time() * 1000)}",
+                created=int(time.time()),
+                model=req.model or "datasource-analysis",
+                choices=[
+                    ChatChoice(
+                        message=ChatMessage(role="assistant", content=datasource_result),
+                        finish_reason="stop",
+                    )
+                ],
+            )
+
         messages = self._build_messages(req)
+
+        knowledge_context = await self._build_knowledge_context(req)
+        if knowledge_context:
+            messages.insert(0, Message(role="system", content=knowledge_context))
 
         # Add memory context as system message
         memory_context = self.memory_manager.get_memory_context()
@@ -854,10 +1007,10 @@ class EnhancedChatService:
             )
 
         # Build system prompt using PromptBuilder (Claude Code architecture)
-        model_type = req.model_config_field.model_type if req.model_config_field else "openai"
+        model_type = self._effective_model_type(req)
         tools = None
         if model_type not in ("anthropic",):
-            tools = self._build_tools()
+            tools = self._build_tools(req)
         # Always inject system prompt (HTML report, chart vis, etc.) — independent of tools
         if not messages or messages[0].role != "system":
             system_prompt = self.prompt_builder.build_single_string()
@@ -1066,17 +1219,39 @@ class EnhancedChatService:
             yield "data: [DONE]\n\n"
             return
 
+        datasource_result = await self._run_datasource_analysis(req)
+        if datasource_result is not None:
+            question = self._extract_latest_user_question(req)
+            self.session_manager.append_message(
+                session_id,
+                SessionMessage(type="user", content=question, role="user"),
+            )
+            self.session_manager.append_message(
+                session_id,
+                SessionMessage(type="assistant", content=datasource_result, role="assistant"),
+            )
+            resp_id = f"chatbi-{int(time.time() * 1000)}"
+            yield f"data: {json.dumps({'type': 'text_start'})}\n\n"
+            yield f"data: {json.dumps({'type': 'text_delta', 'content': datasource_result})}\n\n"
+            yield f"data: {json.dumps({'type': 'text_end', 'id': resp_id, 'created': int(time.time()), 'model': req.model or 'datasource-analysis', 'finish_reason': 'stop', 'usage': None})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
         messages = self._build_messages(req)
+
+        knowledge_context = await self._build_knowledge_context(req)
+        if knowledge_context:
+            messages.insert(0, Message(role="system", content=knowledge_context))
 
         # Add memory context
         memory_context = self.memory_manager.get_memory_context()
         if memory_context:
             messages.insert(0, Message(role="system", content=memory_context))
 
-        model_type = req.model_config_field.model_type if req.model_config_field else "openai"
+        model_type = self._effective_model_type(req)
         tools = None
         if model_type not in ("anthropic",):
-            tools = self._build_tools()
+            tools = self._build_tools(req)
         # Always inject system prompt (HTML report, chart vis, etc.) — independent of tools
         if not messages or messages[0].role != "system":
             system_prompt = self.prompt_builder.build_single_string()
@@ -1333,6 +1508,10 @@ class EnhancedChatService:
     def delete_session(self, session_id: str) -> bool:
         """Delete a session by ID."""
         return self.session_manager.delete_session(session_id)
+
+    def set_session_title(self, session_id: str, title: str) -> bool:
+        """Set a custom title for a session."""
+        return self.session_manager.set_title(session_id, title)
 
     def load_session_full(self, session_id: str) -> Optional[Session]:
         """Load a full session with messages."""

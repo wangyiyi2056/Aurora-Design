@@ -91,42 +91,49 @@ export default function ModelsPage() {
     const errors: Record<string, string> = {}
     if (!formData.name.trim()) errors.name = t("models.nameRequired")
     if (!formData.baseUrl.trim()) errors.baseUrl = t("models.baseUrlRequired")
-    if (!editingModel && !formData.apiKey.trim()) errors.apiKey = t("models.apiKeyRequired")
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }
 
   const handleAdd = async () => {
     if (!validateForm()) return
-    await createMutation.mutateAsync({
-      name: formData.name,
-      type: formData.type,
-      base_url: formData.baseUrl,
-      api_key: formData.apiKey,
-    })
-    setIsModalOpen(false)
-    resetForm()
-    toast.success(t("models.addSuccess"))
+    try {
+      await createMutation.mutateAsync({
+        name: formData.name.trim(),
+        type: formData.type,
+        base_url: formData.baseUrl.trim(),
+        api_key: formData.apiKey.trim(),
+      })
+      setIsModalOpen(false)
+      resetForm()
+      toast.success(t("models.addSuccess"))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("models.addFailed"))
+    }
   }
 
   const handleEdit = async () => {
     if (!editingModel) return
     if (!validateForm()) return
-    await updateMutation.mutateAsync({
-      id: editingModel.id,
-      payload: {
-      name: formData.name,
-      type: formData.type,
-      base_url: formData.baseUrl,
-      ...(formData.apiKey.trim() && !formData.apiKey.includes("...")
-        ? { api_key: formData.apiKey }
-        : {}),
-      },
-    })
-    setIsModalOpen(false)
-    setEditingModel(null)
-    resetForm()
-    toast.success(t("models.editSuccess"))
+    try {
+      await updateMutation.mutateAsync({
+        id: editingModel.id,
+        payload: {
+          name: formData.name.trim(),
+          type: formData.type,
+          base_url: formData.baseUrl.trim(),
+          ...(formData.apiKey.trim() && !formData.apiKey.includes("...")
+            ? { api_key: formData.apiKey.trim() }
+            : {}),
+        },
+      })
+      setIsModalOpen(false)
+      setEditingModel(null)
+      resetForm()
+      toast.success(t("models.editSuccess"))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("models.editFailed"))
+    }
   }
 
   const openEditModal = (item: ModelItem) => {
@@ -331,7 +338,10 @@ export default function ModelsPage() {
             <Button variant="outline" onClick={closeModal}>
               {t("actions.cancel", { ns: "common" })}
             </Button>
-            <Button onClick={editingModel ? handleEdit : handleAdd}>
+            <Button
+              onClick={editingModel ? handleEdit : handleAdd}
+              disabled={createMutation.isPending || updateMutation.isPending}
+            >
               {editingModel ? t("actions.save", { ns: "common" }) : t("actions.add", { ns: "common" })}
             </Button>
           </DialogFooter>

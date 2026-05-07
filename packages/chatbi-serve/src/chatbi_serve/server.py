@@ -23,12 +23,16 @@ def create_app() -> FastAPI:
         from chatbi_core.model.registry import ModelRegistry
         from chatbi_core.schema.model import LLMConfig
         from chatbi_serve.apps.service import AppService
+        from chatbi_serve.awel.service import FlowService
         from chatbi_serve.chat.service import ChatService
         from chatbi_serve.datasource.schema import DBConfig
         from chatbi_serve.datasource.service import DatasourceService
+        from chatbi_serve.files.service import FileService
         from chatbi_serve.knowledge.service import KnowledgeService
-        from chatbi_serve.metadata import MetadataStore
+        from chatbi_serve.metadata import MetadataStore, storage_dir
         from chatbi_serve.models.service import ModelConfigService
+        from chatbi_serve.prompt.service import PromptTemplateService
+        from chatbi_serve.plugins.service import PluginService
         from chatbi_serve.skills.service import SkillService
 
         config_path = Path("configs/chatbi.toml")
@@ -102,6 +106,22 @@ def create_app() -> FastAPI:
         system_app.register_instance(app_service)
         app.state.app_service = app_service
 
+        file_service = FileService(metadata_store)
+        system_app.register_instance(file_service)
+        app.state.file_service = file_service
+
+        prompt_service = PromptTemplateService(metadata_store)
+        system_app.register_instance(prompt_service)
+        app.state.prompt_service = prompt_service
+
+        flow_service = FlowService(metadata_store)
+        system_app.register_instance(flow_service)
+        app.state.flow_service = flow_service
+
+        plugin_service = PluginService(metadata_store)
+        system_app.register_instance(plugin_service)
+        app.state.plugin_service = plugin_service
+
         # Initialize MCP client
         from chatbi_core.mcp.client import MCPClient
         from chatbi_core.mcp.config import MCPConfig, MCPServerConfig
@@ -120,7 +140,12 @@ def create_app() -> FastAPI:
         app.state.mcp_client = mcp_client
 
         app.state.chat_service = ChatService(
-            registry, skill_registry, mcp_client=mcp_client
+            registry,
+            skill_registry,
+            mcp_client=mcp_client,
+            session_base_path=str(storage_dir() / "sessions"),
+            datasource_service=datasource_service,
+            knowledge_service=knowledge_service,
         )
         system_app.register_instance(app.state.chat_service, name="chat_service")
 

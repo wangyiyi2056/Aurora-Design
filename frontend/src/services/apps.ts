@@ -23,6 +23,19 @@ export interface AppPayload {
   skill_names?: string[]
 }
 
+export interface AppRunPayload {
+  messages: Array<{
+    role: "system" | "user" | "assistant" | "tool"
+    content: string
+  }>
+  stream?: boolean
+  model?: string
+  temperature?: number
+  max_tokens?: number
+  session_id?: string
+  ext_info?: Record<string, unknown>
+}
+
 export async function listApps(): Promise<{ items: AppItem[] }> {
   const res = await apiClient.get("/v1/apps")
   return res.data
@@ -45,5 +58,10 @@ export async function deleteApp(id: string): Promise<{ success: boolean }> {
 
 export async function publishApp(id: string, published: boolean): Promise<AppItem> {
   const res = await apiClient.post(`/v1/apps/${id}/publish`, { published })
+  return res.data
+}
+
+export async function runApp(id: string, payload: AppRunPayload) {
+  const res = await apiClient.post(`/v1/apps/${id}/run`, payload)
   return res.data
 }

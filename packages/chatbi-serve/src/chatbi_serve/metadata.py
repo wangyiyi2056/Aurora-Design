@@ -70,6 +70,9 @@ class KnowledgeBaseEntity(TimestampMixin, Base):
     collection_name: Mapped[str] = mapped_column(String(255), unique=True)
     persist_directory: Mapped[str] = mapped_column(String(1024))
     chunk_count: Mapped[int] = mapped_column(default=0)
+    chunk_strategy: Mapped[str] = mapped_column(String(64), default="fixed")
+    chunk_size: Mapped[int] = mapped_column(default=500)
+    chunk_overlap: Mapped[int] = mapped_column(default=50)
 
 
 class KnowledgeDocumentEntity(TimestampMixin, Base):
@@ -80,6 +83,118 @@ class KnowledgeDocumentEntity(TimestampMixin, Base):
     file_name: Mapped[str] = mapped_column(String(1024))
     file_path: Mapped[str] = mapped_column(String(1024))
     chunk_count: Mapped[int] = mapped_column(default=0)
+
+
+class FileEntity(TimestampMixin, Base):
+    __tablename__ = "files"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    file_name: Mapped[str] = mapped_column(String(1024))
+    file_path: Mapped[str] = mapped_column(String(2048))
+    content_type: Mapped[str] = mapped_column(String(255), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(default=0)
+    purpose: Mapped[str] = mapped_column(String(64), default="general")
+    owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    extra: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class PromptTemplateEntity(TimestampMixin, Base):
+    __tablename__ = "prompt_templates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    category: Mapped[str] = mapped_column(String(128), default="general", index=True)
+    template: Mapped[str] = mapped_column(String)
+    variables: Mapped[list[str]] = mapped_column(JSON, default=list)
+    version: Mapped[int] = mapped_column(default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    description: Mapped[str] = mapped_column(String(2048), default="")
+    extra: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class FlowEntity(TimestampMixin, Base):
+    __tablename__ = "flows"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    description: Mapped[str] = mapped_column(String(2048), default="")
+    nodes: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    edges: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    variables: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class FlowRunEntity(TimestampMixin, Base):
+    __tablename__ = "flow_runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    flow_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(64), default="completed")
+    input: Mapped[Any] = mapped_column(JSON, nullable=True)
+    output: Mapped[Any] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+
+
+class PluginEntity(TimestampMixin, Base):
+    __tablename__ = "plugins"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    description: Mapped[str] = mapped_column(String(2048), default="")
+    entrypoint: Mapped[str] = mapped_column(String(1024), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class EvaluationDatasetEntity(TimestampMixin, Base):
+    __tablename__ = "evaluation_datasets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    description: Mapped[str] = mapped_column(String(2048), default="")
+    data: Mapped[Any] = mapped_column(JSON, nullable=True)
+
+
+class EvaluationTaskEntity(TimestampMixin, Base):
+    __tablename__ = "evaluation_tasks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    model: Mapped[str] = mapped_column(String(255), default="")
+    dataset_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(64), default="pending")
+    result: Mapped[Any] = mapped_column(JSON, nullable=True)
+
+
+class FeedbackEntity(TimestampMixin, Base):
+    __tablename__ = "feedback"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    target_type: Mapped[str] = mapped_column(String(128), index=True)
+    target_id: Mapped[str] = mapped_column(String(255), index=True)
+    rating: Mapped[int] = mapped_column(default=0)
+    comment: Mapped[str] = mapped_column(String(4096), default="")
+    extra: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class TraceEventEntity(TimestampMixin, Base):
+    __tablename__ = "trace_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    span_type: Mapped[str] = mapped_column(String(128), default="event")
+    meta: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+
+
+class UserEntity(TimestampMixin, Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    role: Mapped[str] = mapped_column(String(64), default="admin")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class AppEntity(TimestampMixin, Base):

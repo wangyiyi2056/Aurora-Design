@@ -24,6 +24,10 @@
     "save": "保存",
     "run": "运行",
     "upload": "上传",
-    "ask": "提问"
+    "ask": "提问",
+    "refresh": "刷新"
+  },
+  "status": {
+    "loading": "加载中"
   }
 }
