@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils"
 import { getToolStatusText, ToolIcon } from "./ui/tool-icon"
 import { CollapsibleBox } from "./ui/collapsible"
 import type { ToolPart } from "@/stores/chat-store"
+import { getToolRenderer, toToolRenderProps } from "../runtime/tool-renderers"
 
 /**
  * ToolCard - Tool execution visualization component.
@@ -351,6 +352,10 @@ export function ToolCard({
   showTime = true,
   compact = false,
 }: ToolCardProps) {
+  const customRenderer = getToolRenderer(part.tool)
+  const custom = customRenderer?.(toToolRenderProps(part))
+  if (custom) return <>{custom}</>
+
   const { tool, state } = part
   const { status, input, output, error, metadata } = state
 
@@ -360,10 +365,10 @@ export function ToolCard({
   const statusText = getToolStatusText(tool)
 
   // Calculate duration if metadata has timestamps
-  const duration = React.useMemo(() => {
-    if (!metadata?.startTime || !metadata?.endTime) return undefined
-    return formatDuration((metadata.endTime as number) - (metadata.startTime as number))
-  }, [metadata])
+  const duration =
+    metadata?.startTime && metadata?.endTime
+      ? formatDuration((metadata.endTime as number) - (metadata.startTime as number))
+      : undefined
 
   // Status styling
   const statusColors = STATUS_COLORS[status]

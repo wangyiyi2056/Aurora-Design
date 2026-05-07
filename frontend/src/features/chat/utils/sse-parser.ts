@@ -93,8 +93,8 @@ interface ToolState {
 export class ChatSSEState {
   private parts: MessagePart[] = []
   private textBuffer: string = ""
+  private textPartId: string | null = null
   private reasoningBuffer: string = ""
-  private currentTool: ToolState | null = null
   private toolOrder: string[] = []
   private startTime: number
   private endTime?: number
@@ -137,23 +137,38 @@ export class ChatSSEState {
   }
 
   private handleTextStart(_: SSETextStartEvent): void {
-    // Initialize text buffer
     this.textBuffer = ""
+    this.textPartId = `text-${Date.now()}`
+    this.parts.push({
+      id: this.textPartId,
+      type: "text",
+      text: "",
+    } as TextPart)
   }
 
   private handleTextDelta(event: SSETextDeltaEvent): void {
+    if (!this.textPartId) {
+      this.handleTextStart({ type: "text_start" })
+    }
     this.textBuffer += event.content
+    this.parts = this.parts.map((part) =>
+      part.type === "text" && part.id === this.textPartId
+        ? { ...part, text: this.textBuffer }
+        : part
+    )
   }
 
   private handleTextEnd(_: SSETextEndEvent): void {
-    // Add final text part if there's content
-    if (this.textBuffer.trim()) {
-      this.parts.push({
-        id: `text-${Date.now()}`,
-        type: "text",
-        text: this.textBuffer,
-      } as TextPart)
+    if (this.textPartId) {
+      this.parts = this.textBuffer.trim()
+        ? this.parts.map((part) =>
+            part.type === "text" && part.id === this.textPartId
+              ? { ...part, text: this.textBuffer }
+              : part
+          )
+        : this.parts.filter((part) => part.id !== this.textPartId)
     }
+    this.textPartId = null
     this.endTime = Date.now()
     this.isDone = true
   }
@@ -164,9 +179,8 @@ export class ChatSSEState {
       id: toolId,
       tool: this.mapToolName(event.tool_name),
       status: "running",
-      input: event.arguments ? { arguments: event.arguments } : undefined,
+      input: event.arguments ? parseToolArguments(event.arguments) : undefined,
     }
-    this.currentTool = tool
     this.toolOrder.push(toolId)
 
     // Add tool part immediately to show running status
@@ -182,7 +196,12 @@ export class ChatSSEState {
   }
 
   private handleToolCallResult(event: SSEToolCallResultEvent): void {
-    if (!this.currentTool) {
+    const requestedToolId = event.id || this.toolOrder[this.toolOrder.length - 1]
+    const existingTool = this.parts.find(
+      (p) => p.type === "tool" && p.id === requestedToolId
+    ) as ToolPart | undefined
+
+    if (!existingTool) {
       // Tool call without start - create one
       this.handleToolCallStart({
         type: "tool_call_start",
@@ -191,8 +210,7 @@ export class ChatSSEState {
       })
     }
 
-    // Update existing tool part - immutable update
-    const toolId = this.currentTool?.id || event.id || this.toolOrder[this.toolOrder.length - 1]
+    const toolId = event.id || requestedToolId
 
     // Replace the tool part with updated state (immutable)
     this.parts = this.parts.map(p => {
@@ -210,8 +228,6 @@ export class ChatSSEState {
       }
       return p
     })
-
-    this.currentTool = null
   }
 
   private handleReasoningStart(_: SSEReasoningStartEvent): void {
@@ -305,8 +321,8 @@ export class ChatSSEState {
  * Parse a single SSE data line
  */
 export function parseSSELine(line: string): SSEEvent | null {
-  // Remove 'data: ' prefix
-  const dataPrefix = "data: "
+  // Remove 'data:' prefix. Some endpoints include a space, some do not.
+  const dataPrefix = "data:"
   if (!line.startsWith(dataPrefix)) {
     return null
   }
@@ -370,4 +386,16 @@ export function extractPipelineSteps(events: SSEEvent[]): DebugPipelineStep[] {
  */
 export function createChatSSEState(): ChatSSEState {
   return new ChatSSEState()
+}
+
+function parseToolArguments(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value)
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch {
+    // Keep opaque tool arguments visible when they are not JSON.
+  }
+  return { arguments: value }
 }

@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils"
 import type { MessagePart, ToolPart, ReasoningPart } from "@/stores/chat-store"
 import { ToolCard } from "./tool-card"
 import { ReasoningDisplay } from "./reasoning-display"
+import { exactDateTime, relativeTimeLong } from "../utils/chat-time"
+import { unfinishedTodosFromToolInput } from "../runtime/todos"
 
 const MessageRenderer = lazy(() => import("./message-renderer"))
 
@@ -87,6 +89,10 @@ export function ChatMessageItem({
   const hasReasoningParts = reasoningParts.length > 0 || !!thinkingContent
   // Combined reasoning content
   const combinedReasoning = reasoningParts.map(p => p.text).join("\n") || thinkingContent || ""
+  const unfinishedTodos = toolParts
+    .filter((part) => part.tool.toLowerCase() === "todowrite")
+    .flatMap((part) => unfinishedTodosFromToolInput(part.state.input))
+  const timestamp = startTime ?? endTime
 
   if (role === "system") {
     return (
@@ -124,6 +130,16 @@ export function ChatMessageItem({
 
       {/* Bubble */}
       <div className="relative max-w-[80%] flex flex-col">
+        {!isUser && timestamp && (
+          <time
+            className="mb-1 text-[11px] text-muted-foreground/50"
+            dateTime={new Date(timestamp).toISOString()}
+            title={exactDateTime(timestamp)}
+          >
+            {relativeTimeLong(timestamp)}
+          </time>
+        )}
+
         {/* Reasoning parts - displayed above the bubble for assistant messages */}
         {!isUser && hasReasoningParts && combinedReasoning && (
           <div className="mb-2">
@@ -148,6 +164,21 @@ export function ChatMessageItem({
                 defaultOpen={part.state.status === "error" || streaming}
               />
             ))}
+          </div>
+        )}
+
+        {!isUser && !streaming && unfinishedTodos.length > 0 && (
+          <div className="mb-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
+            <div className="mb-1 font-medium">未完成事项</div>
+            <ul className="space-y-1">
+              {unfinishedTodos.slice(0, 3).map((todo, index) => (
+                <li key={`${todo.status}-${todo.content}-${index}`}>
+                  {todo.status === "in_progress" && todo.activeForm
+                    ? todo.activeForm
+                    : todo.content}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

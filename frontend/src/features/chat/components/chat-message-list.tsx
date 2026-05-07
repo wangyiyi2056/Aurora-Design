@@ -98,8 +98,19 @@ export function ChatMessageList({ messages, loading }: ChatMessageListProps) {
           })}
         </div>
 
-        {/* Streaming indicator with real-time status */}
-        {loading && (
+        {/* Streaming assistant turn with real-time text/tool parts */}
+        {loading && streamingParts.length > 0 && (
+          <div className="px-2 animate-message-fade-in">
+            <ChatMessageItem
+              role="assistant"
+              content={streamingParts}
+              startTime={Date.now()}
+              streaming
+            />
+          </div>
+        )}
+
+        {loading && streamingParts.length === 0 && (
           <div className="flex flex-col gap-3 animate-message-fade-in px-2">
             {/* Avatar */}
             <div className="flex gap-3">
