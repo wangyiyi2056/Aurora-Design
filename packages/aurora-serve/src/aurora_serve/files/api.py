@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 
@@ -36,6 +38,22 @@ async def upload_file(
 @router.get("")
 async def list_files(service: FileService = Depends(get_file_service)) -> dict:
     return {"items": [file_to_dict(entity) for entity in service.list()]}
+
+
+@router.get("/raw")
+async def raw_file(
+    path: str,
+    service: FileService = Depends(get_file_service),
+) -> FileResponse:
+    file_path = Path(path).resolve()
+    upload_root = service.upload_dir.resolve()
+    if (
+        upload_root not in file_path.parents
+        or not file_path.exists()
+        or not file_path.is_file()
+    ):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(str(file_path))
 
 
 @router.get("/{file_id}")

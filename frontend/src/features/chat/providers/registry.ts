@@ -9,8 +9,17 @@ import type {
 } from "../types"
 
 export function projectRawUrl(projectIdOrPath: string, maybePath?: string): string {
-  if (!maybePath) return projectIdOrPath
-  return `/api/v1/files/raw?project=${encodeURIComponent(projectIdOrPath)}&path=${encodeURIComponent(maybePath)}`
+  const rawPath = maybePath ?? projectIdOrPath
+  if (
+    rawPath.startsWith("/api/") ||
+    rawPath.startsWith("http://") ||
+    rawPath.startsWith("https://") ||
+    rawPath.startsWith("data:") ||
+    rawPath.startsWith("blob:")
+  ) {
+    return rawPath
+  }
+  return `/api/v1/files/raw?path=${encodeURIComponent(rawPath)}`
 }
 
 export function projectFileUrl(projectId: string, name: string): string {
@@ -34,9 +43,11 @@ export async function uploadProjectFiles(
     try {
       const result = await uploadFile(file)
       uploaded.push({
+        fileId: result.file_id,
         path: result.file_path,
         name: result.file_name,
         kind: file.type.startsWith("image/") ? "image" : "file",
+        url: projectRawUrl(result.file_path),
         size: file.size,
       })
     } catch (error) {

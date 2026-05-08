@@ -987,6 +987,23 @@ a {
   font-size: 12px;
 }
 
+.staged-chip img,
+.user-attachment img {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--background);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.staged-chip.staged-image,
+.user-attachment.staged-image {
+  border-radius: 8px;
+  padding: 3px 8px 3px 3px;
+}
+
 .composer-import-wrap,
 .composer-pet-wrap,
 .composer-input-wrap {

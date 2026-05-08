@@ -2,10 +2,13 @@
 
 import json
 import logging
+import base64
+import mimetypes
 import re
 import time
 from html import escape
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
@@ -321,6 +324,23 @@ class EnhancedChatService:
         # Fallback: try to read as text
         return file_path.read_text(encoding="utf-8", errors="replace")
 
+    def _resolve_image_url(self, url: str) -> str:
+        """Turn locally uploaded image paths into provider-readable data URLs."""
+        if url.startswith("data:") or url.startswith("http://") or url.startswith("https://"):
+            return url
+        parsed = urlparse(url)
+        if parsed.path.endswith("/api/v1/files/raw"):
+            path_values = parse_qs(parsed.query).get("path") or []
+            if path_values:
+                url = path_values[0]
+        file_path = Path(url)
+        if not file_path.exists() or not file_path.is_file():
+            logger.warning("Image file not found for inline: %s", file_path)
+            return url
+        media_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+        encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
+        return f"data:{media_type};base64,{encoded}"
+
     @staticmethod
     def _is_tabular_file_name(file_name: str) -> bool:
         return Path(file_name).suffix.lower() in {".csv", ".xlsx", ".xls"}
@@ -353,6 +373,43 @@ class EnhancedChatService:
                     texts.append(part.text)
             return " ".join(texts).strip()
         return ""
+
+    def _extract_latest_user_attachments(self, req: ChatRequest) -> list[dict[str, Any]]:
+        """Extract displayable attachments from the latest user message."""
+        for message in reversed(req.messages):
+            if message.role != "user" or not isinstance(message.content, list):
+                continue
+            attachments: list[dict[str, Any]] = []
+            for part in message.content:
+                if part.type == "image_url" and part.image_url is not None:
+                    url = part.image_url.url
+                    path = url
+                    parsed = urlparse(url)
+                    if parsed.path.endswith("/api/v1/files/raw"):
+                        path_values = parse_qs(parsed.query).get("path") or []
+                        if path_values:
+                            path = path_values[0]
+                    name = Path(path).name or "image"
+                    attachments.append(
+                        {
+                            "path": path,
+                            "url": url,
+                            "name": name,
+                            "kind": "image",
+                        }
+                    )
+                elif part.type == "file_url" and part.file_url is not None:
+                    file_name = part.file_url.file_name or Path(part.file_url.url).name
+                    kind = "image" if Path(file_name).suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"} else "file"
+                    attachments.append(
+                        {
+                            "path": part.file_url.url,
+                            "name": file_name,
+                            "kind": kind,
+                        }
+                    )
+            return attachments
+        return []
 
     async def _run_excel_analysis(
         self,
@@ -748,7 +805,7 @@ class EnhancedChatService:
         return "\n".join(lines)
 
     def _resolve_content_parts(
-        self, content: Union[str, List[ContentPart]]
+        self, content: Union[str, List[ContentPart]], inline_local_images: bool = True
     ) -> Union[str, List[Dict[str, Any]]]:
         """Resolve content parts."""
         if isinstance(content, str):
@@ -758,8 +815,19 @@ class EnhancedChatService:
             if part.type == "text" and part.text is not None:
                 resolved.append({"type": "text", "text": part.text})
             elif part.type == "image_url" and part.image_url is not None:
+                image_url = part.image_url.url
+                if inline_local_images:
+                    image_url = self._resolve_image_url(image_url)
+                else:
+                    # For daemon/cli mode: resolve API URL to actual file path
+                    # so the CLI agent can read the file with its tools
+                    parsed = urlparse(image_url)
+                    if parsed.path.endswith("/api/v1/files/raw"):
+                        path_values = parse_qs(parsed.query).get("path") or []
+                        if path_values:
+                            image_url = path_values[0]
                 resolved.append(
-                    {"type": "image_url", "image_url": {"url": part.image_url.url}}
+                    {"type": "image_url", "image_url": {"url": image_url}}
                 )
             elif part.type == "file_url" and part.file_url is not None:
                 file_path = Path(part.file_url.url)
@@ -789,8 +857,9 @@ class EnhancedChatService:
     def _build_messages(self, req: ChatRequest) -> List[Message]:
         """Build messages from request."""
         messages: List[Message] = []
+        inline_local_images = self._effective_model_type(req) not in {"daemon", "cli"}
         for m in req.messages:
-            resolved = self._resolve_content_parts(m.content)
+            resolved = self._resolve_content_parts(m.content, inline_local_images=inline_local_images)
             messages.append(Message(role=m.role, content=resolved))
         return messages
 
@@ -961,9 +1030,10 @@ class EnhancedChatService:
         excel_result = await self._run_excel_analysis(req)
         if excel_result is not None:
             question = self._extract_latest_user_question(req)
+            attachments = self._extract_latest_user_attachments(req)
             self.session_manager.append_message(
                 session_id,
-                SessionMessage(type="user", content=question, role="user"),
+                SessionMessage(type="user", content=question, role="user", attachments=attachments),
             )
             self.session_manager.append_message(
                 session_id,
@@ -984,9 +1054,10 @@ class EnhancedChatService:
         datasource_result = await self._run_datasource_analysis(req)
         if datasource_result is not None:
             question = self._extract_latest_user_question(req)
+            attachments = self._extract_latest_user_attachments(req)
             self.session_manager.append_message(
                 session_id,
-                SessionMessage(type="user", content=question, role="user"),
+                SessionMessage(type="user", content=question, role="user", attachments=attachments),
             )
             self.session_manager.append_message(
                 session_id,
@@ -1061,6 +1132,7 @@ class EnhancedChatService:
                         type="user",
                         content=self._extract_text_content(last_user.content),
                         role="user",
+                        attachments=self._extract_latest_user_attachments(req),
                     ),
                 )
 
@@ -1211,9 +1283,10 @@ class EnhancedChatService:
                 excel_result = f"Excel analysis failed: {e}"
 
             question = self._extract_latest_user_question(req)
+            attachments = self._extract_latest_user_attachments(req)
             self.session_manager.append_message(
                 session_id,
-                SessionMessage(type="user", content=question, role="user"),
+                SessionMessage(type="user", content=question, role="user", attachments=attachments),
             )
             self.session_manager.append_message(
                 session_id,
@@ -1234,9 +1307,10 @@ class EnhancedChatService:
         datasource_result = await self._run_datasource_analysis(req)
         if datasource_result is not None:
             question = self._extract_latest_user_question(req)
+            attachments = self._extract_latest_user_attachments(req)
             self.session_manager.append_message(
                 session_id,
-                SessionMessage(type="user", content=question, role="user"),
+                SessionMessage(type="user", content=question, role="user", attachments=attachments),
             )
             self.session_manager.append_message(
                 session_id,
@@ -1302,6 +1376,7 @@ class EnhancedChatService:
                         type="user",
                         content=self._extract_text_content(last_user.content),
                         role="user",
+                        attachments=self._extract_latest_user_attachments(req),
                     ),
                 )
 

@@ -89,6 +89,7 @@ export default function ChatPage() {
           role: (m.role === "user" || m.type === "user" ? "user" : "assistant") as "user" | "assistant",
           content: m.content,
           events: m.events ?? [],
+          attachments: m.attachments ?? [],
           startTime: m.timestamp ? toMillis(m.timestamp) : undefined,
           endTime: m.type === "assistant" && m.timestamp ? toMillis(m.timestamp) : undefined,
         }))
@@ -138,6 +139,7 @@ export default function ChatPage() {
         role: msg.role,
         content: msg.content,
         events: msg.events,
+        attachments: msg.attachments,
         createdAt,
         startedAt: msg.startTime,
         endedAt: msg.endTime,
@@ -176,6 +178,7 @@ export default function ChatPage() {
       role: msg.role,
       content: text,
       events,
+      attachments: msg.attachments,
       createdAt,
       startedAt: msg.startTime,
       endedAt: msg.endTime,
@@ -191,12 +194,19 @@ export default function ChatPage() {
     paneAttachments: PaneChatAttachment[],
     _commentAttachments: ChatCommentAttachment[]
   ) => {
-    if (!prompt.trim() || loading) return
+    if ((!prompt.trim() && paneAttachments.length === 0) || loading) return
     const question = prompt.trim()
     const contentParts: ContentPart[] = [
       ...paneAttachments.map((att) => ({
-        type: "file_url" as const,
-        file_url: { url: att.path, file_name: att.name },
+        ...(att.kind === "image"
+          ? {
+              type: "image_url" as const,
+              image_url: { url: att.url ?? `/api/v1/files/raw?path=${encodeURIComponent(att.path)}` },
+            }
+          : {
+              type: "file_url" as const,
+              file_url: { url: att.path, file_name: att.name },
+            }),
       })),
       { type: "text" as const, text: question },
     ]
@@ -220,7 +230,7 @@ export default function ChatPage() {
       { role: "user", content: contentParts },
     ]
 
-    addMessage({ role: "user", content: question, startTime: Date.now() })
+    addMessage({ role: "user", content: question, attachments: paneAttachments, startTime: Date.now() })
     setLoading(true)
 
     let currentSessionId = sessionId

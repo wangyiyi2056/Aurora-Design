@@ -34,6 +34,8 @@ def _session_message_to_dict(msg) -> dict:
         msg_dict["tool_call_id"] = msg.tool_call_id
     if msg.tool_calls:
         msg_dict["tool_calls"] = msg.tool_calls
+    if msg.attachments:
+        msg_dict["attachments"] = msg.attachments
     return msg_dict
 
 

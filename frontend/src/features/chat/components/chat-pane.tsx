@@ -389,7 +389,6 @@ export function ChatPane({
                     {m.role === 'user' ? (
                       <UserMessage
                         message={m}
-                        projectId={projectId}
                         projectFileNames={projectFileNames}
                         onRequestOpenFile={onRequestOpenFile}
                         t={t}
@@ -663,13 +662,11 @@ function ConversationRow({
 
 function UserMessage({
   message,
-  projectId,
   projectFileNames,
   onRequestOpenFile,
   t,
 }: {
   message: ChatMessage;
-  projectId: string | null;
   projectFileNames?: Set<string>;
   onRequestOpenFile?: (name: string) => void;
   t: TranslateFn;
@@ -701,8 +698,8 @@ function UserMessage({
                 disabled={!openable}
                 title={openable ? t('chat.openFile', { name: baseName }) : a.path}
               >
-                {a.kind === 'image' && projectId ? (
-                  <img src={projectRawUrl(projectId, a.path)} alt={a.name} />
+                {a.kind === 'image' ? (
+                  <img src={a.url ?? projectRawUrl(a.path)} alt={a.name} />
                 ) : (
                   <Icon name="file" size={14} />
                 )}

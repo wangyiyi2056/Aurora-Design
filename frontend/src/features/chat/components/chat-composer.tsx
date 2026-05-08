@@ -493,7 +493,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         reset();
         return;
       }
-      if ((!prompt && commentAttachments.length === 0) || streaming) return;
+      if ((!prompt && staged.length === 0 && commentAttachments.length === 0) || streaming) return;
       onSend(prompt, staged, commentAttachments);
       reset();
     }
@@ -527,7 +527,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           {staged.length > 0 ? (
             <StagedAttachments
               attachments={staged}
-              projectId={projectId}
               onRemove={removeStaged}
               t={t}
             />
@@ -805,7 +804,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 className="composer-send"
                 data-testid="chat-send"
                 onClick={() => void submit()}
-                disabled={!draft.trim() && commentAttachments.length === 0}
+                disabled={!draft.trim() && staged.length === 0 && commentAttachments.length === 0}
               >
                 <Icon name="send" size={13} />
                 <span>{t('chat.send')}</span>
@@ -822,12 +821,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
 
 function StagedAttachments({
   attachments,
-  projectId,
   onRemove,
   t,
 }: {
   attachments: ChatAttachment[];
-  projectId: string | null;
   onRemove: (path: string) => void;
   t: TranslateFn;
 }) {
@@ -835,8 +832,8 @@ function StagedAttachments({
     <div className="staged-row" data-testid="staged-attachments">
       {attachments.map((a) => (
         <div key={a.path} className={`staged-chip staged-${a.kind}`}>
-          {a.kind === "image" && projectId ? (
-            <img src={projectRawUrl(projectId, a.path)} alt={a.name} />
+          {a.kind === "image" ? (
+            <img src={a.url ?? projectRawUrl(a.path)} alt={a.name} />
           ) : (
             <span className="staged-icon" aria-hidden>
               <Icon name="file" size={13} />

@@ -6,5 +6,5 @@ export async function uploadFile(file: File) {
   const res = await apiClient.post("/v1/files/upload", form, {
     headers: { "Content-Type": "multipart/form-data" },
   })
-  return res.data as { file_name: string; file_path: string }
+  return res.data as { file_id: string; file_name: string; file_path: string; content_type?: string }
 }

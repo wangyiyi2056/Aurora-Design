@@ -71,10 +71,14 @@ export function ConversationList({
           )
           .map((m) => ({
             role:
-              m.type === "user"
+              m.role === "user" || m.type === "user"
                 ? ("user" as const)
                 : ("assistant" as const),
             content: m.content,
+            events: m.events ?? [],
+            attachments: m.attachments ?? [],
+            startTime: m.timestamp ? toMillis(m.timestamp) : undefined,
+            endTime: m.type === "assistant" && m.timestamp ? toMillis(m.timestamp) : undefined,
           }))
         useChatStore.getState().loadSessionMessages(messages)
         useChatStore.getState().setSessionId(sessionId)
@@ -207,6 +211,10 @@ export function ConversationList({
       )}
     </div>
   )
+}
+
+function toMillis(timestamp: number): number {
+  return timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp
 }
 
 interface ConversationListProps {

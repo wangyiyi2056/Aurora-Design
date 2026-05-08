@@ -31,7 +31,15 @@ def test_uploaded_file_metadata_survives_restart(tmp_path, monkeypatch):
 
         detail_resp = client.get(f"/api/v1/files/{file_id}")
         assert detail_resp.status_code == 200
-        assert detail_resp.json()["file_path"].endswith(".csv")
+        file_path = detail_resp.json()["file_path"]
+        assert file_path.endswith(".csv")
+
+        raw_resp = client.get("/api/v1/files/raw", params={"path": file_path})
+        assert raw_resp.status_code == 200
+        assert raw_resp.content == b"category,value\nA,1\n"
+
+        outside_resp = client.get("/api/v1/files/raw", params={"path": "/etc/hosts"})
+        assert outside_resp.status_code == 404
 
         delete_resp = client.delete(f"/api/v1/files/{file_id}")
         assert delete_resp.status_code == 200

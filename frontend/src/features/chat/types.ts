@@ -2,9 +2,11 @@ export type ChatRole = "user" | "assistant" | "system"
 export type ChatRunStatus = "queued" | "running" | "succeeded" | "failed" | "canceled"
 
 export interface ChatAttachment {
+  fileId?: string
   path: string
   name: string
   kind: "image" | "file"
+  url?: string
   size?: number
 }
 

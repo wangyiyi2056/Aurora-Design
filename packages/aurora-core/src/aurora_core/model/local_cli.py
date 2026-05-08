@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Iterable
+from urllib.parse import parse_qs, urlparse
 
 
 AgentEvent = dict[str, Any]
@@ -741,6 +742,18 @@ def collapse_messages_for_cli(messages: Iterable[Any]) -> str:
     return "\n\n".join(sections)
 
 
+def _resolve_api_url_to_path(url: str) -> str:
+    """Resolve /api/v1/files/raw?path=... URLs to actual file paths."""
+    if not url:
+        return url
+    parsed = urlparse(url)
+    if parsed.path.endswith("/api/v1/files/raw"):
+        path_values = parse_qs(parsed.query).get("path") or []
+        if path_values:
+            return path_values[0]
+    return url
+
+
 def _message_content_to_text(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -748,7 +761,17 @@ def _message_content_to_text(content: Any) -> str:
         parts: list[str] = []
         for part in content:
             if isinstance(part, dict):
-                parts.append(str(part.get("text") or part.get("content") or ""))
+                if part.get("type") == "image_url":
+                    url = (part.get("image_url") or {}).get("url", "")
+                    resolved = _resolve_api_url_to_path(url)
+                    parts.append(f"[Attached image: {resolved}]")
+                elif part.get("type") == "file_url":
+                    url = (part.get("file_url") or {}).get("url", "")
+                    name = (part.get("file_url") or {}).get("file_name", "")
+                    resolved = _resolve_api_url_to_path(url)
+                    parts.append(f"[Attached file: {name or resolved}] {resolved}")
+                else:
+                    parts.append(str(part.get("text") or part.get("content") or ""))
             elif hasattr(part, "text"):
                 parts.append(str(part.text or ""))
             else:
