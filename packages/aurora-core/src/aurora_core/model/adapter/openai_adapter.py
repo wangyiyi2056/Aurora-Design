@@ -114,6 +114,7 @@ class OpenAILLM(BaseLLM):
         )
         # Use raw SSE lines to avoid SDK iterator hanging with Kimi's non-standard format
         raw_response = response.response
+        tool_call_buffers: Dict[int, Dict[str, Any]] = {}
         async for line in raw_response.aiter_lines():
             line = line.strip()
             if not line:
@@ -141,7 +142,50 @@ class OpenAILLM(BaseLLM):
                 content = delta_data.get("reasoning_content", "") or ""
                 is_reasoning = True
 
+            for tool_delta in delta_data.get("tool_calls") or []:
+                index = int(tool_delta.get("index", 0))
+                buffered = tool_call_buffers.setdefault(
+                    index,
+                    {
+                        "id": "",
+                        "type": "function",
+                        "name": "",
+                        "arguments": "",
+                    },
+                )
+                if tool_delta.get("id"):
+                    buffered["id"] = tool_delta["id"]
+                if tool_delta.get("type"):
+                    buffered["type"] = tool_delta["type"]
+                function_delta = tool_delta.get("function") or {}
+                if function_delta.get("name"):
+                    buffered["name"] += function_delta["name"]
+                if function_delta.get("arguments"):
+                    buffered["arguments"] += function_delta["arguments"]
+
             finish_reason = choices[0].get("finish_reason")
+            if finish_reason == "tool_calls" and tool_call_buffers:
+                tool_calls: List[ToolCall] = []
+                for index in sorted(tool_call_buffers):
+                    buffered = tool_call_buffers[index]
+                    tool_calls.append(
+                        ToolCall(
+                            id=buffered["id"],
+                            type=buffered["type"],
+                            function={
+                                "name": buffered["name"],
+                                "arguments": buffered["arguments"],
+                            },
+                        )
+                    )
+                yield ModelOutput(
+                    text=content,
+                    finish_reason=finish_reason,
+                    tool_calls=tool_calls,
+                    is_reasoning=is_reasoning,
+                )
+                continue
+
             if not content and not finish_reason:
                 continue
             yield ModelOutput(

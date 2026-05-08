@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api-client"
+import type { AgentEvent } from "@/features/chat/types"
 import type { SessionMeta } from "@/stores/chat-store"
 
 export interface ContentPart {
@@ -39,10 +40,19 @@ export interface ChatCompleteOptions {
 
 export interface SessionLoadResponse {
   session: SessionMeta
-  messages: { type: string; content: string; tool_name?: string; tool_call_id?: string }[]
+  messages: {
+    type: string
+    role?: "user" | "assistant" | "system" | "tool"
+    content: string
+    timestamp?: number
+    tool_name?: string
+    tool_call_id?: string
+    tool_calls?: unknown[]
+    events?: AgentEvent[]
+  }[]
 }
 
-export async function createSession(): Promise<{ session_id: string }> {
+export async function createSession(): Promise<{ session_id: string; session: SessionMeta }> {
   const res = await apiClient.post("/v1/chat/sessions")
   return res.data
 }

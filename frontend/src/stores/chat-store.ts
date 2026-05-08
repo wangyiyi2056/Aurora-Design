@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import type { AgentEvent } from "@/features/chat/types"
 
 // === Message Part Types (adapted from DB-GPT) ===
 
@@ -31,13 +32,21 @@ export interface ReasoningPart {
   text: string
 }
 
-export type MessagePart = ToolPart | TextPart | ReasoningPart
+export interface StatusPart {
+  id: string
+  type: "status"
+  label: string
+  detail?: string
+}
+
+export type MessagePart = ToolPart | TextPart | ReasoningPart | StatusPart
 
 // === Chat Message ===
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system"
   content: string | MessagePart[] // backward compatible
+  events?: AgentEvent[]
   startTime?: number
   endTime?: number
   thinkingContent?: string

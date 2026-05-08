@@ -17,6 +17,7 @@ class SessionMessage:
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_call_id: Optional[str] = None
     tool_name: Optional[str] = None
+    events: Optional[List[Dict[str, Any]]] = None
     timestamp: float = field(default_factory=lambda: time.time())
 
     def to_jsonl(self) -> str:

@@ -4,6 +4,31 @@ import { ChatSSEState, parseSSEChunk } from "./sse-parser"
 import { parseTodoWriteInput } from "../runtime/todos"
 
 describe("ChatSSEState", () => {
+  it("preserves status events as message parts for open-design waiting pills", () => {
+    const state = new ChatSSEState()
+
+    state.processEvent({ type: "status", label: "initializing", detail: "Claude Code" })
+    state.processEvent({ type: "status", label: "thinking" })
+
+    expect(state.toMessageParts()).toMatchObject([
+      { type: "status", label: "initializing", detail: "Claude Code" },
+      { type: "status", label: "thinking" },
+    ])
+  })
+
+  it("stores streamed reasoning deltas as a reasoning part", () => {
+    const state = new ChatSSEState()
+
+    state.processEvent({ type: "reasoning_start" })
+    state.processEvent({ type: "reasoning_delta", content: "读取项目结构" })
+    state.processEvent({ type: "reasoning_delta", content: "，检查问答链路" })
+    state.processEvent({ type: "reasoning_end" })
+
+    expect(state.toMessageParts()).toMatchObject([
+      { type: "reasoning", text: "读取项目结构，检查问答链路" },
+    ])
+  })
+
   it("exposes streaming text before text_end without duplicating the final part", () => {
     const state = new ChatSSEState()
 

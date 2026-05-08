@@ -5,7 +5,9 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Iterable
 
@@ -23,6 +25,8 @@ class AgentDef:
     bin: str
     version_args: tuple[str, ...] = ("--version",)
     fallback_bins: tuple[str, ...] = ()
+    help_args: tuple[str, ...] = ("--help",)
+    capability_flags: dict[str, str] = field(default_factory=dict)
     fallback_models: tuple[dict[str, str], ...] = field(default_factory=tuple)
     reasoning_options: tuple[dict[str, str], ...] = field(default_factory=tuple)
     prompt_via_stdin: bool = True
@@ -37,6 +41,10 @@ AGENT_DEFS: tuple[AgentDef, ...] = (
         name="Claude Code",
         bin="claude",
         fallback_bins=("openclaude",),
+        help_args=("-p", "--help"),
+        capability_flags={
+            "--include-partial-messages": "partialMessages",
+        },
         fallback_models=(
             DEFAULT_MODEL_OPTION,
             {"id": "sonnet", "label": "Sonnet (alias)"},
@@ -342,7 +350,10 @@ def build_agent_args(
 ) -> list[str]:
     selected_model = sanitize_custom_model(model)
     if agent_id == "claude":
+        agent = get_agent_def(agent_id)
         args = ["-p", "--output-format", "stream-json", "--verbose"]
+        if _agent_capability(agent, "partialMessages"):
+            args.append("--include-partial-messages")
         if selected_model:
             args.extend(["--model", selected_model])
         args.extend(["--permission-mode", "bypassPermissions"])
@@ -418,6 +429,32 @@ def build_agent_args(
     raise KeyError(f"Unknown agent: {agent_id}")
 
 
+def _agent_capability(agent: AgentDef, capability: str) -> bool:
+    for flag, flag_capability in agent.capability_flags.items():
+        if flag_capability != capability:
+            continue
+        return _agent_supports_flag(agent.id, flag)
+    return False
+
+
+@lru_cache(maxsize=64)
+def _agent_supports_flag(agent_id: str, flag: str) -> bool:
+    agent = get_agent_def(agent_id)
+    try:
+        binary = resolve_agent_bin(agent_id)
+        proc = subprocess.run(
+            [binary, *agent.help_args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:
+        return False
+    return flag in f"{proc.stdout}\n{proc.stderr}"
+
+
 def spawn_env_for_agent(agent_id: str, env: dict[str, str] | None = None) -> dict[str, str]:
     child_env = dict(env or os.environ)
     if agent_id == "claude" and not child_env.get("ANTHROPIC_BASE_URL"):
@@ -434,6 +471,7 @@ class ClaudeStreamParser:
         self.on_event = on_event
         self._buffer = ""
         self._text_streamed: set[str] = set()
+        self._thinking_streamed: set[str] = set()
 
     def feed(self, chunk: str) -> None:
         self._buffer += chunk
@@ -464,17 +502,36 @@ class ClaudeStreamParser:
         if obj.get("type") == "assistant":
             message = obj.get("message") or {}
             message_id = message.get("id")
-            if message_id and message_id in self._text_streamed:
-                return
             for block in message.get("content") or []:
-                if block.get("type") == "text" and block.get("text"):
+                if (
+                    block.get("type") == "text"
+                    and block.get("text")
+                    and (not message_id or message_id not in self._text_streamed)
+                ):
                     self.on_event({"type": "text_delta", "delta": block["text"]})
+                if (
+                    block.get("type") == "thinking"
+                    and block.get("thinking")
+                    and (not message_id or message_id not in self._thinking_streamed)
+                ):
+                    self.on_event({"type": "thinking_delta", "delta": block["thinking"]})
                 if block.get("type") == "tool_use":
                     self.on_event({
                         "type": "tool_use",
                         "id": block.get("id", ""),
                         "name": block.get("name", ""),
                         "input": block.get("input"),
+                    })
+            return
+        if obj.get("type") == "user":
+            message = obj.get("message") or {}
+            for block in message.get("content") or []:
+                if block.get("type") == "tool_result":
+                    self.on_event({
+                        "type": "tool_result",
+                        "toolUseId": block.get("tool_use_id", ""),
+                        "content": _stringify_tool_result(block.get("content")),
+                        "isError": bool(block.get("is_error")),
                     })
             return
         if obj.get("type") == "result":
@@ -491,6 +548,11 @@ class ClaudeStreamParser:
             if message_id:
                 self._current_message_id = message_id
             return
+        if event.get("type") == "content_block_start":
+            block = event.get("content_block") or {}
+            if block.get("type") == "thinking":
+                self.on_event({"type": "thinking_start"})
+            return
         delta = event.get("delta") or {}
         if event.get("type") == "content_block_delta":
             if delta.get("type") == "text_delta" and delta.get("text"):
@@ -499,6 +561,9 @@ class ClaudeStreamParser:
                     self._text_streamed.add(message_id)
                 self.on_event({"type": "text_delta", "delta": delta["text"]})
             if delta.get("type") == "thinking_delta" and delta.get("thinking"):
+                message_id = getattr(self, "_current_message_id", None)
+                if message_id:
+                    self._thinking_streamed.add(message_id)
                 self.on_event({"type": "thinking_delta", "delta": delta["thinking"]})
 
 
@@ -580,6 +645,20 @@ def _stringify(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False)
     except TypeError:
         return str(value)
+
+
+def _stringify_tool_result(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(str(item.get("text") or ""))
+            else:
+                parts.append(_stringify(item))
+        return "\n".join(part for part in parts if part)
+    return _stringify(content)
 
 
 async def run_agent_stream(

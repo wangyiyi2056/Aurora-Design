@@ -24,7 +24,7 @@ from aurora_core.model.adapter.openai_adapter import OpenAILLM
 from aurora_core.model.adapter.anthropic_adapter import AnthropicLLM
 from aurora_core.model.base import BaseLLM
 from aurora_core.model.registry import ModelRegistry
-from aurora_core.schema.message import Message, ToolCall
+from aurora_core.schema.message import Message, ModelOutput, ToolCall
 from aurora_core.schema.model import LLMConfig
 from aurora_core.mode import ChatMode
 from aurora_serve.excel.pipeline import ExcelAnalysisPipeline
@@ -1314,26 +1314,41 @@ class EnhancedChatService:
                 if self.context_compactor.should_compact(messages):
                     messages, summary = self.context_compactor.compact(messages)
 
-                output = await llm.achat(
+                text_started = False
+                full_text_parts: list[str] = []
+                assistant_events: list[dict[str, Any]] = []
+                streamed_tool_calls: list[ToolCall] = []
+                finish_reason: str | None = None
+                usage: dict[str, int] | None = None
+
+                async for chunk in llm.achat_stream(
                     messages,
                     tools=tools,
                     tool_choice="auto",
+                ):
+                    if chunk.text:
+                        if not text_started:
+                            yield f"data: {json.dumps({'type': 'text_start'})}\n\n"
+                            text_started = True
+                        full_text_parts.append(chunk.text)
+                        assistant_events.append({"kind": "text", "text": chunk.text})
+                        yield f"data: {json.dumps({'type': 'text_delta', 'content': chunk.text})}\n\n"
+                    if chunk.tool_calls:
+                        streamed_tool_calls.extend(chunk.tool_calls)
+                    if chunk.finish_reason:
+                        finish_reason = chunk.finish_reason
+                    if chunk.usage:
+                        usage = chunk.usage
+
+                output = ModelOutput(
+                    text="".join(full_text_parts),
+                    finish_reason=finish_reason,
+                    tool_calls=streamed_tool_calls or None,
+                    usage=usage,
                 )
                 if output.finish_reason == "tool_calls" and output.tool_calls:
-                    # Save assistant message with tool_calls to session
-                    self.session_manager.append_message(
-                        session_id,
-                        SessionMessage(
-                            type="assistant",
-                            content=output.text or "",
-                            role="assistant",
-                            tool_calls=[
-                                {"id": tc.id, "type": tc.type, "function": tc.function}
-                                for tc in output.tool_calls
-                            ],
-                        ),
-                    )
-
+                    if text_started:
+                        yield f"data: {json.dumps({'type': 'text_end', 'finish_reason': output.finish_reason})}\n\n"
                     messages.append(
                         Message(
                             role="assistant",
@@ -1343,10 +1358,24 @@ class EnhancedChatService:
                     )
 
                     # Emit tool_call_start events
+                    tool_turn_events = [*assistant_events]
                     for tc in output.tool_calls:
                         if tc.type != "function":
                             continue
-                        yield f"data: {json.dumps({'type': 'tool_call_start', 'tool_name': tc.function.get('name', ''), 'arguments': tc.function.get('arguments', '{}')})}\n\n"
+                        arguments = tc.function.get("arguments", "{}")
+                        try:
+                            event_input = json.loads(arguments) if isinstance(arguments, str) else arguments
+                        except json.JSONDecodeError:
+                            event_input = arguments
+                        tool_turn_events.append(
+                            {
+                                "kind": "tool_use",
+                                "id": tc.id,
+                                "name": tc.function.get("name", ""),
+                                "input": event_input,
+                            }
+                        )
+                        yield f"data: {json.dumps({'type': 'tool_call_start', 'id': tc.id, 'tool_name': tc.function.get('name', ''), 'arguments': arguments})}\n\n"
 
                     # For excel_analyze skill, set up emit_step callback to collect pipeline events
                     excel_skill = None
@@ -1383,7 +1412,30 @@ class EnhancedChatService:
 
                     # Emit tool_call_result events
                     for tr in tool_results:
-                        yield f"data: {json.dumps({'type': 'tool_call_result', 'tool_name': tr.name or '', 'content': str(tr.content) if tr.content else ''})}\n\n"
+                        result_content = str(tr.content) if tr.content else ""
+                        tool_turn_events.append(
+                            {
+                                "kind": "tool_result",
+                                "toolUseId": tr.tool_call_id or "",
+                                "content": result_content,
+                                "isError": False,
+                            }
+                        )
+                        yield f"data: {json.dumps({'type': 'tool_call_result', 'id': tr.tool_call_id or '', 'tool_name': tr.name or '', 'content': result_content})}\n\n"
+
+                    self.session_manager.append_message(
+                        session_id,
+                        SessionMessage(
+                            type="assistant",
+                            content=output.text or "",
+                            role="assistant",
+                            events=tool_turn_events,
+                            tool_calls=[
+                                {"id": tc.id, "type": tc.type, "function": tc.function}
+                                for tc in output.tool_calls
+                            ],
+                        ),
+                    )
 
                     messages.extend(tool_results)
                     continue
@@ -1401,12 +1453,12 @@ class EnhancedChatService:
                         type="assistant",
                         content=full_text,
                         role="assistant",
+                        events=assistant_events,
                     ),
                 )
 
-                yield f"data: {json.dumps({'type': 'text_start'})}\n\n"
-                for i in range(0, len(full_text), 10):
-                    yield f"data: {json.dumps({'type': 'text_delta', 'content': full_text[i:i+10]})}\n\n"
+                if not text_started:
+                    yield f"data: {json.dumps({'type': 'text_start'})}\n\n"
                 yield f"data: {json.dumps({'type': 'text_end', 'id': resp_id, 'created': created, 'model': model_name, 'finish_reason': output.finish_reason, 'usage': output.usage})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
@@ -1424,20 +1476,85 @@ class EnhancedChatService:
         is_reasoning_started = False
         is_reasoning_ended = False
         is_text_started = False
+        full_text_parts: list[str] = []
+        assistant_events: list[dict[str, Any]] = []
+        streamed_tool_names: dict[str, str] = {}
 
         async for chunk in llm.achat_stream(messages):
+            event_type = chunk.extra.get("event_type") if chunk.extra else None
+            if event_type:
+                if is_reasoning_started and not is_reasoning_ended:
+                    yield f"data: {json.dumps({'type': 'reasoning_end'})}\n\n"
+                    is_reasoning_ended = True
+                    is_reasoning_started = False
+
+                if event_type == "status":
+                    label = chunk.extra.get("label") or "working"
+                    detail = chunk.extra.get("detail") or chunk.extra.get("model")
+                    status_event: dict[str, Any] = {"kind": "status", "label": label}
+                    if detail:
+                        status_event["detail"] = detail
+                    assistant_events.append(status_event)
+                    yield f"data: {json.dumps({'type': 'status', 'label': label, 'detail': detail})}\n\n"
+                    continue
+
+                if event_type == "tool_use":
+                    tool_id = str(chunk.extra.get("id") or "")
+                    tool_name = str(chunk.extra.get("name") or "")
+                    if tool_id:
+                        streamed_tool_names[tool_id] = tool_name
+                    input_value = chunk.extra.get("input")
+                    if isinstance(input_value, str):
+                        arguments = input_value
+                        try:
+                            event_input = json.loads(input_value)
+                        except json.JSONDecodeError:
+                            event_input = input_value
+                    else:
+                        event_input = input_value or {}
+                        arguments = json.dumps(input_value or {}, ensure_ascii=False)
+                    assistant_events.append(
+                        {
+                            "kind": "tool_use",
+                            "id": tool_id,
+                            "name": tool_name,
+                            "input": event_input,
+                        }
+                    )
+                    yield f"data: {json.dumps({'type': 'tool_call_start', 'id': tool_id, 'tool_name': tool_name, 'arguments': arguments})}\n\n"
+                    continue
+
+                if event_type == "tool_result":
+                    tool_id = str(chunk.extra.get("toolUseId") or "")
+                    result_content = str(chunk.extra.get("content") or "")
+                    is_error = bool(chunk.extra.get("isError"))
+                    assistant_events.append(
+                        {
+                            "kind": "tool_result",
+                            "toolUseId": tool_id,
+                            "content": result_content,
+                            "isError": is_error,
+                        }
+                    )
+                    yield f"data: {json.dumps({'type': 'tool_call_result', 'id': tool_id, 'tool_name': chunk.extra.get('name') or streamed_tool_names.get(tool_id, ''), 'content': result_content, 'is_error': is_error})}\n\n"
+                    continue
+
             # Handle reasoning content (thinking) separately
             if chunk.is_reasoning:
                 if not is_reasoning_started:
                     yield f"data: {json.dumps({'type': 'reasoning_start'})}\n\n"
                     is_reasoning_started = True
-                # Don't send reasoning content, just indicate thinking is ongoing
+                    is_reasoning_ended = False
+                if chunk.text:
+                    assistant_events.append({"kind": "thinking", "text": chunk.text})
+                    yield f"data: {json.dumps({'type': 'reasoning_delta', 'content': chunk.text})}\n\n"
                 continue
             else:
                 # Actual content starts - end reasoning phase if it was started
                 if is_reasoning_started and not is_reasoning_ended:
                     yield f"data: {json.dumps({'type': 'reasoning_end'})}\n\n"
                     is_reasoning_ended = True
+                    is_reasoning_started = False
 
                 # Send text_start before first content chunk
                 if not is_text_started:
@@ -1445,6 +1562,8 @@ class EnhancedChatService:
                     is_text_started = True
 
                 if chunk.text:
+                    full_text_parts.append(chunk.text)
+                    assistant_events.append({"kind": "text", "text": chunk.text})
                     yield f"data: {json.dumps({'type': 'text_delta', 'content': chunk.text})}\n\n"
                 if chunk.finish_reason:
                     yield f"data: {json.dumps({'type': 'text_end', 'finish_reason': chunk.finish_reason})}\n\n"
@@ -1452,6 +1571,18 @@ class EnhancedChatService:
         # If only reasoning happened without content, still send proper events
         if is_reasoning_started and not is_reasoning_ended:
             yield f"data: {json.dumps({'type': 'reasoning_end'})}\n\n"
+
+        full_text = "".join(full_text_parts)
+        if full_text or assistant_events:
+            self.session_manager.append_message(
+                session_id,
+                SessionMessage(
+                    type="assistant",
+                    content=full_text,
+                    role="assistant",
+                    events=assistant_events,
+                ),
+            )
 
         yield "data: [DONE]\n\n"
 

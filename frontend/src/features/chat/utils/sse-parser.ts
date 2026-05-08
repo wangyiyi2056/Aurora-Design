@@ -16,7 +16,7 @@
  * Adapted from DB-GPT's react-sse-parser.ts architecture pattern.
  */
 
-import type { MessagePart, ToolPart, TextPart, ReasoningPart, ToolStatus, DebugPipelineStep } from "@/stores/chat-store"
+import type { MessagePart, ToolPart, TextPart, ReasoningPart, StatusPart, ToolStatus, DebugPipelineStep } from "@/stores/chat-store"
 
 // SSE Event Types
 export interface SSETextStartEvent {
@@ -54,8 +54,19 @@ export interface SSEReasoningStartEvent {
   type: "reasoning_start"
 }
 
+export interface SSEReasoningDeltaEvent {
+  type: "reasoning_delta"
+  content: string
+}
+
 export interface SSEReasoningEndEvent {
   type: "reasoning_end"
+}
+
+export interface SSEStatusEvent {
+  type: "status"
+  label: string
+  detail?: string
 }
 
 export interface SSEPipelineStepEvent {
@@ -73,7 +84,9 @@ export type SSEEvent =
   | SSEToolCallStartEvent
   | SSEToolCallResultEvent
   | SSEReasoningStartEvent
+  | SSEReasoningDeltaEvent
   | SSEReasoningEndEvent
+  | SSEStatusEvent
   | SSEPipelineStepEvent
 
 // Internal state for tracking streaming content
@@ -95,7 +108,10 @@ export class ChatSSEState {
   private textBuffer: string = ""
   private textPartId: string | null = null
   private reasoningBuffer: string = ""
+  private reasoningPartId: string | null = null
   private toolOrder: string[] = []
+  private statusLabel: string | null = null
+  private lastStatusPartId: string | null = null
   private startTime: number
   private endTime?: number
   private isDone: boolean = false
@@ -127,8 +143,14 @@ export class ChatSSEState {
       case "reasoning_start":
         this.handleReasoningStart(event)
         break
+      case "reasoning_delta":
+        this.handleReasoningDelta(event)
+        break
       case "reasoning_end":
         this.handleReasoningEnd(event)
+        break
+      case "status":
+        this.handleStatus(event)
         break
       case "pipeline_step":
         // Pipeline step events are handled separately in use-chat-stream
@@ -232,17 +254,64 @@ export class ChatSSEState {
 
   private handleReasoningStart(_: SSEReasoningStartEvent): void {
     this.reasoningBuffer = ""
+    this.reasoningPartId = null
+  }
+
+  private handleReasoningDelta(event: SSEReasoningDeltaEvent): void {
+    if (!event.content) return
+    this.reasoningBuffer += event.content
+
+    if (!this.reasoningPartId) {
+      this.reasoningPartId = `reasoning-${Date.now()}`
+      this.parts.unshift({
+        id: this.reasoningPartId,
+        type: "reasoning",
+        text: this.reasoningBuffer,
+      } as ReasoningPart)
+      return
+    }
+
+    this.parts = this.parts.map((part) =>
+      part.type === "reasoning" && part.id === this.reasoningPartId
+        ? { ...part, text: this.reasoningBuffer }
+        : part
+    )
   }
 
   private handleReasoningEnd(_: SSEReasoningEndEvent): void {
-    // Add reasoning part if there's content
-    if (this.reasoningBuffer.trim()) {
+    // Backward compatibility for older streams that only flush reasoning at end.
+    if (this.reasoningBuffer.trim() && !this.reasoningPartId) {
       this.parts.unshift({
         id: `reasoning-${Date.now()}`,
         type: "reasoning",
         text: this.reasoningBuffer,
       } as ReasoningPart)
     }
+  }
+
+  private handleStatus(event: SSEStatusEvent): void {
+    this.statusLabel = event.detail ? `${event.label}: ${event.detail}` : event.label
+    const existing = this.lastStatusPartId
+      ? this.parts.find((part) => part.type === "status" && part.id === this.lastStatusPartId) as StatusPart | undefined
+      : undefined
+
+    if (existing && existing.label === event.label) {
+      this.parts = this.parts.map((part) =>
+        part.type === "status" && part.id === existing.id
+          ? { ...part, detail: event.detail }
+          : part
+      )
+      return
+    }
+
+    const id = `status-${Date.now()}-${this.parts.length}`
+    this.lastStatusPartId = id
+    this.parts.push({
+      id,
+      type: "status",
+      label: event.label,
+      detail: event.detail,
+    } as StatusPart)
   }
 
   /**
@@ -312,6 +381,7 @@ export class ChatSSEState {
     if (runningTool && runningTool.type === "tool") {
       return `Executing ${runningTool.tool}...`
     }
+    if (this.statusLabel) return this.statusLabel
     if (this.isDone) return "Completed"
     return "Thinking..."
   }

@@ -7,12 +7,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/wangyiyi2056/aurora">
-    <img src="https://img.shields.io/badge/visibility-private-black?style=flat-square" alt="private repo">
+  <a href="https://github.com/wangyiyi2056/Aurora-Design">
+    <img src="https://img.shields.io/badge/visibility-public-green?style=flat-square" alt="public repo">
   </a>
 </p>
-
-> **可见性**：本仓库目前为**私有**，仅所有者可见。后续将视情况考虑是否开源。
 
 ---
 
@@ -35,7 +33,7 @@ frontend/             # Vite + React 18 + TypeScript 5 前端界面
 ### 1. 安装依赖
 
 ```bash
-uv sync --all-packages
+uv sync
 ```
 
 ### 2. 配置模型
@@ -45,7 +43,7 @@ uv sync --all-packages
 ```toml
 app_name = "Aurora"
 debug = true
-port = 8000
+port = 8888
 default_llm = "gpt-4o-mini"
 
 [[llm_configs]]
@@ -74,7 +72,7 @@ uv run aurora
 非流式：
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/chat/completions \
+curl -X POST http://localhost:8888/api/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
@@ -82,7 +80,7 @@ curl -X POST http://localhost:8000/api/v1/chat/completions \
 流式（SSE）：
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/chat/completions \
+curl -X POST http://localhost:8888/api/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}], "stream": true}'
 ```
@@ -92,7 +90,7 @@ curl -X POST http://localhost:8000/api/v1/chat/completions \
 创建 SQLite 数据源：
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/datasource \
+curl -X POST http://localhost:8888/api/v1/datasource \
   -H "Content-Type: application/json" \
   -d '{"config": {"name": "demo", "db_type": "sqlite", "database": ":memory:"}}'
 ```
@@ -100,7 +98,7 @@ curl -X POST http://localhost:8000/api/v1/datasource \
 执行 SQL：
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/datasource/demo/query \
+curl -X POST http://localhost:8888/api/v1/datasource/demo/query \
   -H "Content-Type: application/json" \
   -d '{"sql": "SELECT * FROM sqlite_master WHERE type=\'table\'"}'
 ```
@@ -108,7 +106,7 @@ curl -X POST http://localhost:8000/api/v1/datasource/demo/query \
 自然语言转 SQL（通过 Chat API，自动识别 SQL 意图）：
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/chat/completions \
+curl -X POST http://localhost:8888/api/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"messages": [{"role": "user", "content": "查询 demo 数据源的所有表"}]}'
 ```
@@ -118,14 +116,14 @@ curl -X POST http://localhost:8000/api/v1/chat/completions \
 上传文件建立知识库：
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/knowledge/upload?name=docs" \
+curl -X POST "http://localhost:8888/api/v1/knowledge/upload?name=docs" \
   -F "file=@README.md"
 ```
 
 知识库问答：
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/knowledge/docs/query?query=What%20is%20Aurora"
+curl -X POST "http://localhost:8888/api/v1/knowledge/docs/query?query=What%20is%20Aurora"
 ```
 
 ### 7. Agent / Skill
@@ -133,7 +131,7 @@ curl -X POST "http://localhost:8000/api/v1/knowledge/docs/query?query=What%20is%
 列出可用 Skills：
 
 ```bash
-curl http://localhost:8000/api/v1/agent/skills
+curl http://localhost:8888/api/v1/agent/skills
 ```
 
 ### 8. AWEL 工作流编排
@@ -141,13 +139,13 @@ curl http://localhost:8000/api/v1/agent/skills
 列出算子：
 
 ```bash
-curl http://localhost:8000/api/v1/awel/operators
+curl http://localhost:8888/api/v1/awel/operators
 ```
 
 运行示例工作流：
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/awel/run \
+curl -X POST http://localhost:8888/api/v1/awel/run \
   -H "Content-Type: application/json" \
   -d '{"initial_input": "hello"}'
 ```
@@ -178,7 +176,7 @@ npm install
 npm run dev
 ```
 
-前端默认运行在 `http://localhost:3000`，通过 Vite proxy 自动转发 `/api` 请求到后端 `http://localhost:8000`。
+前端默认运行在 `http://localhost:3000`，通过 Vite proxy 自动转发 `/api` 请求到后端 `http://localhost:8888`。
 
 ### 页面
 

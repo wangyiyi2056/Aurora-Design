@@ -281,7 +281,12 @@ async def _proxy_stream(
                         yield _sse("error", {"error": {"code": "UPSTREAM_ERROR", "message": stream_error}})
                         return
                     delta = extractor(data)
-                    if delta:
+                    if isinstance(delta, dict):
+                        event = str(delta.get("event") or "delta")
+                        text = str(delta.get("delta") or "")
+                        if text:
+                            yield _sse(event, {"delta": text})
+                    elif delta:
                         yield _sse("delta", {"delta": delta})
         yield _sse("end", {})
     except Exception as exc:
@@ -332,12 +337,18 @@ def _extract_anthropic_delta(data: dict[str, Any]) -> str:
     return ""
 
 
-def _extract_openai_delta(data: dict[str, Any]) -> str:
+def _extract_openai_delta(data: dict[str, Any]) -> str | dict[str, str]:
     choices = data.get("choices") or []
     if not choices:
         return ""
     delta = choices[0].get("delta") or {}
-    return str(delta.get("content") or delta.get("reasoning_content") or "")
+    content = delta.get("content")
+    if content:
+        return str(content)
+    reasoning = delta.get("reasoning_content")
+    if reasoning:
+        return {"event": "reasoning_delta", "delta": str(reasoning)}
+    return ""
 
 
 def _extract_gemini_delta(data: dict[str, Any]) -> str:

@@ -96,6 +96,7 @@ class SessionLoadResponse(BaseModel):
 
 class SessionCreateResponse(BaseModel):
     session_id: str
+    session: SessionMetaResponse
 
 
 class SessionTitleUpdateRequest(BaseModel):

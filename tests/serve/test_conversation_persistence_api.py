@@ -11,6 +11,11 @@ def test_sessions_use_storage_dir_and_support_title_updates(tmp_path, monkeypatc
         create_resp = client.post("/api/v1/chat/sessions")
         assert create_resp.status_code == 200
         session_id = create_resp.json()["session_id"]
+        assert create_resp.json()["session"]["id"] == session_id
+
+        list_resp = client.get("/api/v1/chat/sessions")
+        assert list_resp.status_code == 200
+        assert any(item["id"] == session_id for item in list_resp.json()["sessions"])
 
         session_meta = tmp_path / "storage" / "sessions" / f"{session_id}.meta.json"
         assert session_meta.exists()

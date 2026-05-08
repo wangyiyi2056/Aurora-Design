@@ -53,6 +53,44 @@ class LocalCliLLM(BaseLLM):
                 yield ModelOutput(text=str(event.get("delta") or ""))
             elif event_type == "thinking_delta":
                 yield ModelOutput(text=str(event.get("delta") or ""), is_reasoning=True)
+            elif event_type == "thinking_start":
+                yield ModelOutput(
+                    text="",
+                    extra={"event_type": "status", "label": "thinking"},
+                )
+            elif event_type == "status":
+                extra = {
+                    "event_type": "status",
+                    "label": event.get("label"),
+                }
+                if event.get("model") is not None:
+                    extra["model"] = event.get("model")
+                if event.get("detail") is not None:
+                    extra["detail"] = event.get("detail")
+                yield ModelOutput(
+                    text="",
+                    extra=extra,
+                )
+            elif event_type == "tool_use":
+                yield ModelOutput(
+                    text="",
+                    extra={
+                        "event_type": "tool_use",
+                        "id": event.get("id"),
+                        "name": event.get("name"),
+                        "input": event.get("input"),
+                    },
+                )
+            elif event_type == "tool_result":
+                yield ModelOutput(
+                    text="",
+                    extra={
+                        "event_type": "tool_result",
+                        "toolUseId": event.get("toolUseId") or event.get("tool_use_id"),
+                        "content": event.get("content"),
+                        "isError": bool(event.get("isError") or event.get("is_error")),
+                    },
+                )
             elif event_type == "error":
                 raise RuntimeError(str(event.get("message") or "CLI agent failed"))
         yield ModelOutput(text="", finish_reason="stop")

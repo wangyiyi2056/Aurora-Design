@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useCallback, useEffect } from "react"
 import { ChatPane } from "@/features/chat/components/chat-pane"
 import { sendChatStream } from "@/features/chat/hooks/use-chat-stream"
 import type {
@@ -7,10 +7,10 @@ import type {
   ChatCommentAttachment,
   ChatMessage as PaneChatMessage,
 } from "@/features/chat/types"
-import { createSession, loadSession } from "@/services/chat"
+import { createSession, deleteSession, listSessions, loadSession } from "@/services/chat"
 import type { APIChatMessage, ContentPart } from "@/services/chat"
 import { useProviderStore } from "@/stores/provider-store"
-import { useChatStore } from "@/stores/chat-store"
+import { useChatStore, type SessionMeta } from "@/stores/chat-store"
 
 export default function ChatPage() {
   const {
@@ -18,10 +18,11 @@ export default function ChatPage() {
     loading,
     model,
     sessionId,
-    streamingParts,
+    sessions,
     addMessage,
     setLoading,
     setSessionId,
+    setSessions,
     loadSessionMessages,
     abortStreaming,
     resetToNewChat,
@@ -58,25 +59,72 @@ export default function ChatPage() {
         : undefined
   const requestModel = providerMode === "api" ? byok.model || model : activeAgentId || model
 
+  const reloadSessions = useCallback(async () => {
+    const res = await listSessions()
+    setSessions(res.sessions)
+  }, [setSessions])
+
+  const upsertSession = useCallback(
+    (session: SessionMeta) => {
+      setSessions([
+        session,
+        ...sessions.filter((item) => item.id !== session.id),
+      ])
+    },
+    [sessions, setSessions],
+  )
+
+  useEffect(() => {
+    reloadSessions().catch(() => {
+      // Keep the chat usable even if the history endpoint is temporarily down.
+    })
+  }, [reloadSessions])
+
+  const loadSessionIntoChat = useCallback(
+    async (targetSessionId: string) => {
+      const res = await loadSession(targetSessionId)
+      const msgs = res.messages
+        .filter((m) => m.type === "user" || m.type === "assistant")
+        .map((m) => ({
+          role: (m.role === "user" || m.type === "user" ? "user" : "assistant") as "user" | "assistant",
+          content: m.content,
+          events: m.events ?? [],
+          startTime: m.timestamp ? toMillis(m.timestamp) : undefined,
+          endTime: m.type === "assistant" && m.timestamp ? toMillis(m.timestamp) : undefined,
+        }))
+      loadSessionMessages(msgs)
+      setSessionId(targetSessionId)
+    },
+    [loadSessionMessages, setSessionId],
+  )
+
+  const deleteConversation = useCallback(
+    async (targetSessionId: string) => {
+      await deleteSession(targetSessionId)
+      setSessions(sessions.filter((session) => session.id !== targetSessionId))
+      if (targetSessionId === sessionId) {
+        resetToNewChat()
+      }
+    },
+    [resetToNewChat, sessionId, sessions, setSessions],
+  )
+
+  const createNewConversation = useCallback(async () => {
+    abortStreaming()
+    const { session_id, session } = await createSession()
+    setSessionId(session_id)
+    loadSessionMessages([])
+    upsertSession(session)
+  }, [abortStreaming, loadSessionMessages, setSessionId, upsertSession])
+
   useEffect(() => {
     if (sessionId && messages.length <= 1 && messages[0]?.role === "system") {
-      loadSession(sessionId)
-        .then((res) => {
-          const msgs = res.messages
-            .filter((m) => m.type === "user" || m.type === "assistant")
-            .map((m) => ({
-              role: (m.type === "user" ? "user" : "assistant") as "user" | "assistant",
-              content: m.content,
-            }))
-          if (msgs.length > 0) {
-            loadSessionMessages(msgs)
-          }
-        })
+      loadSessionIntoChat(sessionId)
         .catch(() => {
           // Session not found or error: start fresh.
         })
     }
-  }, [sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionId, loadSessionIntoChat]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toPaneMessage = (
     msg: (typeof messages)[number],
@@ -89,6 +137,7 @@ export default function ChatPage() {
         id: `${msg.role}-${index}-${createdAt}`,
         role: msg.role,
         content: msg.content,
+        events: msg.events,
         createdAt,
         startedAt: msg.startTime,
         endedAt: msg.endTime,
@@ -103,6 +152,8 @@ export default function ChatPage() {
         events.push({ kind: "text", text: part.text })
       } else if (part.type === "reasoning") {
         events.push({ kind: "thinking", text: part.text })
+      } else if (part.type === "status") {
+        events.push({ kind: "status", label: part.label, detail: part.detail })
       } else if (part.type === "tool") {
         events.push({
           kind: "tool_use",
@@ -134,18 +185,6 @@ export default function ChatPage() {
   const paneMessages = messages
     .map(toPaneMessage)
     .filter((msg): msg is PaneChatMessage => msg !== null)
-
-  if (loading && streamingParts.length > 0) {
-    const streaming = toPaneMessage(
-      {
-        role: "assistant",
-        content: streamingParts,
-        startTime: Date.now(),
-      },
-      paneMessages.length
-    )
-    if (streaming) paneMessages.push(streaming)
-  }
 
   const sendFromPane = async (
     prompt: string,
@@ -187,9 +226,15 @@ export default function ChatPage() {
     let currentSessionId = sessionId
     if (!currentSessionId) {
       try {
-        const { session_id } = await createSession()
+        const { session_id, session } = await createSession()
         currentSessionId = session_id
         setSessionId(session_id)
+        upsertSession({
+          ...session,
+          title: question.slice(0, 50) + (question.length > 50 ? "..." : ""),
+          updated_at: Date.now() / 1000,
+          message_count: 1,
+        })
       } catch {
         addMessage({ role: "system", content: "⚠️ 无法创建会话，对话不会被保存" })
       }
@@ -200,6 +245,9 @@ export default function ChatPage() {
       model: requestModel,
       modelConfig: inlineModelConfig,
       session_id: currentSessionId,
+      onDone: () => {
+        reloadSessions().catch(() => undefined)
+      },
     })
   }
 
@@ -213,24 +261,36 @@ export default function ChatPage() {
         projectFiles={[]}
         onEnsureProject={async () => {
           if (sessionId) return sessionId
-          const { session_id } = await createSession()
+          const { session_id, session } = await createSession()
           setSessionId(session_id)
+          upsertSession(session)
           return session_id
         }}
         onSend={sendFromPane}
         onStop={abortStreaming}
-        conversations={[
-          {
-            id: sessionId ?? "current",
-            title: "当前对话",
-            updatedAt: Date.now(),
-          },
-        ]}
+        conversations={sessions.map((session) => ({
+          id: session.id,
+          title: session.title,
+          createdAt: toMillis(session.created_at),
+          updatedAt: toMillis(session.updated_at),
+        }))}
         activeConversationId={sessionId ?? "current"}
-        onSelectConversation={() => undefined}
-        onDeleteConversation={() => undefined}
-        onNewConversation={resetToNewChat}
+        onSelectConversation={(id) => {
+          if (id !== sessionId) {
+            loadSessionIntoChat(id).catch(() => undefined)
+          }
+        }}
+        onDeleteConversation={(id) => {
+          deleteConversation(id).catch(() => undefined)
+        }}
+        onNewConversation={() => {
+          createNewConversation().catch(() => resetToNewChat())
+        }}
       />
     </div>
   )
+}
+
+function toMillis(timestamp: number): number {
+  return timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp
 }

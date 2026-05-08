@@ -17,6 +17,7 @@ interface ChatStreamParams {
   selectParam?: string
   extInfo?: Record<string, unknown>
   session_id?: string | null
+  onDone?: () => void
 }
 
 /** Legacy non-streaming mutation for backward compatibility. */
@@ -111,6 +112,7 @@ async function executeStreamRequest(
 ): Promise<void> {
   const {
     addMessage,
+    setMessages,
     setLoading,
     setStreamingParts,
     setStreamingStatus,
@@ -119,6 +121,59 @@ async function executeStreamRequest(
     resetPipelineSteps,
     debugPipelineEnabled,
   } = useChatStore.getState()
+  const assistantStartTime = Date.now()
+  addMessage({
+    role: "assistant",
+    content: [],
+    startTime: assistantStartTime,
+  })
+
+  const updateStreamingAssistant = (endTime?: number) => {
+    const parts = parser.toMessageParts()
+    const finalContent = parser.getFinalContent()
+    const content = parts.length > 0 ? parts : finalContent
+    const current = useChatStore.getState().messages
+    let updated = false
+    const next = current.map((message) => {
+      if (
+        !updated &&
+        message.role === "assistant" &&
+        message.startTime === assistantStartTime
+      ) {
+        updated = true
+        return {
+          ...message,
+          content,
+          endTime,
+        }
+      }
+      return message
+    })
+    if (updated) {
+      setMessages(next)
+    }
+  }
+
+  const removeEmptyStreamingAssistant = () => {
+    const parts = parser.toMessageParts()
+    const hasVisibleOutput =
+      Boolean(parser.getFinalContent()) ||
+      parts.some((part) => part.type !== "text" || part.text.trim().length > 0)
+    if (hasVisibleOutput) {
+      updateStreamingAssistant(Date.now())
+      return
+    }
+    const current = useChatStore.getState().messages
+    setMessages(
+      current.filter(
+        (message) =>
+          !(
+            message.role === "assistant" &&
+            message.startTime === assistantStartTime
+          ),
+      ),
+    )
+  }
 
   // Reset pipeline steps at start of new conversation
   if (debugPipelineEnabled) {
@@ -129,18 +184,40 @@ async function executeStreamRequest(
     const byokConfig = modelConfigToByok(params.modelConfig)
     if (byokConfig) {
       let byokError: Error | null = null
+      let byokReasoningActive = false
       parser.processEvent({ type: "text_start" })
       setStreamingParts(parser.toMessageParts())
       setStreamingStatus("Streaming")
+      updateStreamingAssistant()
 
       await streamByokProvider(byokConfig.protocol, byokConfig, params.messages, combinedSignal, {
         onDelta: (delta) => {
+          if (byokReasoningActive) {
+            parser.processEvent({ type: "reasoning_end" })
+            byokReasoningActive = false
+          }
           parser.processEvent({ type: "text_delta", content: delta })
           setStreamingParts(parser.toMessageParts())
           setStreamingStatus(parser.getCurrentStatus())
+          updateStreamingAssistant()
+        },
+        onReasoningDelta: (delta) => {
+          if (!byokReasoningActive) {
+            parser.processEvent({ type: "reasoning_start" })
+            byokReasoningActive = true
+          }
+          parser.processEvent({ type: "reasoning_delta", content: delta })
+          setStreamingParts(parser.toMessageParts())
+          setStreamingStatus(parser.getCurrentStatus())
+          updateStreamingAssistant()
         },
         onDone: () => {
+          if (byokReasoningActive) {
+            parser.processEvent({ type: "reasoning_end" })
+            byokReasoningActive = false
+          }
           parser.processEvent({ type: "text_end", model: byokConfig.model })
+          updateStreamingAssistant(parser.getEndTime() ?? Date.now())
         },
         onError: (error) => {
           byokError = error
@@ -148,23 +225,7 @@ async function executeStreamRequest(
       })
       if (byokError) throw byokError
 
-      const parts = parser.toMessageParts()
-      const finalContent = parser.getFinalContent()
-      if (parts.length > 0) {
-        addMessage({
-          role: "assistant",
-          content: parts,
-          startTime: parser.getStartTime(),
-          endTime: parser.getEndTime(),
-        })
-      } else if (finalContent) {
-        addMessage({
-          role: "assistant",
-          content: finalContent,
-          startTime: parser.getStartTime(),
-          endTime: parser.getEndTime(),
-        })
-      }
+      params.onDone?.()
       return
     }
 
@@ -225,6 +286,7 @@ async function executeStreamRequest(
           // Update streaming state for real-time UI updates
           setStreamingParts(parser.toMessageParts())
           setStreamingStatus(parser.getCurrentStatus())
+          updateStreamingAssistant(parser.getEndTime())
 
           // Handle pipeline step events for debug panel
           if (debugPipelineEnabled && event.type === "pipeline_step") {
@@ -237,26 +299,8 @@ async function executeStreamRequest(
       }
     }
 
-    // Finalize the message
-    const parts = parser.toMessageParts()
-    const finalContent = parser.getFinalContent()
-
-    // Add the final assistant message
-    if (parts.length > 0) {
-      addMessage({
-        role: "assistant",
-        content: parts,
-        startTime: parser.getStartTime(),
-        endTime: parser.getEndTime(),
-      })
-    } else if (finalContent) {
-      addMessage({
-        role: "assistant",
-        content: finalContent,
-        startTime: parser.getStartTime(),
-        endTime: parser.getEndTime(),
-      })
-    }
+    updateStreamingAssistant(parser.getEndTime() ?? Date.now())
+    params.onDone?.()
 
   } catch (error) {
     // Handle different error types with appropriate messages
@@ -280,6 +324,7 @@ async function executeStreamRequest(
       errorMessage = "Unknown error"
     }
 
+    removeEmptyStreamingAssistant()
     // Add error as system message (not assistant) for clear distinction
     addMessage({
       role: "system",

@@ -106,6 +106,193 @@ async def test_chat_service_stream(service):
 
 
 @pytest.mark.asyncio
+async def test_chat_service_stream_persists_assistant_message(service):
+    session = service.start_new_session()
+    req = ChatRequest(
+        model="fake",
+        messages=[ChatMessage(role="user", content="hi")],
+        stream=True,
+    )
+
+    chunks = []
+    async for line in service.chat_stream(req, session_id=session.id):
+        chunks.append(line)
+
+    loaded = service.load_session_full(session.id)
+    assert loaded is not None
+    assert [(msg.type, msg.content) for msg in loaded.messages] == [
+        ("user", "hi"),
+        ("assistant", "fake response"),
+    ]
+    assert loaded.messages[1].events == [
+        {"kind": "text", "text": "fake"},
+        {"kind": "text", "text": " response"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_stream_emits_reasoning_delta():
+    class ReasoningLLM(BaseLLM):
+        async def achat(self, messages, **kwargs):
+            return ModelOutput(text="final")
+
+        async def achat_stream(self, messages, **kwargs):
+            yield ModelOutput(text="checking files", is_reasoning=True)
+            yield ModelOutput(text="final")
+            yield ModelOutput(text="", finish_reason="stop")
+
+    registry = ModelRegistry()
+    registry.register_llm(
+        "reasoning",
+        ReasoningLLM(LLMConfig(model_name="reasoning", model_type="cli")),
+    )
+    service = ChatService(registry)
+    session = service.start_new_session()
+
+    chunks = []
+    async for line in service.chat_stream(
+        ChatRequest(
+            model="reasoning",
+            messages=[ChatMessage(role="user", content="hi")],
+            stream=True,
+        ),
+        session_id=session.id,
+    ):
+        chunks.append(line)
+
+    body = "".join(chunks)
+    assert '"type": "reasoning_delta"' in body
+    assert '"content": "checking files"' in body
+    assert '"type": "text_delta"' in body
+    assert "final" in body
+
+    loaded = service.load_session_full(session.id)
+    assert loaded is not None
+    assert loaded.messages[-1].events == [
+        {"kind": "thinking", "text": "checking files"},
+        {"kind": "text", "text": "final"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_stream_emits_cli_tool_events():
+    class ToolEventLLM(BaseLLM):
+        async def achat(self, messages, **kwargs):
+            return ModelOutput(text="done")
+
+        async def achat_stream(self, messages, **kwargs):
+            yield ModelOutput(
+                text="",
+                extra={
+                    "event_type": "tool_use",
+                    "id": "tool-1",
+                    "name": "Read",
+                    "input": {"filePath": "README.md"},
+                },
+            )
+            yield ModelOutput(
+                text="",
+                extra={
+                    "event_type": "tool_result",
+                    "toolUseId": "tool-1",
+                    "content": "README contents",
+                    "isError": False,
+                },
+            )
+            yield ModelOutput(text="done")
+            yield ModelOutput(text="", finish_reason="stop")
+
+    registry = ModelRegistry()
+    registry.register_llm(
+        "tool-events",
+        ToolEventLLM(LLMConfig(model_name="tool-events", model_type="cli")),
+    )
+    service = ChatService(registry)
+    session = service.start_new_session()
+
+    chunks = []
+    async for line in service.chat_stream(
+        ChatRequest(
+            model="tool-events",
+            messages=[ChatMessage(role="user", content="inspect")],
+            stream=True,
+        ),
+        session_id=session.id,
+    ):
+        chunks.append(line)
+
+    body = "".join(chunks)
+    assert '"type": "tool_call_start"' in body
+    assert '"id": "tool-1"' in body
+    assert '"tool_name": "Read"' in body
+    assert '\\"filePath\\": \\"README.md\\"' in body
+    assert '"type": "tool_call_result"' in body
+    assert "README contents" in body
+
+    loaded = service.load_session_full(session.id)
+    assert loaded is not None
+    assert loaded.messages[-1].events == [
+        {
+            "kind": "tool_use",
+            "id": "tool-1",
+            "name": "Read",
+            "input": {"filePath": "README.md"},
+        },
+        {
+            "kind": "tool_result",
+            "toolUseId": "tool-1",
+            "content": "README contents",
+            "isError": False,
+        },
+        {"kind": "text", "text": "done"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_stream_reopens_reasoning_after_tool_events():
+    class InterleavedReasoningLLM(BaseLLM):
+        async def achat(self, messages, **kwargs):
+            return ModelOutput(text="done")
+
+        async def achat_stream(self, messages, **kwargs):
+            yield ModelOutput(text="before tool", is_reasoning=True)
+            yield ModelOutput(
+                text="",
+                extra={
+                    "event_type": "tool_use",
+                    "id": "tool-1",
+                    "name": "Read",
+                    "input": {"filePath": "README.md"},
+                },
+            )
+            yield ModelOutput(text="after tool", is_reasoning=True)
+            yield ModelOutput(text="done")
+
+    registry = ModelRegistry()
+    registry.register_llm(
+        "interleaved",
+        InterleavedReasoningLLM(LLMConfig(model_name="interleaved", model_type="cli")),
+    )
+    service = ChatService(registry)
+
+    chunks = []
+    async for line in service.chat_stream(
+        ChatRequest(
+            model="interleaved",
+            messages=[ChatMessage(role="user", content="hi")],
+            stream=True,
+        )
+    ):
+        chunks.append(line)
+
+    body = "".join(chunks)
+    assert body.count('"type": "reasoning_start"') == 2
+    assert body.count('"type": "reasoning_end"') == 2
+    assert '"content": "before tool"' in body
+    assert '"content": "after tool"' in body
+
+
+@pytest.mark.asyncio
 async def test_chat_service_auto_triggers_excel_analysis_for_file_url(service, tmp_path):
     csv_path = tmp_path / "sales.csv"
     csv_path.write_text("类别,销售额\nA,10\nA,15\nB,7\n", encoding="utf-8")

@@ -7,12 +7,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/wangyiyi2056/aurora">
-    <img src="https://img.shields.io/badge/visibility-private-black?style=flat-square" alt="private repo">
+  <a href="https://github.com/wangyiyi2056/Aurora-Design">
+    <img src="https://img.shields.io/badge/visibility-public-green?style=flat-square" alt="public repo">
   </a>
 </p>
-
-> **Visibility**: This repository is currently **private** and visible only to the owner. Open-sourcing may be considered in the future.
 
 ---
 
@@ -35,7 +33,7 @@ frontend/             # Vite + React 18 + TypeScript 5 web interface
 ### 1. Install dependencies
 
 ```bash
-uv sync --all-packages
+uv sync
 ```
 
 ### 2. Configure the model
@@ -45,7 +43,7 @@ Edit `configs/aurora.toml`:
 ```toml
 app_name = "Aurora"
 debug = true
-port = 8000
+port = 8888
 default_llm = "gpt-4o-mini"
 
 [[llm_configs]]
@@ -74,7 +72,7 @@ uv run aurora
 Non-streaming:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/chat/completions \
+curl -X POST http://localhost:8888/api/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
@@ -82,7 +80,7 @@ curl -X POST http://localhost:8000/api/v1/chat/completions \
 Streaming (SSE):
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/chat/completions \
+curl -X POST http://localhost:8888/api/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}], "stream": true}'
 ```
@@ -92,7 +90,7 @@ curl -X POST http://localhost:8000/api/v1/chat/completions \
 Create a SQLite datasource:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/datasource \
+curl -X POST http://localhost:8888/api/v1/datasource \
   -H "Content-Type: application/json" \
   -d '{"config": {"name": "demo", "db_type": "sqlite", "database": ":memory:"}}'
 ```
@@ -100,7 +98,7 @@ curl -X POST http://localhost:8000/api/v1/datasource \
 Execute SQL:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/datasource/demo/query \
+curl -X POST http://localhost:8888/api/v1/datasource/demo/query \
   -H "Content-Type: application/json" \
   -d '{"sql": "SELECT * FROM sqlite_master WHERE type=\'table\'"}'
 ```
@@ -108,7 +106,7 @@ curl -X POST http://localhost:8000/api/v1/datasource/demo/query \
 Natural language to SQL (via Chat API, auto-detect SQL intent):
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/chat/completions \
+curl -X POST http://localhost:8888/api/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"messages": [{"role": "user", "content": "List all tables in the demo datasource"}]}'
 ```
@@ -118,14 +116,14 @@ curl -X POST http://localhost:8000/api/v1/chat/completions \
 Upload a file to build a knowledge base:
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/knowledge/upload?name=docs" \
+curl -X POST "http://localhost:8888/api/v1/knowledge/upload?name=docs" \
   -F "file=@README.md"
 ```
 
 Query the knowledge base:
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/knowledge/docs/query?query=What%20is%20Aurora"
+curl -X POST "http://localhost:8888/api/v1/knowledge/docs/query?query=What%20is%20Aurora"
 ```
 
 ### 7. Agent / Skill
@@ -133,7 +131,7 @@ curl -X POST "http://localhost:8000/api/v1/knowledge/docs/query?query=What%20is%
 List available skills:
 
 ```bash
-curl http://localhost:8000/api/v1/agent/skills
+curl http://localhost:8888/api/v1/agent/skills
 ```
 
 ### 8. AWEL workflow orchestration
@@ -141,13 +139,13 @@ curl http://localhost:8000/api/v1/agent/skills
 List operators:
 
 ```bash
-curl http://localhost:8000/api/v1/awel/operators
+curl http://localhost:8888/api/v1/awel/operators
 ```
 
 Run a sample workflow:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/awel/run \
+curl -X POST http://localhost:8888/api/v1/awel/run \
   -H "Content-Type: application/json" \
   -d '{"initial_input": "hello"}'
 ```
@@ -178,7 +176,7 @@ npm install
 npm run dev
 ```
 
-The frontend runs at `http://localhost:3000` by default, proxying `/api` requests to the backend at `http://localhost:8000`.
+The frontend runs at `http://localhost:3000` by default, proxying `/api` requests to the backend at `http://localhost:8888`.
 
 ### Pages
 

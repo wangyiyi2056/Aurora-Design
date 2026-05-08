@@ -3,6 +3,7 @@ name = "aurora"
 version = "0.1.0"
 description = "Aurora: Agentic AI Data Platform"
 requires-python = ">=3.10"
+dependencies = ["aurora-app"]
 
 [tool.uv.workspace]
 members = ["packages/*"]

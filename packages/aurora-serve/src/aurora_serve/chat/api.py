@@ -20,6 +20,23 @@ def get_chat_service(request: Request) -> ChatService:
     return request.app.state.chat_service
 
 
+def _session_message_to_dict(msg) -> dict:
+    msg_dict: dict = {
+        "type": msg.type,
+        "role": msg.role or msg.type,
+        "content": str(msg.content) if msg.content else "",
+        "timestamp": msg.timestamp,
+        "events": msg.events or [],
+    }
+    if msg.tool_name:
+        msg_dict["tool_name"] = msg.tool_name
+    if msg.tool_call_id:
+        msg_dict["tool_call_id"] = msg.tool_call_id
+    if msg.tool_calls:
+        msg_dict["tool_calls"] = msg.tool_calls
+    return msg_dict
+
+
 @router.post("/completions", response_model=ChatResponse)
 async def chat_completions(
     req: ChatRequest, service: ChatService = Depends(get_chat_service)
@@ -50,7 +67,14 @@ async def create_session(
     service: ChatService = Depends(get_chat_service),
 ) -> SessionCreateResponse:
     session = service.start_new_session()
-    return SessionCreateResponse(session_id=session.id)
+    meta = SessionMetaResponse(
+        id=session.id,
+        title=session.title,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+        message_count=session.message_count,
+    )
+    return SessionCreateResponse(session_id=session.id, session=meta)
 
 
 @router.get("/sessions", response_model=SessionListResponse)
@@ -67,7 +91,6 @@ async def list_sessions(
             message_count=s.get("message_count", 0),
         )
         for s in sessions
-        if s.get("message_count", 0) > 0
     ]
     items.sort(key=lambda x: x.updated_at, reverse=True)
     return SessionListResponse(sessions=items)
@@ -91,15 +114,8 @@ async def load_session(
         message_count=session.message_count,
     )
 
-    # Convert SessionMessage to frontend-friendly format
-    messages: list[dict] = []
-    for msg in session.messages:
-        msg_dict: dict = {"type": msg.type, "content": str(msg.content) if msg.content else ""}
-        if msg.tool_name:
-            msg_dict["tool_name"] = msg.tool_name
-        if msg.tool_call_id:
-            msg_dict["tool_call_id"] = msg.tool_call_id
-        messages.append(msg_dict)
+    # Convert SessionMessage to frontend-friendly format, preserving agent events.
+    messages = [_session_message_to_dict(msg) for msg in session.messages]
 
     return SessionLoadResponse(session=meta, messages=messages)
 
@@ -134,12 +150,5 @@ async def update_session_title(
         updated_at=session.updated_at,
         message_count=session.message_count,
     )
-    messages: list[dict] = []
-    for msg in session.messages:
-        msg_dict: dict = {"type": msg.type, "content": str(msg.content) if msg.content else ""}
-        if msg.tool_name:
-            msg_dict["tool_name"] = msg.tool_name
-        if msg.tool_call_id:
-            msg_dict["tool_call_id"] = msg.tool_call_id
-        messages.append(msg_dict)
+    messages = [_session_message_to_dict(msg) for msg in session.messages]
     return SessionLoadResponse(session=meta, messages=messages)

@@ -4,6 +4,7 @@ import { parseSseFrame } from "@/providers/sse"
 
 export interface StreamHandlers {
   onDelta: (delta: string) => void
+  onReasoningDelta?: (delta: string) => void
   onDone: (content: string) => void
   onError: (error: Error) => void
 }
@@ -72,6 +73,12 @@ export async function streamProxyEndpoint(
             acc += text
             handlers.onDelta(text)
           }
+          continue
+        }
+
+        if (parsed.event === "reasoning_delta") {
+          const text = String(parsed.data.delta ?? parsed.data.text ?? "")
+          if (text) handlers.onReasoningDelta?.(text)
           continue
         }
 

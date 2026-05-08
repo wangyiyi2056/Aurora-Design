@@ -23,7 +23,7 @@
 # 安装依赖
 npm install
 
-# 启动开发服务器（默认端口 3000，代理 /api 到 localhost:8000）
+# 启动开发服务器（默认端口 3000，代理 /api 到 localhost:8888）
 npm run dev
 
 # 生产构建
