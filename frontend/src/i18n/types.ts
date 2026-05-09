@@ -780,6 +780,44 @@ export interface Dict {
   'tool.running': string;
   'tool.error': string;
   'tool.done': string;
+  'tool.input': string;
+  // Tool card titles
+  'tool.titleRead': string;
+  'tool.titleList': string;
+  'tool.titleGlob': string;
+  'tool.titleGrep': string;
+  'tool.titleBash': string;
+  'tool.titleEdit': string;
+  'tool.titleWrite': string;
+  'tool.titleTask': string;
+  'tool.titleTodoWrite': string;
+  'tool.titleTodoRead': string;
+  'tool.titleFetch': string;
+  'tool.titleQuestion': string;
+  'tool.titleApplyPatch': string;
+  'tool.titleSkill': string;
+  'tool.titleReasoning': string;
+  'tool.titlePython': string;
+  'tool.titleDataProfile': string;
+  'tool.titleSql': string;
+  // Tool status text (running state)
+  'tool.statusDelegating': string;
+  'tool.statusPlanning': string;
+  'tool.statusReadingPlan': string;
+  'tool.statusReading': string;
+  'tool.statusSearchingCode': string;
+  'tool.statusSearching': string;
+  'tool.statusFindingFiles': string;
+  'tool.statusFetching': string;
+  'tool.statusEditing': string;
+  'tool.statusWriting': string;
+  'tool.statusApplying': string;
+  'tool.statusRunningCmd': string;
+  'tool.statusThinking': string;
+  'tool.statusLoadingSkill': string;
+  'tool.statusWaitingInput': string;
+  'tool.statusCompleted': string;
+  'tool.statusProcessing': string;
 
   // Assistant message scaffolding
   'assistant.role': string;

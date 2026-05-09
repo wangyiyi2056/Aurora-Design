@@ -548,6 +548,14 @@ a {
   padding: 14px 16px;
 }
 
+.msg.user .user-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
 .msg.user .user-text {
   margin-left: auto;
   width: fit-content;
