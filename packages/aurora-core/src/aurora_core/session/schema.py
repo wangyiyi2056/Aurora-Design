@@ -13,6 +13,7 @@ class SessionMessage:
     """A message in a session, following Claude Code JSONL format."""
     type: str  # "user", "assistant", "tool_use", "tool_result"
     content: Any
+    id: str = field(default_factory=lambda: str(uuid4()))
     role: Optional[str] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_call_id: Optional[str] = None
@@ -20,6 +21,8 @@ class SessionMessage:
     events: Optional[List[Dict[str, Any]]] = None
     attachments: Optional[List[Dict[str, Any]]] = None
     timestamp: float = field(default_factory=lambda: time.time())
+    end_time: Optional[float] = None
+    updated_at: float = field(default_factory=lambda: time.time())
 
     def to_jsonl(self) -> str:
         """Convert to JSONL format string."""
@@ -29,6 +32,8 @@ class SessionMessage:
     def from_jsonl(cls, line: str) -> "SessionMessage":
         """Parse from JSONL format string."""
         data = json.loads(line)
+        data.setdefault("id", str(uuid4()))
+        data.setdefault("updated_at", data.get("timestamp", time.time()))
         return cls(**data)
 
 

@@ -1,3 +1,5 @@
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -8,10 +10,12 @@ from aurora_serve.chat.schema import (
     SessionCreateResponse,
     SessionListResponse,
     SessionLoadResponse,
+    SessionMessageUpsertRequest,
     SessionMetaResponse,
     SessionTitleUpdateRequest,
 )
 from aurora_serve.chat.service import ChatService
+from aurora_core.session import SessionMessage
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -22,10 +26,13 @@ def get_chat_service(request: Request) -> ChatService:
 
 def _session_message_to_dict(msg) -> dict:
     msg_dict: dict = {
+        "id": msg.id,
         "type": msg.type,
         "role": msg.role or msg.type,
         "content": str(msg.content) if msg.content else "",
         "timestamp": msg.timestamp,
+        "end_time": msg.end_time,
+        "updated_at": msg.updated_at,
         "events": msg.events or [],
     }
     if msg.tool_name:
@@ -120,6 +127,50 @@ async def load_session(
     messages = [_session_message_to_dict(msg) for msg in session.messages]
 
     return SessionLoadResponse(session=meta, messages=messages)
+
+
+@router.put("/sessions/{session_id}/messages/{message_id}", response_model=SessionLoadResponse)
+async def upsert_session_message(
+    session_id: str,
+    message_id: str,
+    req: SessionMessageUpsertRequest,
+    service: ChatService = Depends(get_chat_service),
+) -> SessionLoadResponse:
+    session = service.load_session_full(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    service.session_manager.upsert_message(
+        session_id,
+        SessionMessage(
+            id=message_id,
+            type=req.type,
+            role=req.role or req.type,
+            content=req.content,
+            events=req.events,
+            attachments=req.attachments,
+            tool_calls=req.tool_calls,
+            tool_call_id=req.tool_call_id,
+            tool_name=req.tool_name,
+            timestamp=req.timestamp or time.time(),
+            end_time=req.end_time,
+        ),
+    )
+    updated = service.load_session_full(session_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    meta = SessionMetaResponse(
+        id=updated.id,
+        title=updated.title,
+        created_at=updated.created_at,
+        updated_at=updated.updated_at,
+        message_count=updated.message_count,
+    )
+    return SessionLoadResponse(
+        session=meta,
+        messages=[_session_message_to_dict(msg) for msg in updated.messages],
+    )
 
 
 @router.delete("/sessions/{session_id}")

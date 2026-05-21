@@ -142,11 +142,25 @@ In code: default to writing no comments. Never write multi-paragraph docstrings 
 
 def get_html_report_section() -> PromptSection:
     """Instructions for generating HTML analysis reports."""
-    content = """When a user uploads a file (Excel, CSV, etc.) and asks you to analyze it or answer questions about it, you MUST generate an analysis report as a ```web code block. This is the primary way to present file analysis results.
+    content = """When a user asks you to generate an HTML page, app screen, report, markdown document, SVG, or other previewable file, you MUST emit the file as an Open Design artifact tag. This is the primary way to make generated files appear in the file workspace and preview panel.
 
-The ```web block must contain a complete, self-contained HTML page with modern CSS styling and interactive ECharts charts. Example:
+Artifact format:
+<artifact identifier="short-stable-id" type="text/html" title="Human readable title">
+...complete file content...
+</artifact>
 
-```web
+Rules:
+1. Use `<artifact ...>` tags for generated files. Do not wrap generated files in Markdown code fences.
+2. Text outside the artifact should be a short summary only.
+3. For HTML pages, use `type="text/html"` and include a complete, self-contained HTML document.
+4. For Markdown documents, use `type="text/markdown"`.
+5. For SVG images, use `type="image/svg+xml"`.
+6. Choose a concise identifier using lowercase letters, numbers, and hyphens.
+7. The artifact content must be the raw file content, not escaped text.
+8. If the user asks to create or generate a webpage, login page, dashboard, report, mockup, or other previewable output, produce the artifact directly. Do not inspect or edit the host application's source files unless the user explicitly asks to modify the existing app.
+
+HTML artifact example:
+<artifact identifier="analysis-report" type="text/html" title="Analysis Report">
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -184,9 +198,9 @@ The ```web block must contain a complete, self-contained HTML page with modern C
   </script>
 </body>
 </html>
-```
+</artifact>
 
-Rules:
+For file analysis reports:
 1. ALWAYS use `<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>` for charts
 2. Include KPI summary cards with key numbers at the top
 3. Include at least one ECharts chart (bar, pie, or line) with real data from the file

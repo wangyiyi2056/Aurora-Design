@@ -19,6 +19,28 @@ AgentEvent = dict[str, Any]
 DEFAULT_MODEL_OPTION = {"id": "default", "label": "Default (CLI config)"}
 
 
+CLI_ARTIFACT_HANDOFF = """---
+
+## Artifact handoff
+
+When the user's latest request asks for a fresh previewable deliverable such as a webpage, login page, dashboard, report, markdown document, SVG, or prototype, finish by emitting exactly one Open Design artifact block:
+
+<artifact identifier="kebab-slug" type="text/html" title="Human title">
+<!doctype html>
+<html>...complete standalone document...</html>
+</artifact>
+
+Rules:
+- The artifact body must be the complete raw file content, not a summary, file path, escaped text, or Markdown code fence.
+- For HTML, use `type="text/html"` and include a complete standalone `<!doctype html>` document with inline CSS.
+- For Markdown, use `type="text/markdown"`. For SVG, use `type="image/svg+xml"`.
+- Do not use Write, Edit, MultiEdit, or Bash to create the fresh artifact file. Stream the `<artifact>` body directly in your assistant response so the preview can render while you generate it.
+- After `</artifact>`, stop. Do not add prose after the artifact.
+- If the user explicitly asks to modify existing app/source files, do that code-edit task instead and do not emit an artifact unless you also create a new canonical preview file.
+- Do not inspect or edit the host application's source files merely because the requested deliverable resembles something in the app. Treat plain requests like "generate a login page" as standalone artifact-generation tasks.
+"""
+
+
 @dataclass(frozen=True)
 class AgentDef:
     id: str
@@ -739,6 +761,7 @@ def collapse_messages_for_cli(messages: Iterable[Any]) -> str:
         role = getattr(message, "role", None) or message.get("role", "user")
         content = getattr(message, "content", None) if not isinstance(message, dict) else message.get("content")
         sections.append(f"## {role}\n{_message_content_to_text(content)}")
+    sections.append(CLI_ARTIFACT_HANDOFF)
     return "\n\n".join(sections)
 
 

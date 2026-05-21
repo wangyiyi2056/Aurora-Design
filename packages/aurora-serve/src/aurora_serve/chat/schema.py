@@ -101,3 +101,16 @@ class SessionCreateResponse(BaseModel):
 
 class SessionTitleUpdateRequest(BaseModel):
     title: str
+
+
+class SessionMessageUpsertRequest(BaseModel):
+    type: Literal["user", "assistant", "system", "tool_use", "tool_result"] = "assistant"
+    role: Optional[Literal["system", "user", "assistant", "tool"]] = None
+    content: Any = ""
+    events: Optional[List[Dict[str, Any]]] = None
+    attachments: Optional[List[Dict[str, Any]]] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
+    tool_name: Optional[str] = None
+    timestamp: Optional[float] = None
+    end_time: Optional[float] = None

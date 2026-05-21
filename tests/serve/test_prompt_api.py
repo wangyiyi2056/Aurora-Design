@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from aurora_serve.server import create_app
+from aurora_core.prompt.sections import get_html_report_section
 
 
 def test_prompt_template_crud_persists(tmp_path, monkeypatch):
@@ -54,3 +55,10 @@ def test_prompt_template_crud_persists(tmp_path, monkeypatch):
         deleted = client.delete(f"/api/v1/prompts/{prompt_id}")
         assert deleted.status_code == 200
         assert deleted.json()["success"] is True
+
+
+def test_html_report_prompt_uses_open_design_artifact_contract():
+    content = get_html_report_section().content
+
+    assert '<artifact identifier="short-stable-id" type="text/html" title="Human readable title">' in content
+    assert "```web" not in content

@@ -67,6 +67,12 @@ class SessionManager:
 
     def append_message(self, session_id: str, message: SessionMessage) -> None:
         """Append a message to session JSONL file."""
+        if message.id:
+            existing = self.load_session(session_id)
+            if existing and any(msg.id == message.id for msg in existing.messages):
+                self.upsert_message(session_id, message)
+                return
+
         file_path = self._session_file_path(session_id)
         with open(file_path, "a") as f:
             f.write(message.to_jsonl() + "\n")
@@ -93,6 +99,37 @@ class SessionManager:
                     text = str(message.content) if message.content else ""
                     session.title = text[:50] + ("..." if len(text) > 50 else "")
                 self._save_session_meta(session)
+
+    def upsert_message(self, session_id: str, message: SessionMessage) -> None:
+        """Insert or replace a message in a session JSONL file by id."""
+        message.updated_at = time.time()
+        session = self.load_session(session_id)
+        if not session:
+            return
+
+        replaced = False
+        next_messages: List[SessionMessage] = []
+        for existing in session.messages:
+            if existing.id == message.id:
+                next_messages.append(message)
+                replaced = True
+            else:
+                next_messages.append(existing)
+        if not replaced:
+            next_messages.append(message)
+
+        session.messages = next_messages
+        session.updated_at = time.time()
+        if message.type == "user" and session.title == "New Chat":
+            text = str(message.content) if message.content else ""
+            session.title = text[:50] + ("..." if len(text) > 50 else "")
+
+        file_path = self._session_file_path(session_id)
+        file_path.write_text(
+            "\n".join(msg.to_jsonl() for msg in session.messages) + ("\n" if session.messages else "")
+        )
+        self._current_session = session
+        self._save_session_meta(session)
 
     def load_session(self, session_id: str) -> Optional[Session]:
         """Load a full session from disk."""

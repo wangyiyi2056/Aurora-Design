@@ -2,6 +2,7 @@ import pytest
 import sqlite3
 
 from aurora_core.model.base import BaseLLM
+from aurora_core.model.adapter.cli_adapter import LocalCliLLM
 from aurora_core.model.registry import ModelRegistry
 from aurora_core.schema.message import Message, ModelOutput
 from aurora_core.schema.model import LLMConfig
@@ -89,6 +90,26 @@ def test_chat_service_prefers_saved_runtime_when_model_config_has_masked_api_key
     )
 
     assert service._get_llm(req) is service.registry.get_llm("fake")
+
+
+def test_chat_service_runs_daemon_in_session_workspace(service, tmp_path, monkeypatch):
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
+    req = ChatRequest(
+        model="claude",
+        messages=[ChatMessage(role="user", content="生成一个登录页面")],
+        model_config=ModelConfig(
+            model_name="claude",
+            base_url="claude",
+            api_key="",
+            model_type="daemon",
+        ),
+        session_id="session-1",
+    )
+
+    llm = service._get_llm(req)
+
+    assert isinstance(llm, LocalCliLLM)
+    assert llm.config.extra["cwd"] == str(tmp_path / "storage" / "workspaces" / "session-1")
 
 
 @pytest.mark.asyncio

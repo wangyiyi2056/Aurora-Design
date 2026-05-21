@@ -43,6 +43,7 @@ from aurora_serve.chat.schema import (
     FileUrlPart,
     ReactAgentRequest,
 )
+from aurora_serve.files.workspace_service import WorkspaceFileService
 
 # Plan mode system (ported from Claude Code)
 from aurora_core.plan import PlanEnforcer
@@ -230,6 +231,8 @@ class EnhancedChatService:
                 return OpenAILLM(cfg)
             if model_type in {"daemon", "cli"}:
                 cfg.model_type = "daemon"
+                if req.session_id:
+                    cfg.extra["cwd"] = str(WorkspaceFileService().workspace_root(req.session_id))
                 return LocalCliLLM(cfg)
             if model_type == "google":
                 return GoogleLLM(cfg)
@@ -1262,6 +1265,7 @@ class EnhancedChatService:
         if not session_id:
             session = await self.start_session()
             session_id = session.id
+        frontend_persistence = bool((req.ext_info or {}).get("frontend_persistence"))
 
         if self._extract_latest_tabular_attachment(req):
             pipeline_events: list[dict[str, Any]] = []
@@ -1284,14 +1288,15 @@ class EnhancedChatService:
 
             question = self._extract_latest_user_question(req)
             attachments = self._extract_latest_user_attachments(req)
-            self.session_manager.append_message(
-                session_id,
-                SessionMessage(type="user", content=question, role="user", attachments=attachments),
-            )
-            self.session_manager.append_message(
-                session_id,
-                SessionMessage(type="assistant", content=excel_result or "", role="assistant"),
-            )
+            if not frontend_persistence:
+                self.session_manager.append_message(
+                    session_id,
+                    SessionMessage(type="user", content=question, role="user", attachments=attachments),
+                )
+                self.session_manager.append_message(
+                    session_id,
+                    SessionMessage(type="assistant", content=excel_result or "", role="assistant"),
+                )
 
             for event in pipeline_events:
                 yield f"data: {json.dumps(event)}\n\n"
@@ -1308,14 +1313,15 @@ class EnhancedChatService:
         if datasource_result is not None:
             question = self._extract_latest_user_question(req)
             attachments = self._extract_latest_user_attachments(req)
-            self.session_manager.append_message(
-                session_id,
-                SessionMessage(type="user", content=question, role="user", attachments=attachments),
-            )
-            self.session_manager.append_message(
-                session_id,
-                SessionMessage(type="assistant", content=datasource_result, role="assistant"),
-            )
+            if not frontend_persistence:
+                self.session_manager.append_message(
+                    session_id,
+                    SessionMessage(type="user", content=question, role="user", attachments=attachments),
+                )
+                self.session_manager.append_message(
+                    session_id,
+                    SessionMessage(type="assistant", content=datasource_result, role="assistant"),
+                )
             resp_id = f"aurora-{int(time.time() * 1000)}"
             yield f"data: {json.dumps({'type': 'text_start'})}\n\n"
             yield f"data: {json.dumps({'type': 'text_delta', 'content': datasource_result})}\n\n"
@@ -1363,7 +1369,7 @@ class EnhancedChatService:
             )
 
         # Save user message to session (same as chat() method)
-        if messages:
+        if messages and not frontend_persistence:
             last_user = None
             for m in reversed(messages):
                 if m.role == "user":
@@ -1477,7 +1483,7 @@ class EnhancedChatService:
                                     logger.info(f"[DEBUG] emit_step callback set on excel_skill")
 
                     tool_results = await self._execute_tool_calls(
-                        output.tool_calls, session_id
+                        output.tool_calls, None if frontend_persistence else session_id
                     )
 
                     # Emit collected pipeline_step events from excel_analyze
@@ -1498,19 +1504,20 @@ class EnhancedChatService:
                         )
                         yield f"data: {json.dumps({'type': 'tool_call_result', 'id': tr.tool_call_id or '', 'tool_name': tr.name or '', 'content': result_content})}\n\n"
 
-                    self.session_manager.append_message(
-                        session_id,
-                        SessionMessage(
-                            type="assistant",
-                            content=output.text or "",
-                            role="assistant",
-                            events=tool_turn_events,
-                            tool_calls=[
-                                {"id": tc.id, "type": tc.type, "function": tc.function}
-                                for tc in output.tool_calls
-                            ],
-                        ),
-                    )
+                    if not frontend_persistence:
+                        self.session_manager.append_message(
+                            session_id,
+                            SessionMessage(
+                                type="assistant",
+                                content=output.text or "",
+                                role="assistant",
+                                events=tool_turn_events,
+                                tool_calls=[
+                                    {"id": tc.id, "type": tc.type, "function": tc.function}
+                                    for tc in output.tool_calls
+                                ],
+                            ),
+                        )
 
                     messages.extend(tool_results)
                     continue
@@ -1522,15 +1529,16 @@ class EnhancedChatService:
                 full_text = output.text or ""
 
                 # Save final answer to session
-                self.session_manager.append_message(
-                    session_id,
-                    SessionMessage(
-                        type="assistant",
-                        content=full_text,
-                        role="assistant",
-                        events=assistant_events,
-                    ),
-                )
+                if not frontend_persistence:
+                    self.session_manager.append_message(
+                        session_id,
+                        SessionMessage(
+                            type="assistant",
+                            content=full_text,
+                            role="assistant",
+                            events=assistant_events,
+                        ),
+                    )
 
                 if not text_started:
                     yield f"data: {json.dumps({'type': 'text_start'})}\n\n"
@@ -1648,7 +1656,7 @@ class EnhancedChatService:
             yield f"data: {json.dumps({'type': 'reasoning_end'})}\n\n"
 
         full_text = "".join(full_text_parts)
-        if full_text or assistant_events:
+        if (full_text or assistant_events) and not frontend_persistence:
             self.session_manager.append_message(
                 session_id,
                 SessionMessage(

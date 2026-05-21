@@ -6,6 +6,7 @@ from aurora_core.model.local_cli import (
     JsonEventStreamParser,
     build_agent_args,
     clamp_codex_reasoning,
+    collapse_messages_for_cli,
     sanitize_custom_model,
 )
 from aurora_core.schema.message import Message
@@ -47,6 +48,15 @@ def test_clamp_codex_reasoning_matches_late_gpt5_family():
     assert clamp_codex_reasoning("gpt-5.5", "minimal") == "low"
     assert clamp_codex_reasoning("gpt-5.1", "xhigh") == "high"
     assert clamp_codex_reasoning("gpt-5.1-codex-mini", "low") == "medium"
+
+
+def test_collapse_messages_for_cli_appends_open_design_artifact_handoff():
+    prompt = collapse_messages_for_cli([Message(role="user", content="帮我生成一个登录页面")])
+
+    assert "## user\n帮我生成一个登录页面" in prompt
+    assert "## Artifact handoff" in prompt
+    assert '<artifact identifier="kebab-slug" type="text/html" title="Human title">' in prompt
+    assert "Do not use Write, Edit, MultiEdit, or Bash to create the fresh artifact file" in prompt
 
 
 def test_claude_stream_parser_matches_open_design_tool_result_events():
