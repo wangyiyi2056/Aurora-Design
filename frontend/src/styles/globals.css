@@ -1399,6 +1399,280 @@ a {
   padding: 18px;
 }
 
+.agent-process-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+  color: var(--foreground);
+}
+
+.agent-process-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 36%, transparent);
+  padding: 12px;
+}
+
+.agent-process-status-icon,
+.agent-process-node-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 999px;
+  background: var(--background);
+  color: var(--muted-foreground);
+}
+
+.agent-process-status-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.agent-process-status[data-phase="completed"] .agent-process-status-icon,
+.agent-process-run[data-phase="completed"] .agent-process-run-status {
+  color: var(--success);
+}
+
+.agent-process-status[data-phase="failed"] .agent-process-status-icon,
+.agent-process-status[data-phase="canceled"] .agent-process-status-icon,
+.agent-process-run[data-phase="failed"] .agent-process-run-status,
+.agent-process-run[data-phase="canceled"] .agent-process-run-status {
+  color: var(--destructive);
+}
+
+.agent-process-status-label {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.agent-process-status-detail {
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.agent-process-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 220px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.agent-process-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.agent-process-run {
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--background) 84%, transparent);
+}
+
+.agent-process-run[data-phase="completed"] {
+  border-color: color-mix(in srgb, var(--success) 32%, var(--chat-soft-border));
+}
+
+.agent-process-run[data-phase="failed"],
+.agent-process-run[data-phase="canceled"] {
+  border-color: color-mix(in srgb, var(--destructive) 42%, var(--chat-soft-border));
+}
+
+.agent-process-run.active {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--chat-soft-border));
+}
+
+.agent-process-run-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--chat-soft-border);
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+  user-select: none;
+}
+
+.agent-process-run-head::-webkit-details-marker {
+  display: none;
+}
+
+.agent-process-run:not([open]) .agent-process-run-head {
+  border-bottom-color: transparent;
+}
+
+.agent-process-run:not([open]) .agent-process-run-chevron {
+  transform: rotate(-90deg);
+}
+
+.agent-process-run-head h3 {
+  margin: 2px 0 0;
+  max-width: 280px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.agent-process-run-kicker,
+.agent-process-run-status,
+.agent-process-live {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.agent-process-run-status {
+  flex: 0 0 auto;
+  font-weight: 560;
+}
+
+.agent-process-run-meta {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.agent-process-run-chevron {
+  color: var(--muted-foreground);
+  transition: transform var(--duration-fast);
+}
+
+.agent-process-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.agent-process-node {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.agent-process-node:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 28px;
+  bottom: -11px;
+  width: 1px;
+  background: var(--chat-soft-border);
+}
+
+.agent-process-node-icon {
+  position: relative;
+  z-index: 1;
+  width: 24px;
+  height: 24px;
+}
+
+.agent-process-node.active .agent-process-node-icon {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--chat-soft-border));
+  color: var(--primary);
+}
+
+.agent-process-node-body {
+  min-width: 0;
+}
+
+.agent-process-node-card {
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--popover) 62%, transparent);
+  padding: 10px 12px;
+}
+
+.agent-process-node-title-row,
+.agent-process-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.agent-process-node-title-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.agent-process-live {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  padding: 2px 7px;
+}
+
+.agent-process-node-card p {
+  margin: 7px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.agent-process-node-card details {
+  margin-top: 8px;
+}
+
+.agent-process-node-card summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+}
+
+.agent-process-file-row {
+  margin-top: 8px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.agent-process-file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 180px;
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 7px;
+  background: var(--background);
+  color: var(--foreground);
+  cursor: pointer;
+  padding: 4px 7px;
+  font-size: 12px;
+}
+
+.agent-process-file-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.agent-process-file-btn:not(:disabled):hover {
+  background: var(--muted);
+}
+
 .chat-day-separator {
   width: 100%;
   margin: 20px auto 18px;
@@ -1477,6 +1751,12 @@ a {
   .composer-pet-label {
     display: none;
   }
+}
+
+/* Aurora pulse for login page */
+@keyframes aurora-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.5; }
 }
 
 /* Reduced motion */

@@ -54,13 +54,18 @@ export async function writeWorkspaceTextFile(
   workspaceId: string,
   name: string,
   content: string,
-  options: { overwrite?: boolean } = {},
+  options: { overwrite?: boolean; encoding?: "utf8" | "base64" } = {},
 ): Promise<WorkspaceFile | null> {
   try {
     const resp = await fetch(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/files`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, content, encoding: "utf8", overwrite: options.overwrite ?? true }),
+      body: JSON.stringify({
+        name,
+        content,
+        encoding: options.encoding ?? "utf8",
+        overwrite: options.overwrite ?? true,
+      }),
     })
     if (!resp.ok) return null
     const json = (await resp.json()) as { file?: WorkspaceFile }
