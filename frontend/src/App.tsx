@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom"
 import { Shell } from "@/components/layout/shell"
+import LoginPage from "@/features/auth/pages/login-page"
 import ExplorePage from "@/features/chat/pages/explore-page"
 import ChatPage from "@/features/chat/pages/chat-page"
 import SharePage from "@/features/chat/pages/share-page"
@@ -16,6 +17,7 @@ import EvaluationListPage from "@/features/evaluation/pages/evaluation-list-page
 export default function App() {
   return (
     <Routes>
+      <Route path="/login" element={<LoginPage />} />
       <Route
         path="*"
         element={
