@@ -3,6 +3,7 @@ import { MessageSquare, Plus, Trash2 } from "lucide-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useChatStore } from "@/stores/chat-store"
 import { listSessions, loadSession, deleteSession } from "@/services/chat"
+import { mergeSessionLists } from "@/features/chat/runtime/session-list"
 import { toast } from "sonner"
 
 function formatRelativeTime(timestamp: number): string {
@@ -44,6 +45,7 @@ export function ConversationList({
   onNewChat,
 }: ConversationListProps) {
   const setSessions = useChatStore((s) => s.setSessions)
+  const storeSessions = useChatStore((s) => s.sessions)
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -52,13 +54,14 @@ export function ConversationList({
     refetchOnMount: true,
   })
 
-  const sessions = data?.sessions ?? []
+  const queriedSessions = data?.sessions ?? []
+  const sessions = storeSessions
 
   useEffect(() => {
-    if (sessions.length > 0) {
-      setSessions(sessions)
+    if (queriedSessions.length > 0) {
+      setSessions(mergeSessionLists(useChatStore.getState().sessions, queriedSessions))
     }
-  }, [sessions, setSessions])
+  }, [queriedSessions, setSessions])
 
   const handleSelect = useCallback(
     async (sessionId: string) => {
@@ -78,12 +81,11 @@ export function ConversationList({
             events: m.events ?? [],
             attachments: m.attachments ?? [],
             startTime: m.timestamp ? toMillis(m.timestamp) : undefined,
-            endTime: m.type === "assistant" && m.timestamp ? toMillis(m.timestamp) : undefined,
+            endTime: m.type === "assistant" && m.end_time ? toMillis(m.end_time) : undefined,
           }))
         useChatStore.getState().loadSessionMessages(messages)
         useChatStore.getState().setSessionId(sessionId)
         onSelect?.(sessionId)
-        toast.success("Conversation loaded")
       } catch {
         toast.error("Failed to load conversation")
       }
@@ -190,7 +192,7 @@ export function ConversationList({
               >
                 <MessageSquare className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate flex-1">{s.title}</span>
-                <span className="text-[10px] text-muted-foreground/40 shrink-0">
+                <span className="text-[10px] text-muted-foreground/40 shrink-0 transition-opacity group-hover:opacity-0">
                   {formatRelativeTime(s.updated_at)}
                 </span>
               </button>

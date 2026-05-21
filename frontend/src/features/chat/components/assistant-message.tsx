@@ -195,7 +195,7 @@ function AssistantFooter({
   hasUnfinishedTodos: boolean;
 }) {
   const t = useT();
-  const elapsed = useLiveElapsed(streaming, startedAt, endedAt);
+  const elapsed = useLiveElapsed(streaming, startedAt, endedAt, usage?.durationMs);
   if (!streaming && !elapsed && !usage && !hasUnfinishedTodos) return null;
   return (
     <div className="assistant-footer" data-unfinished={hasUnfinishedTodos ? 'true' : 'false'}>
@@ -792,6 +792,7 @@ function useLiveElapsed(
   streaming: boolean,
   startedAt: number | undefined,
   endedAt: number | undefined,
+  fixedDurationMs?: number,
 ): string {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -799,9 +800,24 @@ function useLiveElapsed(
     const id = window.setInterval(() => setNow(Date.now()), 200);
     return () => window.clearInterval(id);
   }, [streaming]);
+
+  if (!streaming) {
+    if (typeof fixedDurationMs === 'number' && fixedDurationMs > 0) {
+      return formatElapsedMs(fixedDurationMs);
+    }
+    if (endedAt !== undefined && startedAt !== undefined && endedAt > startedAt) {
+      return formatElapsedMs(endedAt - startedAt);
+    }
+    return '';
+  }
+
   if (!startedAt) return '';
   const end = streaming ? now : (endedAt ?? now);
   const ms = Math.max(0, end - startedAt);
+  return formatElapsedMs(ms);
+}
+
+function formatElapsedMs(ms: number): string {
   const s = ms / 1000;
   if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
   const m = Math.floor(s / 60);

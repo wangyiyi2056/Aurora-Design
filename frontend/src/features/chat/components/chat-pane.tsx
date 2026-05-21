@@ -5,7 +5,8 @@ import { projectRawUrl } from '../providers/registry';
 import type { TodoItem } from '../runtime/todos';
 import type { AppConfig, ChatAttachment, ChatCommentAttachment, ChatMessage, Conversation, PreviewComment, ProjectFile, ProjectMetadata } from '../types';
 import { dayKey, dayLabel, exactDateTime, messageTime, relativeTimeLong } from '../utils/chat-time';
-import { commentsToAttachments, simplePositionLabel } from '../comments';
+import { commentsToAttachments } from '../comments';
+import { AgentProcessView } from './agent-process-view';
 import { AssistantMessage } from './assistant-message';
 import { ChatComposer, type ChatComposerHandle } from './chat-composer';
 import { Icon } from './icon';
@@ -102,11 +103,8 @@ export function ChatPane({
   projectFiles,
   projectFileNames,
   onEnsureProject,
-  previewComments = [],
   attachedComments = [],
-  onAttachComment,
   onDetachComment,
-  onDeleteComment,
   onSend,
   onStop,
   onRequestOpenFile,
@@ -114,11 +112,7 @@ export function ChatPane({
   onSubmitForm,
   onContinueRemainingTasks,
   onNewConversation,
-  conversations,
   activeConversationId,
-  onSelectConversation,
-  onDeleteConversation,
-  onRenameConversation,
   onOpenSettings,
   petConfig,
   onAdoptPet,
@@ -129,11 +123,9 @@ export function ChatPane({
 }: Props) {
   const t = useT();
   const logRef = useRef<HTMLDivElement | null>(null);
-  const historyWrapRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<ChatComposerHandle | null>(null);
   const didInitialScrollRef = useRef(false);
   const [tab, setTab] = useState<Tab>('chat');
-  const [showConvList, setShowConvList] = useState(false);
   const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
   const lastAssistantId = [...messages].reverse().find((m) => m.role === 'assistant')?.id;
   const hasActiveRunMessage = messages.some(
@@ -194,29 +186,7 @@ export function ChatPane({
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Close the conversation history dropdown on outside click / Escape.
-  useEffect(() => {
-    if (!showConvList) return;
-    function onPointer(e: MouseEvent) {
-      const target = e.target as Node;
-      if (historyWrapRef.current?.contains(target)) return;
-      setShowConvList(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setShowConvList(false);
-    }
-    document.addEventListener('mousedown', onPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [showConvList]);
-
   console.log('[ChatPane] messages:', messages);
-
-  const activeConversation =
-    conversations.find((c) => c.id === activeConversationId) ?? null;
 
   function jumpToBottom() {
     const el = logRef.current;
@@ -248,75 +218,6 @@ export function ChatPane({
           </button>
         </div>
         <div className="chat-header-actions">
-          <div
-            className={`chat-history-wrap${showConvList ? ' open' : ''}`}
-            ref={historyWrapRef}
-          >
-            <button
-              type="button"
-              className="icon-only"
-              data-testid="conversation-history-trigger"
-              title={
-                activeConversation?.title
-                  ? `${t('chat.conversationsTitle')} · ${activeConversation.title}`
-                  : t('chat.conversationsTitle')
-              }
-              aria-label={t('chat.conversationsAria')}
-              aria-haspopup="menu"
-              aria-expanded={showConvList}
-              onClick={() => setShowConvList((v) => !v)}
-            >
-              <Icon name="history" size={15} />
-              {conversations.length > 1 ? (
-                <span className="chat-history-badge">{conversations.length}</span>
-              ) : null}
-            </button>
-            {showConvList ? (
-              <div className="chat-history-menu" role="menu" data-testid="conversation-history-menu">
-                <div className="chat-history-menu-head">
-                  <span className="chat-history-menu-title">
-                    {t('chat.conversationsHeading')}
-                  </span>
-                  {onNewConversation ? (
-                    <button
-                      type="button"
-                      className="chat-history-new"
-                      data-testid="conversation-history-new"
-                      onClick={() => {
-                        onNewConversation();
-                        setShowConvList(false);
-                      }}
-                    >
-                      <Icon name="plus" size={11} />
-                      <span>{t('chat.new')}</span>
-                    </button>
-                  ) : null}
-                </div>
-                <div className="chat-history-list" data-testid="conversation-list">
-                  {conversations.length === 0 ? (
-                    <div className="chat-history-empty">
-                      {t('chat.emptyConversations')}
-                    </div>
-                  ) : (
-                    conversations.map((c) => (
-                      <ConversationRow
-                        key={c.id}
-                        conversation={c}
-                        active={c.id === activeConversationId}
-                        onSelect={() => {
-                          onSelectConversation(c.id);
-                          setShowConvList(false);
-                        }}
-                        onDelete={() => onDeleteConversation(c.id)}
-                        onRename={onRenameConversation}
-                        t={t}
-                      />
-                    ))
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </div>
           <button
             type="button"
             className="icon-only"
@@ -449,215 +350,19 @@ export function ChatPane({
         </>
       ) : null}
       {tab === 'comments' ? (
-        <CommentsPanel
-          comments={previewComments}
-          attachedComments={attachedComments}
-          onAttach={onAttachComment}
-          onDetach={onDetachComment}
-          onDelete={onDeleteComment}
-          t={t}
+        <AgentProcessView
+          messages={messages}
+          streaming={streaming || hasActiveRunMessage}
+          projectFileNames={projectFileNames}
+          onRequestOpenFile={onRequestOpenFile}
         />
       ) : null}
     </div>
-  );
-}
-
-function CommentsPanel({
-  comments,
-  attachedComments,
-  onAttach,
-  onDetach,
-  onDelete,
-  t,
-}: {
-  comments: PreviewComment[];
-  attachedComments: PreviewComment[];
-  onAttach?: (comment: PreviewComment) => void;
-  onDetach?: (commentId: string) => void;
-  onDelete?: (commentId: string) => void;
-  t: TranslateFn;
-}) {
-  const attachedIds = new Set(attachedComments.map((comment) => comment.id));
-  const saved = comments.filter((comment) => !attachedIds.has(comment.id));
-  return (
-    <div className="comments-panel" data-testid="comments-panel">
-      <CommentSection
-        title={t('chat.comments.attached')}
-        empty={t('chat.comments.emptyAttached')}
-        comments={attachedComments}
-        actionLabel={t('chat.comments.remove')}
-        onAction={(comment) => onDetach?.(comment.id)}
-        attached
-      />
-      <CommentSection
-        title={t('chat.comments.saved')}
-        empty={t('chat.comments.emptySaved')}
-        comments={saved}
-        actionLabel={t('chat.comments.add')}
-        onAction={(comment) => onAttach?.(comment)}
-        secondaryActionLabel={t('chat.comments.remove')}
-        onSecondaryAction={(comment) => onDelete?.(comment.id)}
-      />
-      {saved.length > 0 ? (
-        <div className="comments-footer">
-          <button
-            type="button"
-            className="primary"
-            onClick={() => saved.forEach((comment) => onAttach?.(comment))}
-          >
-            {t('chat.comments.addAll')}
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function CommentSection({
-  title,
-  empty,
-  comments,
-  actionLabel,
-  onAction,
-  secondaryActionLabel,
-  onSecondaryAction,
-  attached,
-}: {
-  title: string;
-  empty: string;
-  comments: PreviewComment[];
-  actionLabel: string;
-  onAction: (comment: PreviewComment) => void;
-  secondaryActionLabel?: string;
-  onSecondaryAction?: (comment: PreviewComment) => void;
-  attached?: boolean;
-}) {
-  return (
-    <section className="comments-section">
-      <h3>{title}</h3>
-      {comments.length === 0 ? (
-        <p className="comments-empty">{empty}</p>
-      ) : (
-        comments.map((comment) => (
-          <article
-            key={comment.id}
-            className={`comment-card${attached ? ' attached' : ''}`}
-            data-testid={`comment-card-${comment.elementId}`}
-          >
-            <div className="comment-card-top">
-              <strong>{comment.elementId}</strong>
-              <div className="comment-card-actions">
-                {secondaryActionLabel && onSecondaryAction ? (
-                  <button
-                    type="button"
-                    className="comment-card-action danger"
-                    onClick={() => onSecondaryAction(comment)}
-                  >
-                    {secondaryActionLabel}
-                  </button>
-                ) : null}
-                <button type="button" className="comment-card-action" onClick={() => onAction(comment)}>
-                  {actionLabel}
-                </button>
-              </div>
-            </div>
-            <p>{comment.note}</p>
-            <div className="comment-card-meta">
-              <span>{comment.id}</span>
-              <span>{comment.filePath}</span>
-              <span>{comment.label}</span>
-              <span>{simplePositionLabel(comment.position)}</span>
-            </div>
-          </article>
-        ))
-      )}
-    </section>
   );
 }
 
 function isActiveRunStatus(status: ChatMessage['runStatus']): boolean {
   return status === 'queued' || status === 'running';
-}
-
-function ConversationRow({
-  conversation,
-  active,
-  onSelect,
-  onDelete,
-  onRename,
-  t,
-}: {
-  conversation: Conversation;
-  active: boolean;
-  onSelect: () => void;
-  onDelete: () => void;
-  onRename?: (id: string, title: string) => void;
-  t: TranslateFn;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(conversation.title ?? '');
-  const displayTitle =
-    conversation.title || t('chat.untitledConversation');
-  return (
-    <div
-      className={`chat-conv-item${active ? ' active' : ''}`}
-      data-testid={`conversation-item-${conversation.id}`}
-    >
-      {editing && onRename ? (
-        <input
-          autoFocus
-          className="chat-conv-rename-input"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => {
-            onRename(conversation.id, draft);
-            setEditing(false);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              onRename(conversation.id, draft);
-              setEditing(false);
-            } else if (e.key === 'Escape') {
-              setEditing(false);
-            }
-          }}
-          style={{ flex: 1, padding: '2px 6px', fontSize: 12 }}
-        />
-      ) : (
-        <button
-          type="button"
-          className="chat-conv-item-name"
-          data-testid={`conversation-select-${conversation.id}`}
-          style={{ background: 'transparent', border: 'none', padding: 0, textAlign: 'left' }}
-          onClick={onSelect}
-          onDoubleClick={() => {
-            if (!onRename) return;
-            setDraft(conversation.title ?? '');
-            setEditing(true);
-          }}
-        >
-          {displayTitle}
-        </button>
-      )}
-      <span className="chat-conv-item-meta">{relTime(conversation.updatedAt, t)}</span>
-      <button
-        type="button"
-        className="chat-conv-item-del"
-        data-testid={`conversation-delete-${conversation.id}`}
-        title={t('chat.deleteConversation')}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (
-            confirm(t('chat.deleteConversationConfirm', { title: displayTitle }))
-          ) {
-            onDelete();
-          }
-        }}
-      >
-        <Icon name="close" size={12} />
-      </button>
-    </div>
-  );
 }
 
 function UserMessage({
@@ -751,16 +456,4 @@ function shouldShowDaySeparator(prev: ChatMessage | undefined, curr: ChatMessage
   const prevTime = prev ? messageTime(prev) : undefined;
   if (!prevTime) return true;
   return dayKey(prevTime) !== dayKey(currTime);
-}
-
-function relTime(ts: number, t: TranslateFn): string {
-  const diff = Date.now() - ts;
-  const min = 60_000;
-  const hr = 60 * min;
-  const day = 24 * hr;
-  if (diff < min) return t('common.now');
-  if (diff < hr) return t('common.minutesShort', { n: Math.floor(diff / min) });
-  if (diff < day) return t('common.hoursShort', { n: Math.floor(diff / hr) });
-  if (diff < 7 * day) return t('common.daysShort', { n: Math.floor(diff / day) });
-  return new Date(ts).toLocaleDateString();
 }

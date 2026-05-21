@@ -56,6 +56,10 @@ export function ChatMessageList({ messages, loading }: ChatMessageListProps) {
   const runningTool = streamingParts.find(p => p.type === "tool" && p.state.status === "running") as ToolPart | undefined
   const toolName = runningTool?.tool
 
+  // Get stable start time of the active streaming/thinking turn
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant")
+  const activeStartTime = lastAssistant?.startTime ?? Date.now()
+
   return (
     <div className="relative flex-1">
       <div
@@ -104,7 +108,7 @@ export function ChatMessageList({ messages, loading }: ChatMessageListProps) {
             <ChatMessageItem
               role="assistant"
               content={streamingParts}
-              startTime={Date.now()}
+              startTime={activeStartTime}
               streaming
             />
           </div>
@@ -122,7 +126,7 @@ export function ChatMessageList({ messages, loading }: ChatMessageListProps) {
                 {/* Streaming status indicator */}
                 <StreamingIndicator
                   status={streamingStatus || "Thinking..."}
-                  startTime={Date.now()}
+                  startTime={activeStartTime}
                   toolName={toolName}
                 />
 

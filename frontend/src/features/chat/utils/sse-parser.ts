@@ -17,6 +17,7 @@
  */
 
 import type { MessagePart, ToolPart, TextPart, ReasoningPart, StatusPart, ToolStatus, DebugPipelineStep } from "@/stores/chat-store"
+import type { AgentEvent } from "@/features/chat/types"
 
 // SSE Event Types
 export interface SSETextStartEvent {
@@ -84,6 +85,13 @@ export interface SSEStepChunkEvent {
   content: unknown
 }
 
+export interface SSEUsageEvent {
+  type: "usage"
+  usage?: Record<string, unknown>
+  costUsd?: number
+  durationMs?: number
+}
+
 export type SSEEvent =
   | SSETextStartEvent
   | SSETextDeltaEvent
@@ -96,6 +104,7 @@ export type SSEEvent =
   | SSEStatusEvent
   | SSEPipelineStepEvent
   | SSEStepChunkEvent
+  | SSEUsageEvent
 
 // Internal state for tracking streaming content
 interface ToolState {
@@ -123,6 +132,7 @@ export class ChatSSEState {
   private startTime: number
   private endTime?: number
   private isDone: boolean = false
+  private usageEvent?: Extract<AgentEvent, { kind: "usage" }>
 
   constructor() {
     this.startTime = Date.now()
@@ -160,6 +170,9 @@ export class ChatSSEState {
       case "status":
         this.handleStatus(event)
         break
+      case "usage":
+        this.handleUsage(event)
+        break
       case "pipeline_step":
         // Pipeline step events are handled separately in use-chat-stream
         break
@@ -188,7 +201,7 @@ export class ChatSSEState {
     )
   }
 
-  private handleTextEnd(_: SSETextEndEvent): void {
+  private handleTextEnd(event: SSETextEndEvent): void {
     if (this.textPartId) {
       this.parts = this.textBuffer.trim()
         ? this.parts.map((part) =>
@@ -201,6 +214,17 @@ export class ChatSSEState {
     this.textPartId = null
     this.endTime = Date.now()
     this.isDone = true
+
+    if (event.usage) {
+      const usage = event.usage
+      this.usageEvent = {
+        kind: "usage",
+        inputTokens: typeof usage.input_tokens === "number" ? usage.input_tokens : (typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : undefined),
+        outputTokens: typeof usage.output_tokens === "number" ? usage.output_tokens : (typeof usage.completion_tokens === "number" ? usage.completion_tokens : undefined),
+        costUsd: typeof usage.costUsd === "number" ? usage.costUsd : undefined,
+        durationMs: typeof usage.durationMs === "number" ? usage.durationMs : (typeof usage.duration_ms === "number" ? usage.duration_ms : undefined),
+      }
+    }
   }
 
   private handleToolCallStart(event: SSEToolCallStartEvent): void {
@@ -379,6 +403,21 @@ export class ChatSSEState {
    */
   getEndTime(): number | undefined {
     return this.endTime
+  }
+
+  private handleUsage(event: SSEUsageEvent): void {
+    const usage = (event.usage ?? {}) as Record<string, unknown>
+    this.usageEvent = {
+      kind: "usage",
+      inputTokens: typeof usage.input_tokens === "number" ? usage.input_tokens : (typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : undefined),
+      outputTokens: typeof usage.output_tokens === "number" ? usage.output_tokens : (typeof usage.completion_tokens === "number" ? usage.completion_tokens : undefined),
+      costUsd: event.costUsd,
+      durationMs: event.durationMs,
+    }
+  }
+
+  getUsage(): Extract<AgentEvent, { kind: "usage" }> | undefined {
+    return this.usageEvent
   }
 
   /**

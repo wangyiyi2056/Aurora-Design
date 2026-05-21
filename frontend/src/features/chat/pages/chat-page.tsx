@@ -2,17 +2,33 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChatPane } from "@/features/chat/components/chat-pane"
 import { FileWorkspace } from "@/features/file-workspace/components/file-workspace"
 import { ResizableDivider } from "@/components/ui/resizable-divider"
-import { artifactFromStreamEvent } from "@/features/file-workspace/runtime/generated-artifacts"
+import {
+  artifactFromToolCallStartEvent,
+  artifactFromStreamEvent,
+  artifactsFromAgentEvents,
+  artifactsFromAssistantText,
+  artifactsFromPartialAssistantText,
+  canonicalArtifactsForAssistant,
+  type GeneratedWorkspaceArtifact,
+} from "@/features/file-workspace/runtime/generated-artifacts"
 import { fetchWorkspaceFiles, writeWorkspaceTextFile } from "@/features/file-workspace/services/workspace-files"
 import type { WorkspaceFile } from "@/features/file-workspace/types"
 import { sendChatStream } from "@/features/chat/hooks/use-chat-stream"
+import {
+  createMessageId,
+  eventsFromMessage,
+  resolvedMessageText,
+  textFromEvents,
+  textFromMessageContent,
+} from "@/features/chat/runtime/message-persistence"
+import { mergeSessionList } from "@/features/chat/runtime/session-list"
 import type {
   AgentEvent,
   ChatAttachment as PaneChatAttachment,
   ChatCommentAttachment,
   ChatMessage as PaneChatMessage,
 } from "@/features/chat/types"
-import { createSession, deleteSession, listSessions, loadSession } from "@/services/chat"
+import { createSession, deleteSession, listSessions, loadSession, upsertSessionMessage } from "@/services/chat"
 import type { APIChatMessage, ContentPart } from "@/services/chat"
 import { useProviderStore } from "@/stores/provider-store"
 import { useChatStore, type SessionMeta } from "@/stores/chat-store"
@@ -65,9 +81,9 @@ export default function ChatPage() {
   const requestModel = providerMode === "api" ? byok.model || model : activeAgentId || model
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([])
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
+  const [workspaceVisible, setWorkspaceVisible] = useState(false)
   const [openRequest, setOpenRequest] = useState<{ name: string; nonce: number } | null>(null)
   const generatedArtifactKeys = useRef<Set<string>>(new Set())
-  const pendingArtifactWrites = useRef<Promise<unknown>[]>([])
   const messageLoadSeq = useRef(0)
   const sessionListLoadSeq = useRef(0)
   const messagesSessionId = useRef<string | null>(null)
@@ -76,6 +92,7 @@ export default function ChatPage() {
   const refreshWorkspaceFiles = useCallback(async (workspaceId = sessionId) => {
     if (!workspaceId) {
       setWorkspaceFiles([])
+      setWorkspaceVisible(false)
       return
     }
     setWorkspaceLoading(true)
@@ -96,12 +113,50 @@ export default function ChatPage() {
   const upsertSession = useCallback(
     (session: SessionMeta) => {
       const currentSessions = useChatStore.getState().sessions
-      setSessions([
-        session,
-        ...currentSessions.filter((item) => item.id !== session.id),
-      ])
+      setSessions(mergeSessionList(currentSessions, session))
     },
     [setSessions],
+  )
+
+  const upsertWorkspaceFile = useCallback((file: WorkspaceFile) => {
+    setWorkspaceFiles((current) => [
+      file,
+      ...current.filter((item) => item.name !== file.name),
+    ])
+  }, [])
+
+  const persistWorkspaceArtifacts = useCallback(
+    async (
+      workspaceId: string,
+      artifacts: GeneratedWorkspaceArtifact[],
+      options: { openHtml?: boolean } = {},
+    ) => {
+      const writes: Promise<WorkspaceFile | null>[] = []
+      for (const artifact of artifacts) {
+        const artifactKey = `${workspaceId}:${artifact.key}`
+        if (generatedArtifactKeys.current.has(artifactKey)) continue
+        generatedArtifactKeys.current.add(artifactKey)
+        const write = writeWorkspaceTextFile(workspaceId, artifact.name, artifact.content, {
+          overwrite: true,
+          encoding: artifact.encoding,
+        })
+          .then((file) => {
+            if (file) {
+              upsertWorkspaceFile(file)
+              setWorkspaceVisible(true)
+              if (artifact.shouldOpen && options.openHtml) {
+                setOpenRequest({ name: file.name, nonce: Date.now() })
+              }
+            }
+            return file
+          })
+          .catch(() => null)
+        writes.push(write)
+      }
+      const results = await Promise.allSettled(writes)
+      return results.filter((result) => result.status === "fulfilled" && result.value).length
+    },
+    [upsertWorkspaceFile],
   )
 
   useEffect(() => {
@@ -120,24 +175,45 @@ export default function ChatPage() {
       messagesSessionId.current = null
       setSessionId(targetSessionId)
       loadSessionMessages([])
+      setWorkspaceVisible(false)
       const res = await loadSession(targetSessionId)
       if (seq !== messageLoadSeq.current) return
       if (useChatStore.getState().sessionId !== targetSessionId) return
       const msgs = res.messages
         .filter((m) => m.type === "user" || m.type === "assistant")
-        .map((m) => ({
-          role: (m.role === "user" || m.type === "user" ? "user" : "assistant") as "user" | "assistant",
-          content: m.content,
-          events: m.events ?? [],
-          attachments: m.attachments ?? [],
-          startTime: m.timestamp ? toMillis(m.timestamp) : undefined,
-          endTime: m.type === "assistant" && m.timestamp ? toMillis(m.timestamp) : undefined,
-        }))
+        .map((m) => {
+          const content = m.content || textFromEvents(m.events)
+          return {
+            id: m.id,
+            role: (m.role === "user" || m.type === "user" ? "user" : "assistant") as "user" | "assistant",
+            content,
+            events: m.events ?? [],
+            attachments: m.attachments ?? [],
+            startTime: m.timestamp ? toMillis(m.timestamp) : undefined,
+            endTime: m.type === "assistant" && m.end_time ? toMillis(m.end_time) : undefined,
+          }
+        })
       loadSessionMessages(msgs)
       messagesSessionId.current = targetSessionId
       upsertSession(res.session)
+      const canonicalArtifacts = msgs
+        .filter((message) => message.role === "assistant")
+        .flatMap((message) =>
+          canonicalArtifactsForAssistant(
+            artifactsFromAssistantText(resolvedMessageText(message)),
+            artifactsFromAgentEvents(message.events),
+          ),
+        )
+      const artifactCount = await persistWorkspaceArtifacts(
+        targetSessionId,
+        canonicalArtifacts,
+        { openHtml: true },
+      )
+      if (artifactCount > 0 && messagesSessionId.current === targetSessionId) {
+        await refreshWorkspaceFiles(targetSessionId)
+      }
     },
-    [loadSessionMessages, setSessionId, upsertSession],
+    [loadSessionMessages, persistWorkspaceArtifacts, refreshWorkspaceFiles, setSessionId, upsertSession],
   )
 
   const deleteConversation = useCallback(
@@ -176,6 +252,7 @@ export default function ChatPage() {
       setSessionId(session_id)
       loadSessionMessages([])
       setWorkspaceFiles([])
+      setWorkspaceVisible(false)
       upsertSession(session)
     } finally {
       creatingConversation.current = false
@@ -203,7 +280,7 @@ export default function ChatPage() {
     const createdAt = msg.startTime ?? msg.endTime ?? Date.now()
     if (typeof msg.content === "string") {
       return {
-        id: `${msg.role}-${index}-${createdAt}`,
+        id: msg.id ?? `${msg.role}-${index}-${createdAt}`,
         role: msg.role,
         content: msg.content,
         events: msg.events,
@@ -241,8 +318,14 @@ export default function ChatPage() {
         }
       }
     }
+    if (msg.events) {
+      const nonContentEvents = msg.events.filter(
+        (e) => e.kind !== "text" && e.kind !== "thinking" && e.kind !== "status" && e.kind !== "tool_use" && e.kind !== "tool_result"
+      )
+      events.push(...nonContentEvents)
+    }
     return {
-      id: `${msg.role}-${index}-${createdAt}`,
+      id: msg.id ?? `${msg.role}-${index}-${createdAt}`,
       role: msg.role,
       content: text,
       events,
@@ -329,7 +412,10 @@ export default function ChatPage() {
       { role: "user", content: contentParts },
     ]
 
-    addMessage({ role: "user", content: question, attachments: paneAttachments, startTime: Date.now() })
+    const userMessageId = createMessageId("user")
+    const assistantMessageId = createMessageId("assistant")
+    const userTimestamp = Date.now()
+    addMessage({ id: userMessageId, role: "user", content: question, attachments: paneAttachments, startTime: userTimestamp })
     setLoading(true)
 
     let currentSessionId = sessionId
@@ -357,44 +443,140 @@ export default function ChatPage() {
 
     const streamSessionId = currentSessionId
     const streamLoadSeq = messageLoadSeq.current
+    const streamArtifactWrites: Promise<unknown>[] = []
+    let canonicalHtmlName: string | null = null
+    const normalizeTurnArtifacts = (artifacts: GeneratedWorkspaceArtifact[]) =>
+      artifacts.map((artifact) => {
+        if (!isHtmlWorkspaceArtifact(artifact)) return artifact
+        if (!canonicalHtmlName) canonicalHtmlName = artifact.name
+        return { ...artifact, name: canonicalHtmlName }
+      })
+    const saveSessionMessage = async (
+      messageId: string,
+      payload: Parameters<typeof upsertSessionMessage>[2],
+    ) => {
+      const res = await upsertSessionMessage(streamSessionId, messageId, payload)
+      upsertSession(res.session)
+      return res
+    }
+    try {
+      await saveSessionMessage(userMessageId, {
+        type: "user",
+        role: "user",
+        content: question,
+        attachments: paneAttachments,
+        timestamp: userTimestamp / 1000,
+      })
+      await saveSessionMessage(assistantMessageId, {
+        type: "assistant",
+        role: "assistant",
+        content: "",
+        events: [],
+        timestamp: Date.now() / 1000,
+      })
+      await reloadSessions()
+    } catch {
+      addMessage({ role: "system", content: "⚠️ 当前消息暂时无法保存，生成会继续进行" })
+    }
+    setWorkspaceVisible(true)
 
     sendChatStream({
       messages: requestMessages,
       model: requestModel,
       modelConfig: inlineModelConfig,
       session_id: currentSessionId,
+      assistantMessageId,
+      extInfo: {
+        frontend_persistence: true,
+        user_message_id: userMessageId,
+        assistant_message_id: assistantMessageId,
+      },
       shouldApply: () =>
         Boolean(streamSessionId) &&
         messagesSessionId.current === streamSessionId &&
         messageLoadSeq.current === streamLoadSeq &&
         useChatStore.getState().sessionId === streamSessionId,
       onEvent: (event) => {
-        const workspaceId = currentSessionId
+        const workspaceId = streamSessionId
         if (!workspaceId) return
-        const artifact = artifactFromStreamEvent(event)
+        const artifact = normalizeTurnArtifacts(
+          [artifactFromToolCallStartEvent(event) ?? artifactFromStreamEvent(event)]
+            .filter((item): item is GeneratedWorkspaceArtifact => item !== null),
+        )[0]
         const artifactKey = artifact ? `${workspaceId}:${artifact.key}` : ""
         if (!artifact || generatedArtifactKeys.current.has(artifactKey)) return
         generatedArtifactKeys.current.add(artifactKey)
         const write = writeWorkspaceTextFile(workspaceId, artifact.name, artifact.content, { overwrite: true })
           .then((file) => {
-            if (file && artifact.shouldOpen) {
-              setOpenRequest({ name: file.name, nonce: Date.now() })
+            if (file) {
+              upsertWorkspaceFile(file)
+              setWorkspaceVisible(true)
+              if (artifact.shouldOpen) {
+                setOpenRequest({ name: file.name, nonce: Date.now() })
+              }
             }
           })
           .catch(() => undefined)
-        pendingArtifactWrites.current.push(write)
+        streamArtifactWrites.push(write)
+      },
+      onMessageUpdate: async (message) => {
+        const partialArtifacts = normalizeTurnArtifacts(
+          artifactsFromPartialAssistantText(resolvedMessageText(message)),
+        )
+        if (partialArtifacts.length > 0) {
+          streamArtifactWrites.push(
+            persistWorkspaceArtifacts(streamSessionId, partialArtifacts, {
+              openHtml: messagesSessionId.current === streamSessionId,
+            }),
+          )
+        }
+        await saveSessionMessage(assistantMessageId, {
+          type: "assistant",
+          role: "assistant",
+          content: textFromMessageContent(message.content),
+          events: eventsFromMessage(message),
+          timestamp: (message.startTime ?? Date.now()) / 1000,
+          end_time: message.endTime ? message.endTime / 1000 : undefined,
+        })
+      },
+      onFinalMessage: async (message) => {
+        const text = resolvedMessageText(message)
+        try {
+          await saveSessionMessage(assistantMessageId, {
+            type: "assistant",
+            role: "assistant",
+            content: text,
+            events: eventsFromMessage(message),
+            timestamp: (message.startTime ?? Date.now()) / 1000,
+            end_time: (message.endTime ?? Date.now()) / 1000,
+          })
+          await persistWorkspaceArtifacts(
+            streamSessionId,
+            normalizeTurnArtifacts(
+              canonicalArtifactsForAssistant(
+                artifactsFromAssistantText(text),
+                artifactsFromAgentEvents(eventsFromMessage(message)),
+              ),
+            ),
+            { openHtml: messagesSessionId.current === streamSessionId },
+          )
+          await Promise.allSettled(streamArtifactWrites)
+          if (messagesSessionId.current === streamSessionId) {
+            await refreshWorkspaceFiles(streamSessionId)
+          }
+        } finally {
+          await reloadSessions().catch(() => undefined)
+        }
       },
       onDone: async () => {
-        const writes = pendingArtifactWrites.current
-        pendingArtifactWrites.current = []
-        await Promise.allSettled(writes)
-        await refreshWorkspaceFiles(currentSessionId)
-        await reloadSessions()
+        if (messagesSessionId.current === streamSessionId) {
+          await refreshWorkspaceFiles(streamSessionId)
+        }
       },
     })
   }
 
-  const hasWorkspace = Boolean(sessionId && workspaceFiles.length > 0)
+  const hasWorkspace = Boolean(sessionId && (workspaceVisible || workspaceFiles.length > 0))
 
   return (
     <div className="h-full">
@@ -433,7 +615,6 @@ export default function ChatPage() {
             activeConversationId={sessionId ?? "current"}
             onSelectConversation={(id) => {
               if (id !== sessionId || messagesSessionId.current !== id) {
-                abortStreaming()
                 loadSessionIntoChat(id).catch(() => undefined)
               }
             }}
@@ -469,4 +650,8 @@ export default function ChatPage() {
 
 function toMillis(timestamp: number): number {
   return timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp
+}
+
+function isHtmlWorkspaceArtifact(artifact: GeneratedWorkspaceArtifact): boolean {
+  return artifact.name.toLowerCase().endsWith(".html")
 }

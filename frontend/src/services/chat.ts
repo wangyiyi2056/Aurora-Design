@@ -41,16 +41,32 @@ export interface ChatCompleteOptions {
 export interface SessionLoadResponse {
   session: SessionMeta
   messages: {
+    id?: string
     type: string
     role?: "user" | "assistant" | "system" | "tool"
     content: string
     timestamp?: number
+    end_time?: number
+    updated_at?: number
     tool_name?: string
     tool_call_id?: string
     tool_calls?: unknown[]
     events?: AgentEvent[]
     attachments?: ChatAttachment[]
   }[]
+}
+
+export interface SessionMessageUpsertInput {
+  type: "user" | "assistant" | "system" | "tool_use" | "tool_result"
+  role?: "user" | "assistant" | "system" | "tool"
+  content?: string
+  events?: AgentEvent[]
+  attachments?: ChatAttachment[]
+  tool_calls?: unknown[]
+  tool_call_id?: string
+  tool_name?: string
+  timestamp?: number
+  end_time?: number
 }
 
 export async function createSession(): Promise<{ session_id: string; session: SessionMeta }> {
@@ -70,6 +86,18 @@ export async function loadSession(sessionId: string): Promise<SessionLoadRespons
 
 export async function deleteSession(sessionId: string): Promise<void> {
   await apiClient.delete(`/v1/chat/sessions/${sessionId}`)
+}
+
+export async function upsertSessionMessage(
+  sessionId: string,
+  messageId: string,
+  input: SessionMessageUpsertInput,
+): Promise<SessionLoadResponse> {
+  const res = await apiClient.put(
+    `/v1/chat/sessions/${sessionId}/messages/${messageId}`,
+    input,
+  )
+  return res.data
 }
 
 // --- Chat Completion ---

@@ -2,8 +2,9 @@ import { useMutation } from "@tanstack/react-query"
 import { chatComplete, type APIChatMessage, type ModelConfig } from "@/services/chat"
 import { streamByokProvider } from "@/providers/registry"
 import type { ApiProtocol, ByokConfig } from "@/stores/provider-store"
-import { useChatStore } from "@/stores/chat-store"
+import { useChatStore, type ChatMessage as StoreChatMessage } from "@/stores/chat-store"
 import { ChatSSEState, parseSSEChunk, extractPipelineSteps, type SSEEvent } from "@/features/chat/utils/sse-parser"
+import type { AgentEvent } from "@/features/chat/types"
 
 interface UseChatStreamOptions {
   onSuccess?: (content: string) => void
@@ -17,7 +18,10 @@ interface ChatStreamParams {
   selectParam?: string
   extInfo?: Record<string, unknown>
   session_id?: string | null
+  assistantMessageId?: string
   onEvent?: (event: SSEEvent) => void
+  onMessageUpdate?: (message: StoreChatMessage) => void | Promise<void>
+  onFinalMessage?: (message: StoreChatMessage) => void | Promise<void>
   onDone?: () => void | Promise<void>
   shouldApply?: () => boolean
 }
@@ -44,8 +48,8 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   })
 }
 
-/** Default timeout for chat requests (60 seconds) */
-const DEFAULT_TIMEOUT_MS = 60000
+/** Default timeout for chat requests (30 minutes) */
+const DEFAULT_TIMEOUT_MS = 1800000
 
 /**
  * Send a streaming chat request via fetch + SSE.
@@ -125,8 +129,90 @@ async function executeStreamRequest(
   } = useChatStore.getState()
   const shouldApply = () => params.shouldApply?.() ?? true
   const assistantStartTime = Date.now()
+  const buildAssistantMessage = (endTime?: number): StoreChatMessage => {
+    const parts = parser.toMessageParts()
+    const finalContent = parser.getFinalContent()
+    const usage = parser.getUsage()
+
+    const events: AgentEvent[] = []
+    for (const part of parts) {
+      if (part.type === "text") {
+        events.push({ kind: "text", text: part.text })
+      } else if (part.type === "reasoning") {
+        events.push({ kind: "thinking", text: part.text })
+      } else if (part.type === "status") {
+        events.push({ kind: "status", label: part.label, detail: part.detail })
+      } else if (part.type === "tool") {
+        events.push({
+          kind: "tool_use",
+          id: part.id,
+          name: part.tool,
+          input: part.state.input ?? {},
+        })
+        if (part.state.output || part.state.error || part.state.status === "completed") {
+          events.push({
+            kind: "tool_result",
+            toolUseId: part.id,
+            content: part.state.error ?? part.state.output ?? "",
+            isError: part.state.status === "error",
+          })
+        }
+      }
+    }
+    if (usage) {
+      events.push(usage)
+    }
+
+    return {
+      id: params.assistantMessageId,
+      role: "assistant",
+      content: parts.length > 0 ? parts : finalContent,
+      startTime: assistantStartTime,
+      endTime,
+      events,
+    }
+  }
+  let pendingPersistMessage: StoreChatMessage | null = null
+  let persistTimer: ReturnType<typeof setTimeout> | null = null
+  let persistInFlight: Promise<void> = Promise.resolve()
+
+  const runPersist = (message: StoreChatMessage) => {
+    persistInFlight = persistInFlight
+      .catch(() => undefined)
+      .then(() => Promise.resolve(params.onMessageUpdate?.(message)).then(() => undefined))
+    return persistInFlight
+  }
+
+  const schedulePersist = (message: StoreChatMessage) => {
+    if (!params.onMessageUpdate) return
+    pendingPersistMessage = message
+    if (persistTimer) return
+    persistTimer = setTimeout(() => {
+      persistTimer = null
+      const next = pendingPersistMessage
+      pendingPersistMessage = null
+      if (next) void runPersist(next)
+    }, 500)
+  }
+
+  const flushPersist = async () => {
+    if (persistTimer) {
+      clearTimeout(persistTimer)
+      persistTimer = null
+    }
+    const next = pendingPersistMessage
+    pendingPersistMessage = null
+    if (next) await runPersist(next)
+    await persistInFlight.catch(() => undefined)
+  }
+
+  const runFinalPersist = async (message: StoreChatMessage) => {
+    await Promise.resolve(params.onFinalMessage?.(message)).catch(() => undefined)
+  }
+
   if (shouldApply()) {
     addMessage({
+      id: params.assistantMessageId,
       role: "assistant",
       content: [],
       startTime: assistantStartTime,
@@ -134,22 +220,22 @@ async function executeStreamRequest(
   }
 
   const updateStreamingAssistant = (endTime?: number) => {
+    const assistantMessage = buildAssistantMessage(endTime)
+    schedulePersist(assistantMessage)
     if (!shouldApply()) return
-    const parts = parser.toMessageParts()
-    const finalContent = parser.getFinalContent()
-    const content = parts.length > 0 ? parts : finalContent
     const current = useChatStore.getState().messages
     let updated = false
     const next = current.map((message) => {
       if (
         !updated &&
         message.role === "assistant" &&
-        message.startTime === assistantStartTime
+        (params.assistantMessageId ? message.id === params.assistantMessageId : message.startTime === assistantStartTime)
       ) {
         updated = true
         return {
           ...message,
-          content,
+          content: assistantMessage.content,
+          events: assistantMessage.events,
           endTime,
         }
       }
@@ -176,7 +262,7 @@ async function executeStreamRequest(
         (message) =>
           !(
             message.role === "assistant" &&
-            message.startTime === assistantStartTime
+            (params.assistantMessageId ? message.id === params.assistantMessageId : message.startTime === assistantStartTime)
           ),
       ),
     )
@@ -238,6 +324,9 @@ async function executeStreamRequest(
       })
       if (byokError) throw byokError
 
+      const finalMessage = buildAssistantMessage(parser.getEndTime() ?? Date.now())
+      await flushPersist()
+      await runFinalPersist(finalMessage)
       if (shouldApply()) await params.onDone?.()
       return
     }
@@ -316,6 +405,9 @@ async function executeStreamRequest(
     }
 
     updateStreamingAssistant(parser.getEndTime() ?? Date.now())
+    const finalMessage = buildAssistantMessage(parser.getEndTime() ?? Date.now())
+    await flushPersist()
+    await runFinalPersist(finalMessage)
     if (shouldApply()) await params.onDone?.()
 
   } catch (error) {
@@ -341,6 +433,9 @@ async function executeStreamRequest(
     }
 
     removeEmptyStreamingAssistant()
+    await flushPersist()
+    const finalMessage = buildAssistantMessage(Date.now())
+    await runFinalPersist(finalMessage)
     // Add error as system message (not assistant) for clear distinction
     if (shouldApply()) {
       addMessage({
@@ -355,6 +450,8 @@ async function executeStreamRequest(
       setLoading(false)
       setStreamingParts([])
       setStreamingStatus(null)
+      setAbortController(null)
+    } else if (useChatStore.getState().abortController === abortController) {
       setAbortController(null)
     }
   }

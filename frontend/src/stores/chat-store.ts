@@ -44,6 +44,7 @@ export type MessagePart = ToolPart | TextPart | ReasoningPart | StatusPart
 // === Chat Message ===
 
 export interface ChatMessage {
+  id?: string
   role: "user" | "assistant" | "system"
   content: string | MessagePart[] // backward compatible
   events?: AgentEvent[]
