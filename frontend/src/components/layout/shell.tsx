@@ -13,7 +13,7 @@ export function Shell({ children }: ShellProps) {
   return (
     <div className="flex h-screen bg-bg text-text">
       {!isMobile && <Sidebar />}
-      <main className={`flex-1 overflow-auto ${isMobile ? "p-3" : "p-6"}`}>{children}</main>
+      <main className={`flex-1 overflow-auto`}>{children}</main>
     </div>
   )
 }

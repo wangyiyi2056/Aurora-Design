@@ -217,10 +217,11 @@ a {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--background) 92%, var(--card)) 0%, var(--background) 34%),
     var(--background);
-  --chat-measure: min(820px, calc(100vw - 72px));
   --chat-soft-border: color-mix(in srgb, var(--border) 76%, transparent);
   --chat-subtle-surface: color-mix(in srgb, var(--card) 84%, var(--background));
   font-size: 14px;
+  container-type: inline-size;
+  container-name: chat-pane;
 }
 
 [data-theme="light"] .pane {
@@ -237,7 +238,7 @@ a {
   justify-content: space-between;
   gap: 12px;
   min-height: 48px;
-  padding: 8px clamp(14px, 2vw, 24px);
+  padding: 8px 20px;
   border-bottom: 1px solid var(--chat-soft-border);
   background: color-mix(in srgb, var(--background) 86%, transparent);
   backdrop-filter: blur(14px);
@@ -412,8 +413,316 @@ a {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 30px clamp(16px, 3vw, 32px) 154px;
+  padding: 30px 20px 140px;
   scroll-padding-bottom: 160px;
+}
+
+/* 容器查询：当聊天面板宽度较小时使用更紧凑的布局 */
+/* 超紧凑模式：≤ 400px */
+@container chat-pane (max-width: 400px) {
+  .chat-log {
+    padding: 16px 10px 140px;
+  }
+  
+  .pane {
+    font-size: 13px;
+  }
+  
+  .msg {
+    margin-bottom: 16px;
+  }
+  
+  .msg.user .user-text,
+  .prose-block,
+  .status-pill,
+  .thinking-block,
+  .unfinished-todos,
+  .produced-files,
+  .action-card {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  
+  .assistant-flow {
+    gap: 8px;
+  }
+  
+  .prose-block {
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  
+  .thinking-body,
+  .system-reminder-body {
+    padding: 10px;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  
+  .action-card-body {
+    padding: 8px 10px;
+  }
+  
+  .produced-files-list {
+    gap: 6px;
+    margin-top: 8px;
+  }
+  
+  .produced-file {
+    min-height: 32px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  
+  .unfinished-todos-list {
+    margin: 8px 0 0;
+    padding-left: 16px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  
+  .chat-header {
+    padding: 6px 10px;
+    min-height: 44px;
+  }
+  
+  .chat-header-tab {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+  
+  .icon-only {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .composer {
+    padding: 8px 10px 12px;
+  }
+  
+  .composer-shell {
+    padding: 8px;
+  }
+  
+  .composer textarea {
+    min-height: 64px;
+    font-size: 13px;
+  }
+  
+  .msg.user .user-text {
+    max-width: 92%;
+  }
+  
+  .chat-examples {
+    gap: 8px;
+  }
+  
+  .chat-example {
+    padding: 10px;
+    gap: 10px;
+  }
+  
+  .chat-example-icon {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .chat-example-title {
+    font-size: 13px;
+  }
+  
+  .chat-example-prompt {
+    font-size: 11px;
+  }
+  
+  .chat-empty-title {
+    font-size: 20px;
+  }
+}
+
+/* 紧凑模式：401px - 500px */
+@container chat-pane (min-width: 401px) and (max-width: 500px) {
+  .chat-log {
+    padding: 20px 20px 144px;
+  }
+  
+  
+  .msg {
+    margin-bottom: 18px;
+  }
+  
+  .msg.user .user-text,
+  .prose-block,
+  .status-pill,
+  .thinking-block,
+  .unfinished-todos,
+  .produced-files,
+  .action-card {
+    padding: 12px 14px;
+  }
+  
+  .assistant-flow {
+    gap: 9px;
+  }
+  
+  .prose-block {
+    font-size: 14px;
+    line-height: 1.74;
+  }
+  
+  .thinking-body,
+  .system-reminder-body {
+    padding: 11px;
+    font-size: 12px;
+    line-height: 1.62;
+  }
+  
+  .action-card-body {
+    padding: 9px 11px;
+  }
+  
+  .produced-files-list {
+    gap: 7px;
+    margin-top: 9px;
+  }
+  
+  .produced-file {
+    min-height: 34px;
+    padding: 6px 8px;
+  }
+  
+  .unfinished-todos-list {
+    margin: 9px 0 0;
+    padding-left: 17px;
+    line-height: 1.52;
+  }
+  
+  .chat-header {
+    padding: 8px 20px;
+  }
+  
+  .composer {
+    padding: 10px 20px 14px;
+  }
+  
+  .composer-shell {
+    padding: 9px;
+  }
+  
+  .composer textarea {
+    min-height: 68px;
+  }
+  
+  .msg.user .user-text {
+    max-width: 88%;
+  }
+  
+  .chat-empty-title {
+    font-size: 22px;
+  }
+}
+
+/* 中等模式：501px - 650px */
+@container chat-pane (min-width: 501px) and (max-width: 650px) {
+  .chat-log {
+    padding: 24px 20px 154px;
+  }
+  
+  
+  .msg {
+    margin-bottom: 20px;
+  }
+  
+  .msg.user .user-text,
+  .prose-block,
+  .status-pill,
+  .thinking-block,
+  .unfinished-todos,
+  .produced-files,
+  .action-card {
+    padding: 13px 15px;
+  }
+  
+  .assistant-flow {
+    gap: 10px;
+  }
+  
+  .prose-block {
+    font-size: 14px;
+    line-height: 1.76;
+  }
+  
+  .thinking-body,
+  .system-reminder-body {
+    padding: 11px;
+    font-size: 12px;
+    line-height: 1.64;
+  }
+  
+  .action-card-body {
+    padding: 9px 11px;
+  }
+  
+  .produced-files-list {
+    gap: 7px;
+    margin-top: 9px;
+  }
+  
+  .produced-file {
+    min-height: 35px;
+    padding: 7px 9px;
+  }
+  
+  .unfinished-todos-list {
+    margin: 9px 0 0;
+    padding-left: 18px;
+    line-height: 1.54;
+  }
+  
+  .chat-header {
+    padding: 8px 20px;
+  }
+  
+  .composer {
+    padding: 11px 20px 16px;
+  }
+  
+  .composer-shell {
+    padding: 10px;
+  }
+  
+  .composer textarea {
+    min-height: 72px;
+  }
+  
+  .msg.user .user-text {
+    max-width: 82%;
+  }
+}
+
+/* 标准模式：> 650px */
+@container chat-pane (min-width: 651px) {
+  .chat-log {
+    padding: 30px 20px 154px;
+  }
+  
+  .composer {
+    padding: 12px 20px 18px;
+  }
+  
+  .msg.user .user-text {
+    max-width: min(680px, 78%);
+  }
+  
+  .assistant-flow {
+    gap: 11px;
+  }
+  
+  .prose-block {
+    font-size: 15px;
+    line-height: 1.78;
+  }
 }
 
 .chat-empty-wrap {
@@ -508,7 +817,7 @@ a {
 }
 
 .msg {
-  width: var(--chat-measure);
+  width: 100%;
   margin: 0 auto 24px;
 }
 
@@ -546,6 +855,8 @@ a {
   border-radius: 8px;
   background: var(--chat-subtle-surface);
   padding: 14px 16px;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .msg.user .user-attachments {
@@ -580,6 +891,8 @@ a {
   line-height: 1.78;
   letter-spacing: 0;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent);
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .prose-block p,
@@ -615,6 +928,21 @@ a {
 .status-detail,
 .op-waiting-detail {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.prose-block pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.prose-block code {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.prose-block pre code {
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 .status-pill,
@@ -726,10 +1054,15 @@ a {
 .action-card-body {
   border-top: 1px solid var(--chat-soft-border);
   padding: 10px 12px;
+  overflow-x: auto;
+  max-width: 100%;
+  word-break: break-word;
 }
 
 .tool-card {
   color: var(--foreground);
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .thinking-block,
@@ -788,6 +1121,8 @@ a {
   font-size: 12px;
   line-height: 1.65;
   white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .unfinished-todos,
@@ -858,12 +1193,11 @@ a {
 
 .composer {
   flex-shrink: 0;
-  padding: 12px clamp(16px, 3vw, 32px) 18px;
   background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--background) 94%, transparent) 18%, var(--background) 56%);
 }
 
 .composer-shell {
-  width: var(--chat-measure);
+  width: 100%;
   margin: 0 auto;
   border: 1px solid var(--chat-soft-border);
   border-radius: 12px;
@@ -972,7 +1306,7 @@ a {
 
 .composer-hint {
   display: block;
-  width: var(--chat-measure);
+  width: 100%;
   margin: 8px auto 0;
   font-size: 11px;
   text-align: center;
@@ -1066,7 +1400,7 @@ a {
 }
 
 .chat-day-separator {
-  width: var(--chat-measure);
+  width: 100%;
   margin: 20px auto 18px;
   text-align: center;
   color: color-mix(in srgb, var(--muted-foreground) 82%, transparent);
@@ -1085,7 +1419,6 @@ a {
 
 .chat-jump-btn {
   position: absolute;
-  right: max(18px, calc((100% - var(--chat-measure)) / 2));
   bottom: 16px;
   display: inline-flex;
   align-items: center;
@@ -1106,9 +1439,6 @@ a {
 }
 
 @media (max-width: 720px) {
-  .pane {
-    --chat-measure: calc(100vw - 28px);
-  }
 
   .chat-header {
     padding-inline: 12px;
@@ -1119,13 +1449,7 @@ a {
   }
 
   .chat-empty-wrap,
-  .chat-examples {
-    width: var(--chat-measure);
-  }
 
-  .chat-examples {
-    max-width: var(--chat-measure);
-  }
 
   .msg {
     margin-bottom: 20px;

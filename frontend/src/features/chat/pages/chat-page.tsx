@@ -1,5 +1,10 @@
-import { useCallback, useEffect } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChatPane } from "@/features/chat/components/chat-pane"
+import { FileWorkspace } from "@/features/file-workspace/components/file-workspace"
+import { ResizableDivider } from "@/components/ui/resizable-divider"
+import { artifactFromStreamEvent } from "@/features/file-workspace/runtime/generated-artifacts"
+import { fetchWorkspaceFiles, writeWorkspaceTextFile } from "@/features/file-workspace/services/workspace-files"
+import type { WorkspaceFile } from "@/features/file-workspace/types"
 import { sendChatStream } from "@/features/chat/hooks/use-chat-stream"
 import type {
   AgentEvent,
@@ -58,6 +63,24 @@ export default function ChatPage() {
           }
         : undefined
   const requestModel = providerMode === "api" ? byok.model || model : activeAgentId || model
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([])
+  const [workspaceLoading, setWorkspaceLoading] = useState(false)
+  const [openRequest, setOpenRequest] = useState<{ name: string; nonce: number } | null>(null)
+  const generatedArtifactKeys = useRef<Set<string>>(new Set())
+  const pendingArtifactWrites = useRef<Promise<unknown>[]>([])
+
+  const refreshWorkspaceFiles = useCallback(async (workspaceId = sessionId) => {
+    if (!workspaceId) {
+      setWorkspaceFiles([])
+      return
+    }
+    setWorkspaceLoading(true)
+    try {
+      setWorkspaceFiles(await fetchWorkspaceFiles(workspaceId))
+    } finally {
+      setWorkspaceLoading(false)
+    }
+  }, [sessionId])
 
   const reloadSessions = useCallback(async () => {
     const res = await listSessions()
@@ -79,6 +102,10 @@ export default function ChatPage() {
       // Keep the chat usable even if the history endpoint is temporarily down.
     })
   }, [reloadSessions])
+
+  useEffect(() => {
+    refreshWorkspaceFiles().catch(() => undefined)
+  }, [refreshWorkspaceFiles])
 
   const loadSessionIntoChat = useCallback(
     async (targetSessionId: string) => {
@@ -189,6 +216,37 @@ export default function ChatPage() {
     .map(toPaneMessage)
     .filter((msg): msg is PaneChatMessage => msg !== null)
 
+  const chatProjectFiles = useMemo(
+    () =>
+      workspaceFiles.map((file) => ({
+        name: file.name,
+        path: file.path,
+        type: file.type === "dir" ? ("directory" as const) : ("file" as const),
+        kind:
+          file.kind === "html" || file.kind === "image" || file.kind === "code"
+            ? file.kind
+            : ("file" as const),
+        size: file.size,
+      })),
+    [workspaceFiles],
+  )
+  const workspaceFileNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const file of workspaceFiles) {
+      names.add(file.name)
+      names.add(file.name.split("/").filter(Boolean).at(-1) ?? file.name)
+    }
+    return names
+  }, [workspaceFiles])
+
+  function requestOpenWorkspaceFile(name: string) {
+    const exact = workspaceFiles.find((file) => file.name === name)
+    const byBase = workspaceFiles.find((file) => file.name.split("/").filter(Boolean).at(-1) === name)
+    const target = exact ?? byBase
+    if (!target) return
+    setOpenRequest({ name: target.name, nonce: Date.now() })
+  }
+
   const sendFromPane = async (
     prompt: string,
     paneAttachments: PaneChatAttachment[],
@@ -255,47 +313,95 @@ export default function ChatPage() {
       model: requestModel,
       modelConfig: inlineModelConfig,
       session_id: currentSessionId,
-      onDone: () => {
-        reloadSessions().catch(() => undefined)
+      onEvent: (event) => {
+        const workspaceId = currentSessionId
+        if (!workspaceId) return
+        const artifact = artifactFromStreamEvent(event)
+        const artifactKey = artifact ? `${workspaceId}:${artifact.key}` : ""
+        if (!artifact || generatedArtifactKeys.current.has(artifactKey)) return
+        generatedArtifactKeys.current.add(artifactKey)
+        const write = writeWorkspaceTextFile(workspaceId, artifact.name, artifact.content, { overwrite: true })
+          .then((file) => {
+            if (file && artifact.shouldOpen) {
+              setOpenRequest({ name: file.name, nonce: Date.now() })
+            }
+          })
+          .catch(() => undefined)
+        pendingArtifactWrites.current.push(write)
+      },
+      onDone: async () => {
+        const writes = pendingArtifactWrites.current
+        pendingArtifactWrites.current = []
+        await Promise.allSettled(writes)
+        await refreshWorkspaceFiles(currentSessionId)
+        await reloadSessions()
       },
     })
   }
 
+  const hasWorkspace = Boolean(sessionId && workspaceFiles.length > 0)
+
   return (
-    <div className="h-[calc(100vh-48px)]">
-      <ChatPane
-        messages={paneMessages}
-        streaming={loading}
-        error={null}
-        projectId={sessionId}
-        projectFiles={[]}
-        onEnsureProject={async () => {
-          if (sessionId) return sessionId
-          const { session_id, session } = await createSession()
-          setSessionId(session_id)
-          upsertSession(session)
-          return session_id
-        }}
-        onSend={sendFromPane}
-        onStop={abortStreaming}
-        conversations={sessions.map((session) => ({
-          id: session.id,
-          title: session.title,
-          createdAt: toMillis(session.created_at),
-          updatedAt: toMillis(session.updated_at),
-        }))}
-        activeConversationId={sessionId ?? "current"}
-        onSelectConversation={(id) => {
-          if (id !== sessionId) {
-            loadSessionIntoChat(id).catch(() => undefined)
-          }
-        }}
-        onDeleteConversation={(id) => {
-          deleteConversation(id).catch(() => undefined)
-        }}
-        onNewConversation={() => {
-          createNewConversation().catch(() => resetToNewChat())
-        }}
+    <div className="h-full">
+      <ResizableDivider
+        initialLeftWidth={500}
+        minLeftWidth={350}
+        maxLeftWidth={750}
+        showRightPanel={hasWorkspace}
+        leftPanel={
+          <ChatPane
+            messages={paneMessages}
+            streaming={loading}
+            error={null}
+            projectId={sessionId}
+            projectFiles={chatProjectFiles}
+            projectFileNames={workspaceFileNames}
+            onRequestOpenFile={requestOpenWorkspaceFile}
+            onEnsureProject={async () => {
+              if (sessionId) return sessionId
+              const { session_id, session } = await createSession()
+              setSessionId(session_id)
+              upsertSession(session)
+              await refreshWorkspaceFiles(session_id)
+              return session_id
+            }}
+            onSend={sendFromPane}
+            onStop={abortStreaming}
+            conversations={sessions.map((session) => ({
+              id: session.id,
+              title: session.title,
+              createdAt: toMillis(session.created_at),
+              updatedAt: toMillis(session.updated_at),
+            }))}
+            activeConversationId={sessionId ?? "current"}
+            onSelectConversation={(id) => {
+              if (id !== sessionId) {
+                loadSessionIntoChat(id).catch(() => undefined)
+              }
+            }}
+            onDeleteConversation={(id) => {
+              deleteConversation(id).catch(() => undefined)
+            }}
+            onNewConversation={() => {
+              createNewConversation().catch(() => resetToNewChat())
+            }}
+          />
+        }
+        rightPanel={
+          sessionId ? (
+            <FileWorkspace
+              workspaceId={sessionId}
+              files={workspaceFiles}
+              loading={workspaceLoading}
+              onRefreshFiles={() => refreshWorkspaceFiles(sessionId)}
+              openRequest={openRequest}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
+              Start or select a conversation to open its file workspace.
+            </div>
+          )
+        }
       />
     </div>
   )

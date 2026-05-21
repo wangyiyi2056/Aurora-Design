@@ -3,7 +3,7 @@ import { chatComplete, type APIChatMessage, type ModelConfig } from "@/services/
 import { streamByokProvider } from "@/providers/registry"
 import type { ApiProtocol, ByokConfig } from "@/stores/provider-store"
 import { useChatStore } from "@/stores/chat-store"
-import { ChatSSEState, parseSSEChunk, extractPipelineSteps } from "@/features/chat/utils/sse-parser"
+import { ChatSSEState, parseSSEChunk, extractPipelineSteps, type SSEEvent } from "@/features/chat/utils/sse-parser"
 
 interface UseChatStreamOptions {
   onSuccess?: (content: string) => void
@@ -17,7 +17,8 @@ interface ChatStreamParams {
   selectParam?: string
   extInfo?: Record<string, unknown>
   session_id?: string | null
-  onDone?: () => void
+  onEvent?: (event: SSEEvent) => void
+  onDone?: () => void | Promise<void>
 }
 
 /** Legacy non-streaming mutation for backward compatibility. */
@@ -225,7 +226,7 @@ async function executeStreamRequest(
       })
       if (byokError) throw byokError
 
-      params.onDone?.()
+      await params.onDone?.()
       return
     }
 
@@ -281,6 +282,7 @@ async function executeStreamRequest(
 
         const events = parseSSEChunk(trimmed)
         for (const event of events) {
+          params.onEvent?.(event)
           parser.processEvent(event)
 
           // Update streaming state for real-time UI updates
@@ -300,7 +302,7 @@ async function executeStreamRequest(
     }
 
     updateStreamingAssistant(parser.getEndTime() ?? Date.now())
-    params.onDone?.()
+    await params.onDone?.()
 
   } catch (error) {
     // Handle different error types with appropriate messages

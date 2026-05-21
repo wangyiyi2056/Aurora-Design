@@ -8,6 +8,7 @@ from aurora_serve.datasource.api import router as datasource_router
 from aurora_serve.evaluation.api import router as evaluation_router
 from aurora_serve.feedback.api import router as feedback_router
 from aurora_serve.files.api import router as files_router
+from aurora_serve.files.workspace_api import router as workspaces_router
 from aurora_serve.health.api import router as health_router
 from aurora_serve.knowledge.api import router as knowledge_router
 from aurora_serve.models.api import router as models_router
@@ -27,6 +28,7 @@ api_router.include_router(datasource_router)
 api_router.include_router(agent_router)
 api_router.include_router(knowledge_router)
 api_router.include_router(files_router)
+api_router.include_router(workspaces_router)
 api_router.include_router(skills_router)
 api_router.include_router(models_router)
 api_router.include_router(prompt_router)

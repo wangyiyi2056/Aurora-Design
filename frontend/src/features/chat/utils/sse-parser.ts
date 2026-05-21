@@ -77,6 +77,13 @@ export interface SSEPipelineStepEvent {
   detail?: string
 }
 
+export interface SSEStepChunkEvent {
+  type: "step.chunk"
+  id: string
+  output_type: "code" | "text" | "markdown" | "table" | "chart" | "json" | "error" | "thought" | "html" | "image"
+  content: unknown
+}
+
 export type SSEEvent =
   | SSETextStartEvent
   | SSETextDeltaEvent
@@ -88,6 +95,7 @@ export type SSEEvent =
   | SSEReasoningEndEvent
   | SSEStatusEvent
   | SSEPipelineStepEvent
+  | SSEStepChunkEvent
 
 // Internal state for tracking streaming content
 interface ToolState {
