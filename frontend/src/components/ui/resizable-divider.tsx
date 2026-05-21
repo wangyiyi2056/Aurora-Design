@@ -170,23 +170,28 @@ export function ResizableDivider({
     if (leftPanelRef.current && showRightPanel) {
       leftPanelRef.current.style.width = `${leftWidth}px`
     }
-  }, [leftWidth])
+  }, [leftWidth, showRightPanel])
 
   return (
     <div
       ref={containerRef}
       className={cn(
-        "flex h-full min-w-0 overflow-hidden",
+        "flex h-full min-w-0 overflow-hidden bg-background",
         isDragging && "[&_iframe]:pointer-events-none",
+        !showRightPanel && "justify-center", // 没有右侧面板时居中
         className,
       )}
     >
       {/* 左侧面板 */}
       <div
         ref={leftPanelRef}
-        className="min-w-0 border-r"
+        className={cn(
+          "min-w-0",
+          showRightPanel && "border-r" // 只有显示右侧面板时才显示边框
+        )}
         style={{
           width: showRightPanel ? `${leftWidth}px` : "100%",
+          maxWidth: showRightPanel ? undefined : `${maxLeftWidth}px`,
           flexShrink: 0,
         }}
       >
