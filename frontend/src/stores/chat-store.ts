@@ -288,6 +288,21 @@ export const useChatStore = create<ChatState>()(
 
       setDebugPipelineEnabled: (enabled) => set({ debugPipelineEnabled: enabled }),
     }),
-    { name: "aurora-chat-store" }
+    {
+      name: "aurora-chat-store",
+      partialize: (state) => ({
+        model: state.model,
+        debugPipelineEnabled: state.debugPipelineEnabled,
+      }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<ChatState>
+        return {
+          ...currentState,
+          model: persisted.model ?? currentState.model,
+          debugPipelineEnabled:
+            persisted.debugPipelineEnabled ?? currentState.debugPipelineEnabled,
+        }
+      },
+    }
   )
 )

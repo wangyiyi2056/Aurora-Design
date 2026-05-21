@@ -19,6 +19,7 @@ interface ChatStreamParams {
   session_id?: string | null
   onEvent?: (event: SSEEvent) => void
   onDone?: () => void | Promise<void>
+  shouldApply?: () => boolean
 }
 
 /** Legacy non-streaming mutation for backward compatibility. */
@@ -122,14 +123,18 @@ async function executeStreamRequest(
     resetPipelineSteps,
     debugPipelineEnabled,
   } = useChatStore.getState()
+  const shouldApply = () => params.shouldApply?.() ?? true
   const assistantStartTime = Date.now()
-  addMessage({
-    role: "assistant",
-    content: [],
-    startTime: assistantStartTime,
-  })
+  if (shouldApply()) {
+    addMessage({
+      role: "assistant",
+      content: [],
+      startTime: assistantStartTime,
+    })
+  }
 
   const updateStreamingAssistant = (endTime?: number) => {
+    if (!shouldApply()) return
     const parts = parser.toMessageParts()
     const finalContent = parser.getFinalContent()
     const content = parts.length > 0 ? parts : finalContent
@@ -156,6 +161,7 @@ async function executeStreamRequest(
   }
 
   const removeEmptyStreamingAssistant = () => {
+    if (!shouldApply()) return
     const parts = parser.toMessageParts()
     const hasVisibleOutput =
       Boolean(parser.getFinalContent()) ||
@@ -187,8 +193,10 @@ async function executeStreamRequest(
       let byokError: Error | null = null
       let byokReasoningActive = false
       parser.processEvent({ type: "text_start" })
-      setStreamingParts(parser.toMessageParts())
-      setStreamingStatus("Streaming")
+      if (shouldApply()) {
+        setStreamingParts(parser.toMessageParts())
+        setStreamingStatus("Streaming")
+      }
       updateStreamingAssistant()
 
       await streamByokProvider(byokConfig.protocol, byokConfig, params.messages, combinedSignal, {
@@ -198,8 +206,10 @@ async function executeStreamRequest(
             byokReasoningActive = false
           }
           parser.processEvent({ type: "text_delta", content: delta })
-          setStreamingParts(parser.toMessageParts())
-          setStreamingStatus(parser.getCurrentStatus())
+          if (shouldApply()) {
+            setStreamingParts(parser.toMessageParts())
+            setStreamingStatus(parser.getCurrentStatus())
+          }
           updateStreamingAssistant()
         },
         onReasoningDelta: (delta) => {
@@ -208,8 +218,10 @@ async function executeStreamRequest(
             byokReasoningActive = true
           }
           parser.processEvent({ type: "reasoning_delta", content: delta })
-          setStreamingParts(parser.toMessageParts())
-          setStreamingStatus(parser.getCurrentStatus())
+          if (shouldApply()) {
+            setStreamingParts(parser.toMessageParts())
+            setStreamingStatus(parser.getCurrentStatus())
+          }
           updateStreamingAssistant()
         },
         onDone: () => {
@@ -226,7 +238,7 @@ async function executeStreamRequest(
       })
       if (byokError) throw byokError
 
-      await params.onDone?.()
+      if (shouldApply()) await params.onDone?.()
       return
     }
 
@@ -282,12 +294,14 @@ async function executeStreamRequest(
 
         const events = parseSSEChunk(trimmed)
         for (const event of events) {
-          params.onEvent?.(event)
+          if (shouldApply()) params.onEvent?.(event)
           parser.processEvent(event)
 
           // Update streaming state for real-time UI updates
-          setStreamingParts(parser.toMessageParts())
-          setStreamingStatus(parser.getCurrentStatus())
+          if (shouldApply()) {
+            setStreamingParts(parser.toMessageParts())
+            setStreamingStatus(parser.getCurrentStatus())
+          }
           updateStreamingAssistant(parser.getEndTime())
 
           // Handle pipeline step events for debug panel
@@ -302,7 +316,7 @@ async function executeStreamRequest(
     }
 
     updateStreamingAssistant(parser.getEndTime() ?? Date.now())
-    await params.onDone?.()
+    if (shouldApply()) await params.onDone?.()
 
   } catch (error) {
     // Handle different error types with appropriate messages
@@ -328,17 +342,21 @@ async function executeStreamRequest(
 
     removeEmptyStreamingAssistant()
     // Add error as system message (not assistant) for clear distinction
-    addMessage({
-      role: "system",
-      content: `⚠️ ${errorMessage}`,
-    })
+    if (shouldApply()) {
+      addMessage({
+        role: "system",
+        content: `⚠️ ${errorMessage}`,
+      })
+    }
   } finally {
     // Clean up timeout
     clearTimeout(timeoutId)
-    setLoading(false)
-    setStreamingParts([])
-    setStreamingStatus(null)
-    setAbortController(null)
+    if (shouldApply()) {
+      setLoading(false)
+      setStreamingParts([])
+      setStreamingStatus(null)
+      setAbortController(null)
+    }
   }
 }
 

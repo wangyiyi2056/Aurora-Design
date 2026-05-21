@@ -68,6 +68,10 @@ export default function ChatPage() {
   const [openRequest, setOpenRequest] = useState<{ name: string; nonce: number } | null>(null)
   const generatedArtifactKeys = useRef<Set<string>>(new Set())
   const pendingArtifactWrites = useRef<Promise<unknown>[]>([])
+  const messageLoadSeq = useRef(0)
+  const sessionListLoadSeq = useRef(0)
+  const messagesSessionId = useRef<string | null>(null)
+  const creatingConversation = useRef(false)
 
   const refreshWorkspaceFiles = useCallback(async (workspaceId = sessionId) => {
     if (!workspaceId) {
@@ -83,18 +87,21 @@ export default function ChatPage() {
   }, [sessionId])
 
   const reloadSessions = useCallback(async () => {
+    const seq = ++sessionListLoadSeq.current
     const res = await listSessions()
+    if (seq !== sessionListLoadSeq.current) return
     setSessions(res.sessions)
   }, [setSessions])
 
   const upsertSession = useCallback(
     (session: SessionMeta) => {
+      const currentSessions = useChatStore.getState().sessions
       setSessions([
         session,
-        ...sessions.filter((item) => item.id !== session.id),
+        ...currentSessions.filter((item) => item.id !== session.id),
       ])
     },
-    [sessions, setSessions],
+    [setSessions],
   )
 
   useEffect(() => {
@@ -109,7 +116,13 @@ export default function ChatPage() {
 
   const loadSessionIntoChat = useCallback(
     async (targetSessionId: string) => {
+      const seq = ++messageLoadSeq.current
+      messagesSessionId.current = null
+      setSessionId(targetSessionId)
+      loadSessionMessages([])
       const res = await loadSession(targetSessionId)
+      if (seq !== messageLoadSeq.current) return
+      if (useChatStore.getState().sessionId !== targetSessionId) return
       const msgs = res.messages
         .filter((m) => m.type === "user" || m.type === "assistant")
         .map((m) => ({
@@ -121,38 +134,66 @@ export default function ChatPage() {
           endTime: m.type === "assistant" && m.timestamp ? toMillis(m.timestamp) : undefined,
         }))
       loadSessionMessages(msgs)
-      setSessionId(targetSessionId)
+      messagesSessionId.current = targetSessionId
+      upsertSession(res.session)
     },
-    [loadSessionMessages, setSessionId],
+    [loadSessionMessages, setSessionId, upsertSession],
   )
 
   const deleteConversation = useCallback(
     async (targetSessionId: string) => {
       await deleteSession(targetSessionId)
-      setSessions(sessions.filter((session) => session.id !== targetSessionId))
+      const remainingSessions = useChatStore
+        .getState()
+        .sessions
+        .filter((session) => session.id !== targetSessionId)
+      setSessions(remainingSessions)
       if (targetSessionId === sessionId) {
-        resetToNewChat()
+        messagesSessionId.current = null
+        if (remainingSessions.length > 0) {
+          await loadSessionIntoChat(remainingSessions[0].id)
+        } else {
+          resetToNewChat()
+        }
       }
     },
-    [resetToNewChat, sessionId, sessions, setSessions],
+    [loadSessionIntoChat, resetToNewChat, sessionId, setSessions],
   )
 
   const createNewConversation = useCallback(async () => {
+    if (creatingConversation.current) return
+    const currentSessionId = useChatStore.getState().sessionId
+    const currentMessages = useChatStore.getState().messages.filter((m) => m.role !== "system")
+    if (currentSessionId && messagesSessionId.current === currentSessionId && currentMessages.length === 0) {
+      return
+    }
+    creatingConversation.current = true
     abortStreaming()
-    const { session_id, session } = await createSession()
-    setSessionId(session_id)
-    loadSessionMessages([])
-    upsertSession(session)
+    try {
+      const { session_id, session } = await createSession()
+      messageLoadSeq.current += 1
+      messagesSessionId.current = session_id
+      setSessionId(session_id)
+      loadSessionMessages([])
+      setWorkspaceFiles([])
+      upsertSession(session)
+    } finally {
+      creatingConversation.current = false
+    }
   }, [abortStreaming, loadSessionMessages, setSessionId, upsertSession])
 
   useEffect(() => {
-    if (sessionId && messages.length <= 1 && messages[0]?.role === "system") {
-      loadSessionIntoChat(sessionId)
-        .catch(() => {
-          // Session not found or error: start fresh.
-        })
+    if (!sessionId) {
+      messagesSessionId.current = null
+      return
     }
-  }, [sessionId, loadSessionIntoChat]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (messagesSessionId.current === sessionId) return
+    loadSessionIntoChat(sessionId)
+      .catch(() => {
+        messagesSessionId.current = null
+        loadSessionMessages([])
+      })
+  }, [sessionId, loadSessionIntoChat, loadSessionMessages])
 
   const toPaneMessage = (
     msg: (typeof messages)[number],
@@ -296,6 +337,8 @@ export default function ChatPage() {
       try {
         const { session_id, session } = await createSession()
         currentSessionId = session_id
+        messageLoadSeq.current += 1
+        messagesSessionId.current = session_id
         setSessionId(session_id)
         upsertSession({
           ...session,
@@ -305,14 +348,26 @@ export default function ChatPage() {
         })
       } catch {
         addMessage({ role: "system", content: "⚠️ 无法创建会话，对话不会被保存" })
+        setLoading(false)
+        return
       }
+    } else {
+      messagesSessionId.current = currentSessionId
     }
+
+    const streamSessionId = currentSessionId
+    const streamLoadSeq = messageLoadSeq.current
 
     sendChatStream({
       messages: requestMessages,
       model: requestModel,
       modelConfig: inlineModelConfig,
       session_id: currentSessionId,
+      shouldApply: () =>
+        Boolean(streamSessionId) &&
+        messagesSessionId.current === streamSessionId &&
+        messageLoadSeq.current === streamLoadSeq &&
+        useChatStore.getState().sessionId === streamSessionId,
       onEvent: (event) => {
         const workspaceId = currentSessionId
         if (!workspaceId) return
@@ -360,6 +415,8 @@ export default function ChatPage() {
             onEnsureProject={async () => {
               if (sessionId) return sessionId
               const { session_id, session } = await createSession()
+              messageLoadSeq.current += 1
+              messagesSessionId.current = session_id
               setSessionId(session_id)
               upsertSession(session)
               await refreshWorkspaceFiles(session_id)
@@ -375,7 +432,8 @@ export default function ChatPage() {
             }))}
             activeConversationId={sessionId ?? "current"}
             onSelectConversation={(id) => {
-              if (id !== sessionId) {
+              if (id !== sessionId || messagesSessionId.current !== id) {
+                abortStreaming()
                 loadSessionIntoChat(id).catch(() => undefined)
               }
             }}
@@ -383,7 +441,9 @@ export default function ChatPage() {
               deleteConversation(id).catch(() => undefined)
             }}
             onNewConversation={() => {
-              createNewConversation().catch(() => resetToNewChat())
+              createNewConversation().catch(() => {
+                addMessage({ role: "system", content: "⚠️ 无法创建新会话，请稍后再试" })
+              })
             }}
           />
         }
