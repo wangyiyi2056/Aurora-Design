@@ -27,6 +27,7 @@ def create_app() -> FastAPI:
         from aurora_serve.chat.service import ChatService
         from aurora_serve.datasource.schema import DBConfig
         from aurora_serve.datasource.service import DatasourceService
+        from aurora_serve.design_skills.service import DesignSkillService
         from aurora_serve.files.service import FileService
         from aurora_serve.knowledge.service import KnowledgeService
         from aurora_serve.metadata import MetadataStore, storage_dir
@@ -98,6 +99,10 @@ def create_app() -> FastAPI:
         skill_registry = skill_service.registry
         app.state.skill_registry = skill_registry
 
+        design_skill_service = DesignSkillService()
+        system_app.register_instance(design_skill_service)
+        app.state.design_skill_service = design_skill_service
+
         knowledge_service = KnowledgeService(metadata_store, registry)
         system_app.register_instance(knowledge_service)
         app.state.knowledge_service = knowledge_service
@@ -146,6 +151,7 @@ def create_app() -> FastAPI:
             session_base_path=str(storage_dir() / "sessions"),
             datasource_service=datasource_service,
             knowledge_service=knowledge_service,
+            design_skill_service=design_skill_service,
         )
         system_app.register_instance(app.state.chat_service, name="chat_service")
 

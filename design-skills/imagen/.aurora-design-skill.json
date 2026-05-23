@@ -1,0 +1,8 @@
+{
+  "hidden": true,
+  "status": "adapter-pending",
+  "adapterKind": "image",
+  "dependencyType": "external-service",
+  "migrationBatch": "third",
+  "sourcePath": "open-design/skills/imagen"
+}

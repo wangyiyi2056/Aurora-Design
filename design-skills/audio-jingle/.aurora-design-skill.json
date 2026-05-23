@@ -1,0 +1,8 @@
+{
+  "hidden": true,
+  "status": "adapter-pending",
+  "adapterKind": "audio",
+  "dependencyType": "runtime-toolchain",
+  "migrationBatch": "third",
+  "sourcePath": "open-design/design-templates/audio-jingle"
+}

@@ -1,4 +1,4 @@
-import { uploadFile } from "@/services/files"
+import { uploadWorkspaceFiles, workspaceRawUrl } from "@/features/file-workspace/services/workspace-files"
 
 import type {
   ChatAttachment,
@@ -33,35 +33,22 @@ export interface UploadProjectFilesResult {
 }
 
 export async function uploadProjectFiles(
-  _projectId: string,
+  projectId: string,
   files: File[]
 ): Promise<UploadProjectFilesResult> {
-  const uploaded: ChatAttachment[] = []
-  const failed: UploadProjectFilesResult["failed"] = []
-
-  for (const file of files) {
-    try {
-      const result = await uploadFile(file)
-      uploaded.push({
-        fileId: result.file_id,
-        path: result.file_path,
-        name: result.file_name,
-        kind: file.type.startsWith("image/") ? "image" : "file",
-        url: projectRawUrl(result.file_path),
-        size: file.size,
-      })
-    } catch (error) {
-      failed.push({
-        name: file.name,
-        error: error instanceof Error ? error.message : "upload failed",
-      })
-    }
-  }
+  const result = await uploadWorkspaceFiles(projectId, files)
+  const uploaded: ChatAttachment[] = result.files.map((file) => ({
+    path: file.name,
+    name: file.name.split("/").filter(Boolean).at(-1) ?? file.name,
+    kind: file.kind === "image" ? "image" : "file",
+    url: workspaceRawUrl(projectId, file.name),
+    size: file.size,
+  }))
 
   return {
     uploaded,
-    failed,
-    error: failed.length > 0 ? "upload failed" : undefined,
+    failed: result.failed,
+    error: result.error,
   }
 }
 

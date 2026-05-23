@@ -8,7 +8,7 @@ import re
 import time
 from html import escape
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,7 @@ from aurora_core.mode import ChatMode
 from aurora_serve.excel.pipeline import ExcelAnalysisPipeline
 from aurora_serve.agent.sql_agent import SQLAgent
 from aurora_serve.datasource.service import DatasourceService
+from aurora_serve.design_skills.service import DesignSkillService
 from aurora_serve.knowledge.service import KnowledgeService
 from aurora_serve.chat.schema import (
     ChatChoice,
@@ -104,12 +105,14 @@ class EnhancedChatService:
         session_base_path: Optional[str] = None,
         datasource_service: Optional[DatasourceService] = None,
         knowledge_service: Optional[KnowledgeService] = None,
+        design_skill_service: Optional[DesignSkillService] = None,
     ):
         self.registry = model_registry
         self.skill_registry = skill_registry
         self.mcp_client = mcp_client
         self.datasource_service = datasource_service
         self.knowledge_service = knowledge_service
+        self.design_skill_service = design_skill_service
 
         # Initialize Claude Code architecture components
         self.session_manager = SessionManager(base_path=session_base_path)
@@ -331,11 +334,7 @@ class EnhancedChatService:
         """Turn locally uploaded image paths into provider-readable data URLs."""
         if url.startswith("data:") or url.startswith("http://") or url.startswith("https://"):
             return url
-        parsed = urlparse(url)
-        if parsed.path.endswith("/api/v1/files/raw"):
-            path_values = parse_qs(parsed.query).get("path") or []
-            if path_values:
-                url = path_values[0]
+        url = self._resolve_local_api_url_to_path(url)
         file_path = Path(url)
         if not file_path.exists() or not file_path.is_file():
             logger.warning("Image file not found for inline: %s", file_path)
@@ -343,6 +342,26 @@ class EnhancedChatService:
         media_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
         encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
         return f"data:{media_type};base64,{encoded}"
+
+    def _resolve_local_api_url_to_path(self, url: str) -> str:
+        """Resolve local raw-file API URLs to filesystem paths for model adapters."""
+        if not url:
+            return url
+        parsed = urlparse(url)
+        if parsed.path.endswith("/api/v1/files/raw"):
+            path_values = parse_qs(parsed.query).get("path") or []
+            if path_values:
+                return path_values[0]
+        marker = "/api/v1/workspaces/"
+        if marker in parsed.path:
+            suffix = parsed.path.split(marker, 1)[1]
+            workspace_id, sep, raw_path = suffix.partition("/raw/")
+            if sep and workspace_id and raw_path:
+                try:
+                    return str(WorkspaceFileService().resolve_path(unquote(workspace_id), unquote(raw_path)))
+                except Exception as exc:
+                    logger.warning("Workspace file URL could not be resolved: %s", exc)
+        return url
 
     @staticmethod
     def _is_tabular_file_name(file_name: str) -> bool:
@@ -358,9 +377,10 @@ class EnhancedChatService:
             for part in message.content:
                 if part.type != "file_url" or part.file_url is None:
                     continue
-                file_name = part.file_url.file_name or Path(part.file_url.url).name
+                file_path = self._resolve_local_api_url_to_path(part.file_url.url)
+                file_name = part.file_url.file_name or Path(file_path).name
                 if self._is_tabular_file_name(file_name):
-                    return part.file_url.url, file_name
+                    return file_path, file_name
         return None
 
     def _extract_latest_user_question(self, req: ChatRequest) -> str:
@@ -386,12 +406,7 @@ class EnhancedChatService:
             for part in message.content:
                 if part.type == "image_url" and part.image_url is not None:
                     url = part.image_url.url
-                    path = url
-                    parsed = urlparse(url)
-                    if parsed.path.endswith("/api/v1/files/raw"):
-                        path_values = parse_qs(parsed.query).get("path") or []
-                        if path_values:
-                            path = path_values[0]
+                    path = self._resolve_local_api_url_to_path(url)
                     name = Path(path).name or "image"
                     attachments.append(
                         {
@@ -402,11 +417,12 @@ class EnhancedChatService:
                         }
                     )
                 elif part.type == "file_url" and part.file_url is not None:
-                    file_name = part.file_url.file_name or Path(part.file_url.url).name
+                    resolved_path = self._resolve_local_api_url_to_path(part.file_url.url)
+                    file_name = part.file_url.file_name or Path(resolved_path).name
                     kind = "image" if Path(file_name).suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"} else "file"
                     attachments.append(
                         {
-                            "path": part.file_url.url,
+                            "path": resolved_path,
                             "name": file_name,
                             "kind": kind,
                         }
@@ -824,16 +840,13 @@ class EnhancedChatService:
                 else:
                     # For daemon/cli mode: resolve API URL to actual file path
                     # so the CLI agent can read the file with its tools
-                    parsed = urlparse(image_url)
-                    if parsed.path.endswith("/api/v1/files/raw"):
-                        path_values = parse_qs(parsed.query).get("path") or []
-                        if path_values:
-                            image_url = path_values[0]
+                    image_url = self._resolve_local_api_url_to_path(image_url)
                 resolved.append(
                     {"type": "image_url", "image_url": {"url": image_url}}
                 )
             elif part.type == "file_url" and part.file_url is not None:
-                file_path = Path(part.file_url.url)
+                file_url = self._resolve_local_api_url_to_path(part.file_url.url)
+                file_path = Path(file_url)
                 if file_path.exists():
                     try:
                         text = self._read_tabular_file(file_path)
@@ -842,7 +855,7 @@ class EnhancedChatService:
                             encoding="utf-8", errors="replace"
                         )
                 else:
-                    text = f"[File not found: {part.file_url.url}]"
+                    text = f"[File not found: {file_url}]"
                 resolved.append(
                     {
                         "type": "text",
@@ -860,11 +873,23 @@ class EnhancedChatService:
     def _build_messages(self, req: ChatRequest) -> List[Message]:
         """Build messages from request."""
         messages: List[Message] = []
+        design_skill_context = self._build_design_skill_context(req)
+        if design_skill_context:
+            messages.append(Message(role="system", content=design_skill_context))
         inline_local_images = self._effective_model_type(req) not in {"daemon", "cli"}
         for m in req.messages:
             resolved = self._resolve_content_parts(m.content, inline_local_images=inline_local_images)
             messages.append(Message(role=m.role, content=resolved))
         return messages
+
+    def _build_design_skill_context(self, req: ChatRequest) -> str | None:
+        if self.design_skill_service is None:
+            return None
+        ext_info = req.ext_info or {}
+        skill_id = ext_info.get("design_skill_id") or ext_info.get("designSkillId")
+        if not isinstance(skill_id, str) or not skill_id.strip():
+            return None
+        return self.design_skill_service.active_prompt(skill_id.strip())
 
     def _selected_tool_names(self, req: ChatRequest) -> set[str]:
         names: set[str] = set()

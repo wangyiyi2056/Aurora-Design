@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Iterable
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 AgentEvent = dict[str, Any]
@@ -766,7 +766,7 @@ def collapse_messages_for_cli(messages: Iterable[Any]) -> str:
 
 
 def _resolve_api_url_to_path(url: str) -> str:
-    """Resolve /api/v1/files/raw?path=... URLs to actual file paths."""
+    """Resolve local raw-file API URLs to actual file paths."""
     if not url:
         return url
     parsed = urlparse(url)
@@ -774,6 +774,13 @@ def _resolve_api_url_to_path(url: str) -> str:
         path_values = parse_qs(parsed.query).get("path") or []
         if path_values:
             return path_values[0]
+    marker = "/api/v1/workspaces/"
+    if marker in parsed.path:
+        suffix = parsed.path.split(marker, 1)[1]
+        workspace_id, sep, raw_path = suffix.partition("/raw/")
+        if sep and workspace_id and raw_path:
+            storage_root = Path(os.getenv("AURORA_STORAGE_DIR", "data")) / "workspaces"
+            return str(storage_root / unquote(workspace_id) / unquote(raw_path))
     return url
 
 

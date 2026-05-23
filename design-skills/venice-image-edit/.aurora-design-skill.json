@@ -1,0 +1,8 @@
+{
+  "hidden": true,
+  "status": "adapter-pending",
+  "adapterKind": "venice",
+  "dependencyType": "external-service",
+  "migrationBatch": "third",
+  "sourcePath": "open-design/skills/venice-image-edit"
+}

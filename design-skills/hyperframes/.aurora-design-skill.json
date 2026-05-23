@@ -1,0 +1,8 @@
+{
+  "hidden": true,
+  "status": "adapter-pending",
+  "adapterKind": "hyperframes",
+  "dependencyType": "runtime-toolchain",
+  "migrationBatch": "third",
+  "sourcePath": "open-design/design-templates/hyperframes"
+}

@@ -818,7 +818,17 @@ a {
 
 .msg {
   width: 100%;
-  margin: 0 auto 24px;
+  margin: 0 auto 12px;
+}
+
+.msg.user {
+  position: relative;
+  padding-bottom: 24px;
+}
+
+.msg.assistant {
+  position: relative;
+  padding-bottom: 24px;
 }
 
 .msg .role {
@@ -835,7 +845,58 @@ a {
   justify-content: flex-end;
 }
 
-.msg .role > span:first-child {
+.user-message-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+}
+
+.msg.user:hover .user-message-actions,
+.msg.user:focus-within .user-message-actions,
+.msg.assistant:hover .assistant-message-actions,
+.msg.assistant:focus-within .assistant-message-actions {
+  opacity: 1;
+}
+
+.assistant-message-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+}
+
+.msg-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--muted-foreground) 78%, transparent);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.msg-action:hover {
+  background: color-mix(in srgb, var(--foreground) 12%, var(--muted));
+  color: var(--foreground);
+}
+
+.msg .role > span:first-of-type {
   font-weight: 560;
   color: color-mix(in srgb, var(--foreground) 54%, var(--muted-foreground));
 }
@@ -877,6 +938,21 @@ a {
   line-height: 1.6;
   box-shadow:
     0 10px 24px color-mix(in srgb, var(--primary) 18%, transparent),
+    inset 0 1px 0 rgba(255,255,255,0.18);
+}
+
+.msg.user .retry-edit-trigger {
+  display: block;
+  border-color: color-mix(in srgb, var(--destructive) 36%, var(--chat-soft-border));
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.msg.user .retry-edit-trigger:hover {
+  filter: brightness(1.04);
+  box-shadow:
+    0 10px 24px color-mix(in srgb, var(--destructive) 20%, transparent),
     inset 0 1px 0 rgba(255,255,255,0.18);
 }
 
@@ -1267,6 +1343,59 @@ a {
   transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast), transform var(--duration-fast);
 }
 
+.composer-model-pill {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 190px;
+  height: 32px;
+  align-items: center;
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground));
+  background: color-mix(in srgb, var(--muted) 46%, transparent);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 560;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-design-skill-pill {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 180px;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--foreground) 82%, var(--muted-foreground));
+  background: transparent;
+  padding: 0 6px 0 9px;
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.composer-design-skill-pill > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-design-skill-pill button {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
 .composer-row .icon-btn {
   width: 32px;
   padding: 0;
@@ -1327,6 +1456,50 @@ a {
   color: var(--foreground);
   padding: 4px 8px;
   font-size: 12px;
+  transition: background var(--duration-fast), border-color var(--duration-fast), box-shadow var(--duration-fast), transform var(--duration-fast);
+}
+
+.staged-chip.openable,
+.user-attachment.openable {
+  cursor: pointer;
+}
+
+.staged-chip.openable:hover,
+.staged-chip.openable:focus-within,
+.user-attachment.openable:hover,
+.user-attachment.openable:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--chat-soft-border));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--primary) 16%, transparent),
+    0 8px 18px color-mix(in srgb, var(--primary) 12%, transparent);
+  transform: translateY(-1px);
+}
+
+.staged-open {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  margin: -2px;
+  padding: 2px;
+  font: inherit;
+  transition: background var(--duration-fast), color var(--duration-fast), box-shadow var(--duration-fast);
+}
+
+.staged-open:disabled {
+  cursor: default;
+}
+
+.staged-open:not(:disabled):hover,
+.staged-open:not(:disabled):focus-visible {
+  background: transparent;
+  box-shadow: none;
+  outline: none;
 }
 
 .staged-chip img,
@@ -1353,6 +1526,7 @@ a {
 }
 
 .composer-import-menu,
+.composer-design-skill-picker,
 .composer-pet-menu,
 .mention-popover,
 .slash-popover {
@@ -1366,6 +1540,113 @@ a {
   background: var(--popover);
   box-shadow: var(--shadow-lg);
   padding: 8px;
+}
+
+.composer-design-skill-picker {
+  left: 0;
+  width: min(390px, calc(100vw - 42px));
+  padding: 10px;
+}
+
+.composer-design-skill-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.composer-design-skill-head button {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.composer-design-skill-picker input {
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.composer-design-skill-list {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  margin-top: 8px;
+}
+
+.composer-design-skill-card {
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 8px;
+  padding: 9px;
+}
+
+.composer-design-skill-card.selected {
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--chat-soft-border));
+}
+
+.composer-design-skill-title,
+.composer-design-skill-actions,
+.composer-design-skill-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-design-skill-title {
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.composer-design-skill-title > span,
+.composer-design-skill-meta span {
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  padding: 2px 6px;
+  font-size: 10px;
+}
+
+.composer-design-skill-card p,
+.composer-design-skill-empty {
+  margin: 6px 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.composer-design-skill-empty.error {
+  color: var(--destructive);
+}
+
+.composer-design-skill-actions {
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.composer-design-skill-actions button {
+  min-height: 28px;
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  padding: 0 9px;
+  font-size: 12px;
 }
 
 .composer-import-item,
@@ -1436,7 +1717,7 @@ a {
 
 .agent-process-status[data-phase="completed"] .agent-process-status-icon,
 .agent-process-run[data-phase="completed"] .agent-process-run-status {
-  color: var(--success);
+  color: var(--color-success);
 }
 
 .agent-process-status[data-phase="failed"] .agent-process-status-icon,
@@ -1479,15 +1760,6 @@ a {
   border: 1px solid var(--chat-soft-border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--background) 84%, transparent);
-}
-
-.agent-process-run[data-phase="completed"] {
-  border-color: color-mix(in srgb, var(--success) 32%, var(--chat-soft-border));
-}
-
-.agent-process-run[data-phase="failed"],
-.agent-process-run[data-phase="canceled"] {
-  border-color: color-mix(in srgb, var(--destructive) 42%, var(--chat-soft-border));
 }
 
 .agent-process-run.active {
@@ -1694,6 +1966,7 @@ a {
 .chat-jump-btn {
   position: absolute;
   bottom: 16px;
+  left: 20px;
   display: inline-flex;
   align-items: center;
   gap: 6px;

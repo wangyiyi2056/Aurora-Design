@@ -5,6 +5,7 @@ from aurora_serve.awel.api import router as awel_router
 from aurora_serve.agent.api import router as agent_router
 from aurora_serve.chat.api import router as chat_router
 from aurora_serve.datasource.api import router as datasource_router
+from aurora_serve.design_skills.api import router as design_skills_router
 from aurora_serve.evaluation.api import router as evaluation_router
 from aurora_serve.feedback.api import router as feedback_router
 from aurora_serve.files.api import router as files_router
@@ -30,6 +31,7 @@ api_router.include_router(knowledge_router)
 api_router.include_router(files_router)
 api_router.include_router(workspaces_router)
 api_router.include_router(skills_router)
+api_router.include_router(design_skills_router)
 api_router.include_router(models_router)
 api_router.include_router(prompt_router)
 api_router.include_router(plugins_router)

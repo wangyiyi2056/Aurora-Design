@@ -1,0 +1,8 @@
+{
+  "hidden": true,
+  "status": "adapter-pending",
+  "adapterKind": "fal",
+  "dependencyType": "external-service",
+  "migrationBatch": "third",
+  "sourcePath": "open-design/skills/fal-realtime"
+}

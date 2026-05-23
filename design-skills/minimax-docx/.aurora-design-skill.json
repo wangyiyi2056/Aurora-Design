@@ -1,0 +1,8 @@
+{
+  "hidden": true,
+  "status": "adapter-pending",
+  "adapterKind": "document",
+  "dependencyType": "document-toolchain",
+  "migrationBatch": "third",
+  "sourcePath": "open-design/skills/minimax-docx"
+}

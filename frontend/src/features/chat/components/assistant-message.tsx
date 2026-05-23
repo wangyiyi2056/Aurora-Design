@@ -55,6 +55,7 @@ export function AssistantMessage({
   onContinueRemainingTasks,
 }: Props) {
   const t = useT();
+  const [copied, setCopied] = useState(false);
   const events = message.events ?? [];
   const blocks =
     events.length > 0
@@ -73,6 +74,26 @@ export function AssistantMessage({
   // Track which forms the user submitted in this session so we lock them
   // immediately on click (without waiting for the parent to re-render).
   const [locallySubmitted, setLocallySubmitted] = useState<Set<string>>(() => new Set());
+  const copyText = useMemo(() => assistantCopyText(message), [message]);
+
+  async function copyAssistantMessage() {
+    if (!copyText) return;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(copyText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = copyText;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  }
 
   return (
     <div className="msg assistant">
@@ -141,8 +162,31 @@ export function AssistantMessage({
           hasUnfinishedTodos={unfinishedTodos.length > 0}
         />
       </div>
+      {!streaming && copyText ? (
+        <div className="assistant-message-actions" aria-label="消息操作">
+          <button
+            type="button"
+            className="msg-action"
+            aria-label="复制"
+            title={copied ? '已复制' : '复制'}
+            onClick={() => void copyAssistantMessage()}
+          >
+            <Icon name={copied ? 'check' : 'copy'} size={13} />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function assistantCopyText(message: ChatMessage): string {
+  const content = message.content.trim();
+  if (content) return stripArtifact(content).trim();
+  return (message.events ?? [])
+    .filter((event): event is Extract<AgentEvent, { kind: 'text' }> => event.kind === 'text')
+    .map((event) => stripArtifact(event.text))
+    .join('')
+    .trim();
 }
 
 function MessageTimestamp({ message, t }: { message: ChatMessage; t: TranslateFn }) {

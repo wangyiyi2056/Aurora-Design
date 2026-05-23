@@ -30,8 +30,10 @@ import type {
 } from "@/features/chat/types"
 import { createSession, deleteSession, listSessions, loadSession, upsertSessionMessage } from "@/services/chat"
 import type { APIChatMessage, ContentPart } from "@/services/chat"
+import { listDesignSkills, type DesignSkillSummary } from "@/services/design-skills"
 import { useProviderStore } from "@/stores/provider-store"
 import { useChatStore, type SessionMeta } from "@/stores/chat-store"
+import { agentDisplayName } from "@/features/chat/utils/agent-labels"
 
 export default function ChatPage() {
   const {
@@ -79,15 +81,47 @@ export default function ChatPage() {
           }
         : undefined
   const requestModel = providerMode === "api" ? byok.model || model : activeAgentId || model
+  const modelDisplayName = buildCurrentModelDisplayName({
+    providerMode,
+    protocol: byok.protocol,
+    apiModel: byok.model || model,
+    agentId: activeAgentId || model,
+  })
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([])
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
   const [workspaceVisible, setWorkspaceVisible] = useState(false)
   const [openRequest, setOpenRequest] = useState<{ name: string; nonce: number } | null>(null)
+  const [designSkills, setDesignSkills] = useState<DesignSkillSummary[]>([])
+  const [designSkillsLoading, setDesignSkillsLoading] = useState(false)
+  const [designSkillsError, setDesignSkillsError] = useState<string | null>(null)
+  const [selectedDesignSkillId, setSelectedDesignSkillId] = useState<string | null>(null)
   const generatedArtifactKeys = useRef<Set<string>>(new Set())
   const messageLoadSeq = useRef(0)
   const sessionListLoadSeq = useRef(0)
   const messagesSessionId = useRef<string | null>(null)
   const creatingConversation = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setDesignSkillsLoading(true)
+    setDesignSkillsError(null)
+    listDesignSkills()
+      .then((skills) => {
+        if (!cancelled) setDesignSkills(skills)
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setDesignSkills([])
+          setDesignSkillsError(error instanceof Error ? error.message : "Design skills unavailable")
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDesignSkillsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const refreshWorkspaceFiles = useCallback(async (workspaceId = sessionId) => {
     if (!workspaceId) {
@@ -387,7 +421,7 @@ export default function ChatPage() {
             }
           : {
               type: "file_url" as const,
-              file_url: { url: att.path, file_name: att.name },
+              file_url: { url: att.url ?? att.path, file_name: att.name },
             }),
       })),
       { type: "text" as const, text: question },
@@ -490,6 +524,7 @@ export default function ChatPage() {
         frontend_persistence: true,
         user_message_id: userMessageId,
         assistant_message_id: assistantMessageId,
+        ...(selectedDesignSkillId ? { design_skill_id: selectedDesignSkillId } : {}),
       },
       shouldApply: () =>
         Boolean(streamSessionId) &&
@@ -626,6 +661,12 @@ export default function ChatPage() {
                 addMessage({ role: "system", content: "⚠️ 无法创建新会话，请稍后再试" })
               })
             }}
+            modelDisplayName={modelDisplayName}
+            designSkills={designSkills}
+            designSkillsLoading={designSkillsLoading}
+            designSkillsError={designSkillsError}
+            selectedDesignSkillId={selectedDesignSkillId}
+            onSelectDesignSkill={setSelectedDesignSkillId}
           />
         }
         rightPanel={
@@ -654,4 +695,35 @@ function toMillis(timestamp: number): number {
 
 function isHtmlWorkspaceArtifact(artifact: GeneratedWorkspaceArtifact): boolean {
   return artifact.name.toLowerCase().endsWith(".html")
+}
+
+function buildCurrentModelDisplayName({
+  providerMode,
+  protocol,
+  apiModel,
+  agentId,
+}: {
+  providerMode: "daemon" | "api"
+  protocol: string
+  apiModel: string
+  agentId: string
+}): string {
+  if (providerMode === "api") {
+    return `${apiProviderLabel(protocol)}-${apiModel || "default"}`
+  }
+  return `CLI-${cliAgentLabel(agentId)}`
+}
+
+function apiProviderLabel(protocol: string): string {
+  if (protocol === "openai") return "OpenAI"
+  if (protocol === "anthropic") return "Anthropic"
+  if (protocol === "azure") return "Azure"
+  if (protocol === "google") return "Google"
+  return protocol || "API"
+}
+
+function cliAgentLabel(agentId: string): string {
+  if (agentId === "claude") return "Claude Code"
+  if (agentId === "codex") return "Codex"
+  return agentDisplayName(agentId) ?? (agentId || "CLI")
 }

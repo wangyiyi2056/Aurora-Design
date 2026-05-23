@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useT } from '../../../i18n';
 import type { Dict } from '../../../i18n/types';
+import type { DesignSkillSummary } from '../../../services/design-skills';
 import { projectRawUrl, uploadProjectFiles, openFolderDialog } from "../providers/registry";
 import { patchProject } from "../state/projects";
 import type { AppConfig, ChatAttachment, ChatCommentAttachment, ProjectFile, ProjectMetadata } from "../types";
@@ -60,6 +61,13 @@ interface Props {
   onOpenPetSettings?: () => void;
   projectMetadata?: ProjectMetadata;
   onProjectMetadataChange?: (metadata: ProjectMetadata) => void;
+  onRequestOpenFile?: (name: string) => void;
+  modelDisplayName?: string;
+  designSkills?: DesignSkillSummary[];
+  designSkillsLoading?: boolean;
+  designSkillsError?: string | null;
+  selectedDesignSkillId?: string | null;
+  onSelectDesignSkill?: (skillId: string | null) => void;
 }
 
 // Imperative handle so ancestors (e.g. example chips in ChatPane) can
@@ -97,6 +105,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       onOpenPetSettings,
       projectMetadata,
       onProjectMetadataChange,
+      onRequestOpenFile,
+      modelDisplayName,
+      designSkills = [],
+      designSkillsLoading = false,
+      designSkillsError = null,
+      selectedDesignSkillId = null,
+      onSelectDesignSkill,
     },
     ref
   ) {
@@ -120,6 +135,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [importOpen, setImportOpen] = useState(false);
+    const [designSkillPickerOpen, setDesignSkillPickerOpen] = useState(false);
+    const [designSkillQuery, setDesignSkillQuery] = useState("");
     const [petOpen, setPetOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -129,6 +146,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     const petTriggerRef = useRef<HTMLButtonElement | null>(null);
     const petEnabled = Boolean(onAdoptPet && onTogglePet);
     const linkedDirs = projectMetadata?.linkedDirs ?? [];
+    const selectedDesignSkill = designSkills.find((skill) => skill.id === selectedDesignSkillId) ?? null;
     // initialDraft is only honored on the first non-empty value the parent
     // hands us. After we seed once, the composer is fully under user control
     // — re-renders that pass the same prompt back must not reseed. If the
@@ -236,6 +254,25 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       if (!q) return slashCommands;
       return slashCommands.filter((c) => c.label.toLowerCase().includes(q));
     }, [slash, slashCommands]);
+
+    const filteredDesignSkills = useMemo(() => {
+      const q = designSkillQuery.trim().toLowerCase();
+      if (!q) return designSkills;
+      return designSkills.filter((skill) =>
+        [skill.name, skill.description, skill.mode, skill.surface, skill.scenario, skill.source]
+          .filter(Boolean)
+          .some((value) => value.toLowerCase().includes(q)),
+      );
+    }, [designSkillQuery, designSkills]);
+
+    function useDesignSkillPrompt(skill: DesignSkillSummary) {
+      if (!skill.examplePrompt) return;
+      setDraft(skill.examplePrompt);
+      onSelectDesignSkill?.(skill.id);
+      setDesignSkillPickerOpen(false);
+      setImportOpen(false);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
 
     function pickSlash(cmd: SlashCommand) {
       const ta = textareaRef.current;
@@ -528,6 +565,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             <StagedAttachments
               attachments={staged}
               onRemove={removeStaged}
+              onOpen={onRequestOpenFile}
               t={t}
             />
           ) : null}
@@ -686,11 +724,57 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                     icon="sparkles"
                     label={t('chat.importSkills')}
                     t={t}
+                    enabled
+                    onClick={() => {
+                      setDesignSkillPickerOpen((v) => !v);
+                      setImportOpen(false);
+                    }}
                   />
                   <ImportItem icon="file" label={t('chat.importProject')} t={t} />
                 </div>
               ) : null}
+              {designSkillPickerOpen ? (
+                <DesignSkillPicker
+                  skills={filteredDesignSkills}
+                  query={designSkillQuery}
+                  loading={designSkillsLoading}
+                  error={designSkillsError}
+                  onQueryChange={setDesignSkillQuery}
+                  selectedId={selectedDesignSkillId}
+                  onSelect={(skill) => {
+                    onSelectDesignSkill?.(skill.id);
+                    setDesignSkillPickerOpen(false);
+                  }}
+                  onUsePrompt={useDesignSkillPrompt}
+                  onClose={() => setDesignSkillPickerOpen(false)}
+                />
+              ) : null}
             </div>
+            {modelDisplayName ? (
+              <span
+                className="composer-model-pill"
+                title={`Current model: ${modelDisplayName}`}
+                aria-label={`Current model: ${modelDisplayName}`}
+              >
+                {modelDisplayName}
+              </span>
+            ) : null}
+            {selectedDesignSkill ? (
+              <span
+                className="composer-design-skill-pill"
+                title={`Active design skill: ${selectedDesignSkill.name}`}
+              >
+                <Icon name="sparkles" size={12} />
+                <span>{selectedDesignSkill.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Clear design skill ${selectedDesignSkill.name}`}
+                  onClick={() => onSelectDesignSkill?.(null)}
+                >
+                  <Icon name="close" size={10} />
+                </button>
+              </span>
+            ) : null}
             {petEnabled ? (
               <div className="composer-pet-wrap">
                 <button
@@ -822,27 +906,39 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
 function StagedAttachments({
   attachments,
   onRemove,
+  onOpen,
   t,
 }: {
   attachments: ChatAttachment[];
   onRemove: (path: string) => void;
+  onOpen?: (path: string) => void;
   t: TranslateFn;
 }) {
   return (
     <div className="staged-row" data-testid="staged-attachments">
       {attachments.map((a) => (
-        <div key={a.path} className={`staged-chip staged-${a.kind}`}>
-          {a.kind === "image" ? (
-            <img src={a.url ?? projectRawUrl(a.path)} alt={a.name} />
-          ) : (
-            <span className="staged-icon" aria-hidden>
-              <Icon name="file" size={13} />
-            </span>
-          )}
-          <span className="staged-name" title={a.path}>
-            {a.name}
-          </span>
+        <div key={a.path} className={`staged-chip staged-${a.kind}${onOpen ? " openable" : ""}`}>
           <button
+            type="button"
+            className="staged-open"
+            onClick={() => onOpen?.(a.path)}
+            disabled={!onOpen}
+            title={onOpen ? `Open preview: ${a.path}` : a.path}
+            aria-label={`Open ${a.name}`}
+          >
+            {a.kind === "image" ? (
+              <img src={a.url ?? projectRawUrl(a.path)} alt={a.name} />
+            ) : (
+              <span className="staged-icon" aria-hidden>
+                <Icon name="file" size={13} />
+              </span>
+            )}
+            <span className="staged-name">
+              {a.name}
+            </span>
+          </button>
+          <button
+            type="button"
             className="staged-remove"
             onClick={() => onRemove(a.path)}
             title={t('common.delete')}
@@ -883,6 +979,89 @@ function StagedCommentAttachments({
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+function DesignSkillPicker({
+  skills,
+  query,
+  loading,
+  error,
+  selectedId,
+  onQueryChange,
+  onSelect,
+  onUsePrompt,
+  onClose,
+}: {
+  skills: DesignSkillSummary[];
+  query: string;
+  loading: boolean;
+  error: string | null;
+  selectedId: string | null;
+  onQueryChange: (value: string) => void;
+  onSelect: (skill: DesignSkillSummary) => void;
+  onUsePrompt: (skill: DesignSkillSummary) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="composer-design-skill-picker" role="dialog" aria-label="Design skills">
+      <div className="composer-design-skill-head">
+        <strong>Design skills</strong>
+        <button type="button" aria-label="Close design skills" onClick={onClose}>
+          <Icon name="close" size={12} />
+        </button>
+      </div>
+      <input
+        type="search"
+        value={query}
+        onChange={(event) => onQueryChange(event.currentTarget.value)}
+        placeholder="Filter skills"
+        aria-label="Filter design skills"
+      />
+      <div className="composer-design-skill-list">
+        {loading ? (
+          <div className="composer-design-skill-empty">Loading design skills...</div>
+        ) : error ? (
+          <div className="composer-design-skill-empty error">{error}</div>
+        ) : skills.length === 0 ? (
+          <div className="composer-design-skill-empty">No design skills found</div>
+        ) : (
+          skills.map((skill) => (
+            <div
+              key={skill.id}
+              className={`composer-design-skill-card${selectedId === skill.id ? ' selected' : ''}`}
+            >
+              <div className="composer-design-skill-title">
+                <strong>{skill.name}</strong>
+                <span>{skill.source}</span>
+              </div>
+              {skill.description ? <p>{skill.description}</p> : null}
+              <div className="composer-design-skill-meta">
+                {[skill.mode, skill.surface, skill.scenario, skill.previewType]
+                  .filter(Boolean)
+                  .map((item) => (
+                    <span key={item}>{item}</span>
+                  ))}
+              </div>
+              <div className="composer-design-skill-actions">
+                <button type="button" onClick={() => onSelect(skill)} aria-label={`Use ${skill.name}`}>
+                  Use
+                </button>
+                {skill.examplePrompt ? (
+                  <button
+                    type="button"
+                    onClick={() => onUsePrompt(skill)}
+                    aria-label={`Use prompt from ${skill.name}`}
+                  >
+                    Prompt
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

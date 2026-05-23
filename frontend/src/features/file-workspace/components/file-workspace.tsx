@@ -31,11 +31,18 @@ export function FileWorkspace({
   const persisted = getTabsState(workspaceId)
   const [localState, setLocalState] = useState<WorkspaceTabsState>(persisted)
   const [dragActive, setDragActive] = useState(false)
+  const [selectedNames, setSelectedNames] = useState<Set<string>>(() => new Set())
   const active = localState.active ?? FILES_TAB
 
   useEffect(() => {
     setLocalState(getTabsState(workspaceId))
+    setSelectedNames(new Set())
   }, [getTabsState, workspaceId])
+
+  useEffect(() => {
+    const names = new Set(files.map((file) => file.name))
+    setSelectedNames((current) => new Set([...current].filter((name) => names.has(name))))
+  }, [files])
 
   useEffect(() => {
     if (!openRequest?.name) return
@@ -91,8 +98,36 @@ export function FileWorkspace({
   async function handleDelete(name: string) {
     const ok = await deleteWorkspaceFile(workspaceId, name)
     if (!ok) return
+    setSelectedNames((current) => {
+      const next = new Set(current)
+      next.delete(name)
+      return next
+    })
     closeFile(name)
     await onRefreshFiles?.()
+  }
+
+  function toggleSelected(name: string) {
+    setSelectedNames((current) => {
+      const next = new Set(current)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  async function handleDeleteSelected() {
+    const names = [...selectedNames]
+    if (names.length === 0) return
+    const results = await Promise.all(names.map((name) => deleteWorkspaceFile(workspaceId, name)))
+    const deleted = new Set(names.filter((_, index) => results[index]))
+    if (deleted.size > 0) {
+      const tabs = localState.tabs.filter((tab) => !deleted.has(tab))
+      const nextActive = deleted.has(active) ? tabs.at(-1) ?? FILES_TAB : active
+      commit({ tabs, active: nextActive === FILES_TAB ? null : nextActive })
+      setSelectedNames((current) => new Set([...current].filter((name) => !deleted.has(name))))
+      await onRefreshFiles?.()
+    }
   }
 
   const fileByName = useMemo(() => new Map(files.map((file) => [file.name, file])), [files])
@@ -177,6 +212,9 @@ export function FileWorkspace({
                 onUpload={() => inputRef.current?.click()}
                 onRename={handleRename}
                 onDelete={handleDelete}
+                selectedNames={selectedNames}
+                onToggleSelected={toggleSelected}
+                onDeleteSelected={handleDeleteSelected}
               />
             </div>
           )}

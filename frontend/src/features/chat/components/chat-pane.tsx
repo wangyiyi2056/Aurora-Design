@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useT } from '../../../i18n';
 import type { Dict } from '../../../i18n/types';
+import type { DesignSkillSummary } from '../../../services/design-skills';
 import { projectRawUrl } from '../providers/registry';
 import type { TodoItem } from '../runtime/todos';
 import type { AppConfig, ChatAttachment, ChatCommentAttachment, ChatMessage, Conversation, PreviewComment, ProjectFile, ProjectMetadata } from '../types';
@@ -89,6 +90,12 @@ interface Props {
   onAdoptPet?: (petId: string) => void;
   onTogglePet?: () => void;
   onOpenPetSettings?: () => void;
+  modelDisplayName?: string;
+  designSkills?: DesignSkillSummary[];
+  designSkillsLoading?: boolean;
+  designSkillsError?: string | null;
+  selectedDesignSkillId?: string | null;
+  onSelectDesignSkill?: (skillId: string | null) => void;
   projectMetadata?: ProjectMetadata;
   onProjectMetadataChange?: (metadata: ProjectMetadata) => void;
 }
@@ -118,6 +125,12 @@ export function ChatPane({
   onAdoptPet,
   onTogglePet,
   onOpenPetSettings,
+  modelDisplayName,
+  designSkills = [],
+  designSkillsLoading = false,
+  designSkillsError = null,
+  selectedDesignSkillId = null,
+  onSelectDesignSkill,
   projectMetadata,
   onProjectMetadataChange,
 }: Props) {
@@ -127,6 +140,7 @@ export function ChatPane({
   const didInitialScrollRef = useRef(false);
   const [tab, setTab] = useState<Tab>('chat');
   const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const lastAssistantId = [...messages].reverse().find((m) => m.role === 'assistant')?.id;
   const hasActiveRunMessage = messages.some(
     (m) => m.role === 'assistant' && isActiveRunStatus(m.runStatus),
@@ -192,6 +206,29 @@ export function ChatPane({
     const el = logRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }
+
+  function editUserMessage(message: ChatMessage) {
+    composerRef.current?.setDraft(message.content);
+  }
+
+  async function copyUserMessage(message: ChatMessage) {
+    const text = message.content;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopiedMessageId(message.id);
+    window.setTimeout(() => setCopiedMessageId((id) => (id === message.id ? null : id)), 1200);
   }
 
   return (
@@ -284,14 +321,20 @@ export function ChatPane({
                 const messageStreaming =
                   m.role === 'assistant' &&
                   ((streaming && m.id === lastAssistantId) || isActiveRunStatus(m.runStatus));
+                const retryEditable =
+                  m.role === 'user' && isRetryEditableUserMessage(messages, i, streaming);
                 return (
                   <Fragment key={m.id}>
                     {showDaySeparator ? <DaySeparator ts={messageTime(m)} /> : null}
                     {m.role === 'user' ? (
                       <UserMessage
                         message={m}
+                        retryEditable={retryEditable}
+                        copied={copiedMessageId === m.id}
                         projectFileNames={projectFileNames}
                         onRequestOpenFile={onRequestOpenFile}
+                        onEdit={() => editUserMessage(m)}
+                        onCopy={() => void copyUserMessage(m)}
                         t={t}
                       />
                     ) : (
@@ -346,6 +389,13 @@ export function ChatPane({
             onOpenPetSettings={onOpenPetSettings}
             projectMetadata={projectMetadata}
             onProjectMetadataChange={onProjectMetadataChange}
+            onRequestOpenFile={onRequestOpenFile}
+            modelDisplayName={modelDisplayName}
+            designSkills={designSkills}
+            designSkillsLoading={designSkillsLoading}
+            designSkillsError={designSkillsError}
+            selectedDesignSkillId={selectedDesignSkillId}
+            onSelectDesignSkill={onSelectDesignSkill}
           />
         </>
       ) : null}
@@ -367,19 +417,28 @@ function isActiveRunStatus(status: ChatMessage['runStatus']): boolean {
 
 function UserMessage({
   message,
+  retryEditable,
+  copied,
   projectFileNames,
   onRequestOpenFile,
+  onEdit,
+  onCopy,
   t,
 }: {
   message: ChatMessage;
+  retryEditable: boolean;
+  copied: boolean;
   projectFileNames?: Set<string>;
   onRequestOpenFile?: (name: string) => void;
+  onEdit: () => void;
+  onCopy: () => void;
   t: TranslateFn;
 }) {
   const attachments = message.attachments ?? [];
   const commentAttachments = message.commentAttachments ?? [];
+  const text = message.content;
   return (
-    <div className="msg user">
+    <div className={`msg user${retryEditable ? ' retry-editable' : ''}`}>
       <div className="role">
         <span>{t('chat.you')}</span>
         <MessageTimestamp message={message} t={t} />
@@ -390,9 +449,9 @@ function UserMessage({
             const baseName = a.path.split('/').pop() || a.path;
             const openable =
               !!onRequestOpenFile &&
-              (projectFileNames ? projectFileNames.has(baseName) : true);
+              (projectFileNames ? projectFileNames.has(a.path) || projectFileNames.has(baseName) : true);
             const handleOpen = openable
-              ? () => onRequestOpenFile?.(baseName)
+              ? () => onRequestOpenFile?.(a.path)
               : undefined;
             return (
               <button
@@ -426,9 +485,63 @@ function UserMessage({
           ))}
         </div>
       ) : null}
-      {message.content ? <div className="user-text">{message.content}</div> : null}
+      {text ? (
+        retryEditable ? (
+          <button
+            type="button"
+            className="user-text retry-edit-trigger"
+            data-testid={`retry-edit-user-message-${message.id}`}
+            title="点击重新编辑这次失败的请求"
+            onClick={onEdit}
+          >
+            {text}
+          </button>
+        ) : (
+          <div className="user-text">{text}</div>
+        )
+      ) : null}
+      <div className="user-message-actions" aria-label="消息操作">
+        <button
+          type="button"
+          className="msg-action"
+          aria-label="复制"
+          title={copied ? '已复制' : '复制'}
+          onClick={onCopy}
+        >
+          <Icon name={copied ? 'check' : 'copy'} size={13} />
+        </button>
+        <button
+          type="button"
+          className="msg-action"
+          aria-label="编辑"
+          title="编辑"
+          onClick={onEdit}
+        >
+          <Icon name="edit" size={13} />
+        </button>
+      </div>
     </div>
   );
+}
+
+function isRetryEditableUserMessage(messages: ChatMessage[], index: number, streaming: boolean): boolean {
+  if (streaming) return false;
+  const message = messages[index];
+  if (!message || message.role !== 'user') return false;
+  const next = messages[index + 1];
+  if (!next) return index === messages.length - 1;
+  if (next.role !== 'assistant') return false;
+  if (next.runStatus === 'failed' || next.runStatus === 'canceled') return true;
+  return !assistantHasVisibleOutput(next);
+}
+
+function assistantHasVisibleOutput(message: ChatMessage): boolean {
+  if (message.content.trim().length > 0) return true;
+  return (message.events ?? []).some((event) => {
+    if (event.kind === 'text' || event.kind === 'thinking') return event.text.trim().length > 0;
+    if (event.kind === 'tool_result') return event.content.trim().length > 0 || event.isError;
+    return event.kind === 'tool_use' || event.kind === 'usage' || event.kind === 'live_artifact' || event.kind === 'live_artifact_refresh';
+  });
 }
 
 function DaySeparator({ ts }: { ts: number | undefined }) {
