@@ -492,17 +492,12 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<"loading" | "pdf" | "rendered" | "error">("loading")
   const [pdfSrc, setPdfSrc] = useState("")
-  const [errorMsg, setErrorMsg] = useState("")
-  const [errorDetails, setErrorDetails] = useState("")
-  const [copiedError, copyError] = useCopyState()
 
   useEffect(() => {
     let cancelled = false
     let viewer: any = null
     setStatus("loading")
     setPdfSrc("")
-    setErrorMsg("")
-    setErrorDetails("")
 
     const load = async () => {
       try {
@@ -548,9 +543,6 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
       } catch (e: any) {
         console.error("[PptxViewer]", e)
         if (!cancelled) { 
-          // Use a friendly generic message for the user, but keep technical stack for debugging
-          setErrorMsg("Preview unavailable for this presentation format. Please download it.")
-          setErrorDetails(e instanceof Error && e.stack ? e.stack : String(e))
           setStatus("error") 
         }
       }
@@ -571,26 +563,13 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         
         {status === "loading" && <ViewerOverlay loading error={null} />}
         {status === "error" && (
-          <div className="flex h-full min-h-[600px] items-center justify-center p-8">
-            <div className="w-full max-w-2xl rounded-xl border border-destructive/20 bg-destructive/5 p-6 shadow-sm">
-              <div className="flex items-center justify-between border-b border-destructive/20 pb-4">
-                <p className="font-semibold text-destructive">Preview failed</p>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="h-8 gap-1.5"
-                  onClick={() => copyError(errorDetails)}
-                >
-                  {copiedError ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copiedError ? "Copied" : "Copy Error Details"}
-                </Button>
-              </div>
-              <p className="mt-4 text-sm font-medium text-foreground">{errorMsg}</p>
-              <div className="mt-3 overflow-auto rounded-md bg-background/50 p-3">
-                <pre className="text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
-                  {errorDetails}
-                </pre>
-              </div>
+          <div className="flex h-full items-center justify-center p-8">
+            <div className="max-w-sm rounded-xl border border-dashed p-6 text-center">
+              <p className="font-semibold text-foreground">Preview not available</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                This presentation format is unsupported or contains incompatible elements. <br />
+                Please download the file to view it locally.
+              </p>
             </div>
           </div>
         )}
