@@ -540,8 +540,16 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         setDebugInfo(`Step 3: Calling initPptxPreview with width=${width}, height=${height}, bytes=${buf.byteLength}`)
         viewer = initPptxPreview(wrap, { width, height })
         await viewer.preview(buf)
+        
         if (!cancelled) {
-          setDebugInfo("Step 4: pptx-preview finished rendering successfully.")
+          // pptx-preview sometimes resolves successfully but renders absolutely nothing
+          // (e.g. for unsupported legacy formats or corrupted internal XML).
+          // We can detect this silent failure by checking if it actually appended any slides.
+          if (wrap.children.length === 0) {
+            throw new Error("The presentation contains no supported slides, or is an incompatible format. Please download the file to view it.")
+          }
+          
+          setDebugInfo("Step 4: pptx-preview finished rendering successfully with DOM elements.")
           setStatus("rendered")
         }
       } catch (e: any) {
