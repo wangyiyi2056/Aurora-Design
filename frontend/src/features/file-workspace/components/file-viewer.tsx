@@ -23,17 +23,17 @@ import {
   exportIframeAsPng,
   downloadWorkspaceArchive,
 } from "../runtime/workspace-exports"
-import { fetchWorkspaceFileText, workspaceRawUrl } from "../services/workspace-files"
+import { fetchWorkspaceFileText, workspaceRawUrl, fetchWorkspaceFilePreviewInfo, workspacePreviewPdfUrl } from "../services/workspace-files"
 import type { WorkspaceFile } from "../types"
+import jsPreviewExcel from "@js-preview/excel"
+import "@js-preview/excel/lib/index.css"
+import mammoth from "mammoth"
+import Papa from "papaparse"
+import { init as initPptxPreview } from "pptx-preview"
 
 interface FileViewerProps {
   workspaceId: string
   file: WorkspaceFile
-}
-
-interface WorkspacePreviewResponse {
-  title: string
-  sections: Array<{ title: string; lines: string[] }>
 }
 
 type Viewport = "desktop" | "tablet" | "mobile"
@@ -54,9 +54,16 @@ export function FileViewer({ workspaceId, file }: FileViewerProps) {
   if (file.kind === "text" || file.kind === "code" || file.kind === "json") {
     return <TextViewer workspaceId={workspaceId} file={file} />
   }
-  if (file.kind === "pdf" || file.kind === "document" || file.kind === "presentation" || file.kind === "spreadsheet") {
-    return <DocumentPreviewViewer workspaceId={workspaceId} file={file} />
+  if (file.kind === "pdf") return <PdfViewer workspaceId={workspaceId} file={file} />
+  if (file.kind === "spreadsheet") {
+    // Check if it's a CSV file
+    if (file.name.toLowerCase().endsWith(".csv")) {
+      return <CsvViewer workspaceId={workspaceId} file={file} />
+    }
+    return <ExcelViewer workspaceId={workspaceId} file={file} />
   }
+  if (file.kind === "document") return <DocxViewer workspaceId={workspaceId} file={file} />
+  if (file.kind === "presentation") return <PptxViewer workspaceId={workspaceId} file={file} />
   return <BinaryViewer workspaceId={workspaceId} file={file} />
 }
 
@@ -277,54 +284,372 @@ function TextViewer({ workspaceId, file }: FileViewerProps) {
   )
 }
 
-function DocumentPreviewViewer({ workspaceId, file }: FileViewerProps) {
-  const [preview, setPreview] = useState<WorkspacePreviewResponse | null>(null)
+function PdfViewer({ workspaceId, file }: FileViewerProps) {
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">PDF · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
+      <iframe title={file.name} src={`${workspaceRawUrl(workspaceId, file.name)}?v=${Math.round(file.mtime)}`} className="min-h-0 flex-1 border-0 bg-white" />
+    </div>
+  )
+}
+
+function ExcelViewer({ workspaceId, file }: FileViewerProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    fetch(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/files/${file.name.split("/").map(encodeURIComponent).join("/")}/preview`)
-      .then((resp) => (resp.ok ? resp.json() : null))
-      .then((value) => {
-        if (!cancelled) setPreview(value as WorkspacePreviewResponse | null)
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+    let previewer: any = null
+
+    const loadExcel = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const url = workspaceRawUrl(workspaceId, file.name)
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`)
+        const arrayBuffer = await response.arrayBuffer()
+
+        if (!cancelled && containerRef.current) {
+          previewer = jsPreviewExcel.init(containerRef.current)
+          await previewer.preview(arrayBuffer)
+        }
+      } catch (err) {
+        console.error("Excel preview error:", err)
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load preview")
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadExcel()
+
+    return () => {
+      cancelled = true
+      if (previewer) {
+        previewer.destroy()
+      }
+    }
+  }, [file.name, file.mtime, workspaceId])
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">Excel · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
+      <div className="relative flex-1 overflow-auto" style={{ minHeight: 300 }}>
+        <div ref={containerRef} className="h-full w-full" style={{ minHeight: 300 }} />
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+            <span className="text-sm text-muted-foreground">Loading preview...</span>
+          </div>
+        )}
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+            <span className="text-sm text-muted-foreground">Preview unavailable: {error}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CsvViewer({ workspaceId, file }: FileViewerProps) {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [headers, setHeaders] = useState<string[]>([])
+  const [rows, setRows] = useState<string[][]>([])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadCsv = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const url = workspaceRawUrl(workspaceId, file.name)
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`)
+        const text = await response.text()
+
+        if (!cancelled) {
+          const result = Papa.parse<string[]>(text, {
+            header: false,
+            skipEmptyLines: true,
+          })
+          const allRows = result.data as string[][]
+          if (allRows.length > 0) {
+            setHeaders(allRows[0])
+            setRows(allRows.slice(1))
+          }
+        }
+      } catch (err) {
+        console.error("CSV preview error:", err)
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load preview")
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadCsv()
+
     return () => {
       cancelled = true
     }
   }, [file.name, file.mtime, workspaceId])
 
-  if (file.kind === "pdf") {
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        <ViewerToolbar left={<span className="text-xs text-muted-foreground">PDF · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
-        <iframe title={file.name} src={workspaceRawUrl(workspaceId, file.name)} className="min-h-0 flex-1 border-0 bg-white" />
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">CSV · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
+      <div className="relative flex-1 overflow-auto" style={{ minHeight: 300 }}>
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+            <span className="text-sm text-muted-foreground">Loading preview...</span>
+          </div>
+        )}
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+            <span className="text-sm text-muted-foreground">Preview unavailable: {error}</span>
+          </div>
+        )}
+        {!loading && !error && headers.length > 0 && (
+          <table className="min-w-full divide-y divide-border text-sm">
+            <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+              <tr>
+                {headers.map((header, index) => (
+                  <th key={`h-${index}`} className="px-4 py-2 text-left font-medium text-foreground whitespace-nowrap">
+                    {header || `Column ${index + 1}`}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((row, rowIndex) => (
+                <tr key={`r-${rowIndex}`} className="hover:bg-muted/30">
+                  {row.map((cell, cellIndex) => (
+                    <td key={`c-${rowIndex}-${cellIndex}`} className="px-4 py-2 whitespace-nowrap text-muted-foreground">
+                      {cell || "-"}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
-    )
-  }
+    </div>
+  )
+}
+
+function DocxViewer({ workspaceId, file }: FileViewerProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [usePdfPreview, setUsePdfPreview] = useState<boolean>(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadDocx = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        // Step 1: Check if backend can convert it to PDF (e.g. LibreOffice is available)
+        const previewInfo = await fetchWorkspaceFilePreviewInfo(workspaceId, file.name)
+        if (!cancelled && previewInfo?.previewAvailable) {
+          setUsePdfPreview(true)
+          setLoading(false)
+          return
+        }
+
+        // Step 2: Fall back to mammoth (docx only)
+        const url = workspaceRawUrl(workspaceId, file.name)
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`)
+        const arrayBuffer = await response.arrayBuffer()
+
+        if (cancelled || !containerRef.current) return
+
+        const headerBytes = new Uint8Array(arrayBuffer.slice(0, 4))
+        const isZip = headerBytes.length >= 2 && headerBytes[0] === 0x50 && headerBytes[1] === 0x4b
+
+        if (!isZip) {
+          containerRef.current.innerHTML = `
+            <div class="flex h-full items-center justify-center">
+              <div class="border border-dashed rounded-xl p-8 max-w-2xl text-center">
+                <p class="text-xl font-bold mb-4">Preview is not available for this document</p>
+                <p class="text-sm opacity-70">Only modern .docx files are supported for preview.<br/>This file appears to be a legacy .doc format, and LibreOffice is not configured on the backend.</p>
+              </div>
+            </div>
+          `
+          return
+        }
+
+        const result = await mammoth.convertToHtml(
+          { arrayBuffer },
+          { includeDefaultStyleMap: true },
+        )
+
+        if (!cancelled && containerRef.current) {
+          containerRef.current.innerHTML = result.value
+        }
+      } catch (err) {
+        console.error("DOCX preview error:", err)
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load document")
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadDocx()
+
+    return () => {
+      cancelled = true
+    }
+  }, [file.name, file.mtime, workspaceId])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ViewerToolbar left={<span className="text-xs text-muted-foreground">{file.kind} · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
-      <div className="min-h-0 flex-1 overflow-auto p-6">
-        {loading ? (
-          <div className="text-sm text-muted-foreground">Loading preview...</div>
-        ) : preview ? (
-          <div className="mx-auto max-w-3xl space-y-5">
-            <h2 className="text-lg font-semibold">{preview.title}</h2>
-            {preview.sections.map((section, index) => (
-              <section key={`${section.title}-${index}`} className="rounded-md border p-4">
-                <h3 className="text-sm font-semibold">{section.title}</h3>
-                <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-                  {section.lines.map((line, lineIndex) => <p key={`${lineIndex}-${line}`}>{line}</p>)}
-                </div>
-              </section>
-            ))}
-          </div>
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">Document · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
+      <div className="relative flex-1 overflow-auto bg-white" style={{ minHeight: 300 }}>
+        {usePdfPreview ? (
+          <iframe
+            title={file.name}
+            src={`${workspacePreviewPdfUrl(workspaceId, file.name)}?v=${Math.round(file.mtime)}`}
+            className="h-full w-full border-0 bg-white"
+          />
         ) : (
-          <div className="text-sm text-muted-foreground">Preview unavailable.</div>
+          <div ref={containerRef} className="h-full w-full p-6 prose prose-sm max-w-none" style={{ minHeight: 500 }} />
+        )}
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+            <span className="text-sm text-muted-foreground">Loading preview...</span>
+          </div>
+        )}
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+            <span className="text-sm text-muted-foreground">Preview unavailable: {error}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PptxViewer({ workspaceId, file }: FileViewerProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [usePdfPreview, setUsePdfPreview] = useState<boolean>(false)
+
+  useEffect(() => {
+    let cancelled = false
+    let pptxViewer: any = null
+
+    const loadPptx = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        // Step 1: Check if backend can convert it to PDF (e.g. LibreOffice is available)
+        const previewInfo = await fetchWorkspaceFilePreviewInfo(workspaceId, file.name)
+        if (!cancelled && previewInfo?.previewAvailable) {
+          setUsePdfPreview(true)
+          setLoading(false)
+          return
+        }
+
+        // Step 2: Fall back to pptx-preview (pptx only)
+        const url = workspaceRawUrl(workspaceId, file.name)
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`)
+        const arrayBuffer = await response.arrayBuffer()
+
+        if (!cancelled && containerRef.current) {
+          // Wait for container to have real dimensions using ResizeObserver
+          const el = containerRef.current
+          const { width, height } = await new Promise<{ width: number; height: number }>((resolve) => {
+            const check = () => {
+              if (el.clientWidth > 0 && el.clientHeight > 0) {
+                resolve({ width: el.clientWidth, height: el.clientHeight })
+                return true
+              }
+              return false
+            }
+            if (check()) return
+            const ro = new ResizeObserver(() => {
+              if (check()) ro.disconnect()
+            })
+            ro.observe(el)
+            // Safety timeout after 2s — use fallback dimensions
+            setTimeout(() => {
+              ro.disconnect()
+              resolve({ width: el.clientWidth || 800, height: el.clientHeight || 600 })
+            }, 2000)
+          })
+
+          if (cancelled || !containerRef.current) return
+          pptxViewer = initPptxPreview(containerRef.current, { width, height })
+          await pptxViewer.preview(arrayBuffer)
+        }
+      } catch (err) {
+        console.error("PPTX preview error:", err)
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load presentation")
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadPptx()
+
+    return () => {
+      cancelled = true
+      if (pptxViewer) {
+        pptxViewer.destroy()
+      }
+    }
+  }, [file.name, file.mtime, workspaceId])
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">Presentation · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
+      <div className="relative flex-1 overflow-auto bg-white" style={{ minHeight: 300 }}>
+        {usePdfPreview ? (
+          <iframe
+            title={file.name}
+            src={`${workspacePreviewPdfUrl(workspaceId, file.name)}?v=${Math.round(file.mtime)}`}
+            className="h-full w-full border-0 bg-white"
+          />
+        ) : (
+          <div ref={containerRef} className="h-full w-full ppt-previewer" style={{ minHeight: 500 }} />
+        )}
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+            <span className="text-sm text-muted-foreground">Loading preview...</span>
+          </div>
+        )}
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+            <span className="text-sm text-muted-foreground">Preview unavailable: {error}</span>
+          </div>
         )}
       </div>
     </div>
