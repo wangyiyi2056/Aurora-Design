@@ -493,6 +493,8 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
   const [status, setStatus] = useState<"loading" | "pdf" | "rendered" | "error">("loading")
   const [pdfSrc, setPdfSrc] = useState("")
   const [errorMsg, setErrorMsg] = useState("")
+  const [errorDetails, setErrorDetails] = useState("")
+  const [copiedError, copyError] = useCopyState()
 
   useEffect(() => {
     let cancelled = false
@@ -500,6 +502,7 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
     setStatus("loading")
     setPdfSrc("")
     setErrorMsg("")
+    setErrorDetails("")
 
     const load = async () => {
       try {
@@ -532,9 +535,13 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         viewer = initPptxPreview(wrap, { width, height })
         await viewer.preview(buf)
         if (!cancelled) setStatus("rendered")
-      } catch (e) {
+      } catch (e: any) {
         console.error("[PptxViewer]", e)
-        if (!cancelled) { setErrorMsg(String(e)); setStatus("error") }
+        if (!cancelled) { 
+          setErrorMsg(String(e))
+          setErrorDetails(e instanceof Error && e.stack ? e.stack : String(e))
+          setStatus("error") 
+        }
       }
     }
 
@@ -549,13 +556,29 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         right={<FileActions workspaceId={workspaceId} file={file} />}
       />
       {/* containerRef: fixed minHeight gives reliable dimensions for pptx-preview */}
-      <div ref={containerRef} className="relative flex-1 overflow-auto" style={{ minHeight: 600 }}>
+      <div ref={containerRef} className="relative flex-1 overflow-auto bg-muted/10" style={{ minHeight: 600 }}>
         {status === "loading" && <ViewerOverlay loading error={null} />}
         {status === "error" && (
           <div className="flex h-full min-h-[600px] items-center justify-center p-8">
-            <div className="max-w-sm rounded-xl border border-dashed p-6 text-center">
-              <p className="font-semibold">Preview failed</p>
-              <p className="mt-2 text-sm text-muted-foreground">{errorMsg}</p>
+            <div className="w-full max-w-2xl rounded-xl border border-destructive/20 bg-destructive/5 p-6 shadow-sm">
+              <div className="flex items-center justify-between border-b border-destructive/20 pb-4">
+                <p className="font-semibold text-destructive">Preview failed</p>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-8 gap-1.5"
+                  onClick={() => copyError(errorDetails)}
+                >
+                  {copiedError ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copiedError ? "Copied" : "Copy Error Details"}
+                </Button>
+              </div>
+              <p className="mt-4 text-sm font-medium text-foreground">{errorMsg}</p>
+              <div className="mt-3 overflow-auto rounded-md bg-background/50 p-3">
+                <pre className="text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                  {errorDetails}
+                </pre>
+              </div>
             </div>
           </div>
         )}
