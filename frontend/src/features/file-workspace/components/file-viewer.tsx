@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
+import Papa from "papaparse"
 import ReactMarkdown from "react-markdown"
 import {
   Archive,
@@ -87,6 +88,7 @@ export function FileViewer({ workspaceId, file }: FileViewerProps) {
   }
   if (file.kind === "pdf") return <PdfViewer workspaceId={workspaceId} file={file} />
   if (file.kind === "spreadsheet") {
+    if (file.name.toLowerCase().endsWith(".csv")) return <CsvViewer workspaceId={workspaceId} file={file} />
     return <ExcelViewer workspaceId={workspaceId} file={file} />
   }
   if (file.kind === "document") return <DocxViewer workspaceId={workspaceId} file={file} />
@@ -321,6 +323,96 @@ function ExcelViewer({ workspaceId, file }: FileViewerProps) {
   )
 }
 
+// ─── CSV Viewer ───────────────────────────────────────────────────────────────
+function CsvViewer({ workspaceId, file }: FileViewerProps) {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [rows, setRows] = useState<string[][]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        setLoading(true); setError(null)
+        const res = await fetch(workspaceRawUrl(workspaceId, file.name))
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const blob = await res.blob()
+        const text = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.readAsText(blob)
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = () => reject(reader.error)
+        })
+        if (cancelled) return
+        const result = Papa.parse<string[]>(text, { header: false, skipEmptyLines: false })
+        if (result.data) {
+          setRows(result.data as string[][])
+        }
+      } catch (e) {
+        if (!cancelled) setError(String(e))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [file.name, file.mtime, workspaceId])
+
+  const colCount = rows.length > 0 ? Math.max(...rows.map(r => r.length)) : 0
+
+  const getColName = (i: number) => {
+    let name = ""
+    let num = i
+    while (num >= 0) {
+      name = String.fromCharCode(65 + (num % 26)) + name
+      num = Math.floor(num / 26) - 1
+    }
+    return name
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">CSV · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
+      <div className="relative flex-1 overflow-auto bg-[#f8f9fa] dark:bg-muted/10">
+        <ViewerOverlay loading={loading} error={error} />
+        {!loading && !error && rows.length > 0 && (
+          <div className="inline-block min-w-full bg-background border-collapse">
+            <table className="border-collapse table-fixed bg-background text-sm">
+              <thead className="sticky top-0 z-10 shadow-sm">
+                <tr>
+                  <th className="w-12 bg-muted/50 border-r border-b border-border font-normal text-muted-foreground select-none"></th>
+                  {Array.from({ length: colCount }).map((_, i) => (
+                    <th key={i} className="min-w-[100px] px-2 py-1 bg-muted/50 border-r border-b border-border font-normal text-muted-foreground select-none font-mono">
+                      {getColName(i)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, ri) => (
+                  <tr key={ri} className="hover:bg-muted/10 group">
+                    <td className="sticky left-0 bg-muted/50 border-r border-b border-border text-center text-xs text-muted-foreground select-none">
+                      {ri + 1}
+                    </td>
+                    {Array.from({ length: colCount }).map((_, ci) => (
+                      <td key={ci} className="px-2 py-1 border-r border-b border-border whitespace-pre-wrap break-words group-hover:bg-muted/10">
+                        {row[ci] || ""}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!loading && !error && rows.length === 0 && (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">File is empty</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── DOCX Viewer ──────────────────────────────────────────────────────────────
 // Step 1: Try LibreOffice PDF via backend.
 // Step 2: Fetch as blob → probe ZIP magic (0x50 0x4B) → mammoth → iframe srcDoc.
@@ -494,7 +586,7 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         right={<FileActions workspaceId={workspaceId} file={file} />}
       />
       {/* containerRef: fixed minHeight gives reliable dimensions for pptx-preview */}
-      <div ref={containerRef} className="relative flex-1 overflow-auto bg-background [&_.pptx-wrapper]:!bg-transparent" style={{ minHeight: 600 }}>
+      <div ref={containerRef} className="relative flex-1 overflow-auto bg-background [&_.pptx-wrapper]:!bg-background [&_section]:!bg-background" style={{ minHeight: 600 }}>
         
         {status === "loading" && <ViewerOverlay loading error={null} />}
         {status === "error" && (
