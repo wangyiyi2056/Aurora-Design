@@ -50,46 +50,30 @@ const viewportClass: Record<Viewport, string> = {
   mobile: "w-[390px] max-w-full",
 }
 
-// ─── Shared DOCX iframe styles ────────────────────────────────────────────────
-// Injected into iframe srcDoc so mammoth-rendered HTML is fully isolated from
-// Tailwind's CSS reset — no @tailwindcss/typography needed.
+// ─── DOCX iframe styles ───────────────────────────────────────────────────────
+// Injected into iframe srcDoc — fully isolated from Tailwind CSS reset.
 const DOCX_IFRAME_STYLE = `
   body {
     font-family: system-ui, -apple-system, sans-serif;
-    font-size: 14px;
-    line-height: 1.7;
-    color: #1a1a1a;
-    padding: 1.5rem 2.5rem;
-    margin: 0;
-    max-width: 860px;
+    font-size: 14px; line-height: 1.7; color: #1a1a1a;
+    padding: 1.5rem 2.5rem; margin: 0; max-width: 860px;
   }
   p { margin-bottom: 0.6rem; }
   h1 { font-size: 1.6rem; font-weight: 700; margin: 1.2rem 0 0.6rem; }
   h2 { font-size: 1.3rem; font-weight: 600; margin: 1rem 0 0.5rem; }
   h3 { font-size: 1.1rem; font-weight: 600; margin: 0.9rem 0 0.4rem; }
-  h4, h5, h6 { font-weight: 600; margin: 0.8rem 0 0.4rem; }
-  ul, ol { padding-left: 1.5rem; margin-bottom: 0.6rem; }
+  h4,h5,h6 { font-weight: 600; margin: 0.8rem 0 0.4rem; }
+  ul,ol { padding-left: 1.5rem; margin-bottom: 0.6rem; }
   li { margin-bottom: 0.25rem; }
-  strong, b { font-weight: 600; }
-  em, i { font-style: italic; }
+  strong,b { font-weight: 600; }
+  em,i { font-style: italic; }
   table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
-  td, th { border: 1px solid #ddd; padding: 6px 12px; text-align: left; }
+  td,th { border: 1px solid #ddd; padding: 6px 12px; text-align: left; }
   th { background: #f5f5f5; font-weight: 600; }
   img { max-width: 100%; height: auto; }
   a { color: #2563eb; text-decoration: underline; }
-  blockquote {
-    border-left: 3px solid #ddd;
-    margin: 0.75rem 0;
-    padding: 0.25rem 1rem;
-    color: #555;
-  }
-  code {
-    background: #f1f1f1;
-    border-radius: 3px;
-    padding: 0.1em 0.35em;
-    font-size: 0.9em;
-    font-family: monospace;
-  }
+  blockquote { border-left: 3px solid #ddd; margin: 0.75rem 0; padding: 0.25rem 1rem; color: #555; }
+  code { background: #f1f1f1; border-radius: 3px; padding: 0.1em 0.35em; font-size: 0.9em; font-family: monospace; }
 `
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -104,9 +88,7 @@ export function FileViewer({ workspaceId, file }: FileViewerProps) {
   }
   if (file.kind === "pdf") return <PdfViewer workspaceId={workspaceId} file={file} />
   if (file.kind === "spreadsheet") {
-    if (file.name.toLowerCase().endsWith(".csv")) {
-      return <CsvViewer workspaceId={workspaceId} file={file} />
-    }
+    if (file.name.toLowerCase().endsWith(".csv")) return <CsvViewer workspaceId={workspaceId} file={file} />
     return <ExcelViewer workspaceId={workspaceId} file={file} />
   }
   if (file.kind === "document") return <DocxViewer workspaceId={workspaceId} file={file} />
@@ -130,9 +112,7 @@ function HtmlViewer({ workspaceId, file }: FileViewerProps) {
     fetchWorkspaceFileText(workspaceId, file.name, {
       cacheBustKey: `${file.mtime}-${reloadKey}`,
       cache: "no-store",
-    }).then((value) => {
-      if (!cancelled) setSource(value ?? "")
-    })
+    }).then((value) => { if (!cancelled) setSource(value ?? "") })
     return () => { cancelled = true }
   }, [file.mtime, file.name, reloadKey, workspaceId])
 
@@ -147,11 +127,7 @@ function HtmlViewer({ workspaceId, file }: FileViewerProps) {
             {mode === "preview" && (
               <>
                 <span className="h-5 w-px bg-border" />
-                <Segmented
-                  value={viewport}
-                  options={["desktop", "tablet", "mobile"]}
-                  onChange={(v) => setViewport(v as Viewport)}
-                />
+                <Segmented value={viewport} options={["desktop", "tablet", "mobile"]} onChange={(v) => setViewport(v as Viewport)} />
                 <span className="h-5 w-px bg-border" />
                 <Segmented
                   value={String(zoom)}
@@ -165,86 +141,39 @@ function HtmlViewer({ workspaceId, file }: FileViewerProps) {
         }
         right={
           <>
-            <Button
-              type="button" variant="ghost" size="icon" className="h-8 w-8"
-              title="Refresh preview" onClick={() => setReloadKey((k) => k + 1)}
-            >
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Refresh preview" onClick={() => setReloadKey((k) => k + 1)}>
               <RefreshCw className="h-4 w-4" />
             </Button>
-            <Button
-              type="button" variant="ghost" size="icon" className="h-8 w-8"
-              title="Export PDF" disabled={!source}
-              onClick={() => source && exportHtmlAsPdf(source, file.name)}
-            >
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Export PDF" disabled={!source} onClick={() => source && exportHtmlAsPdf(source, file.name)}>
               <Printer className="h-4 w-4" />
             </Button>
-            <Button
-              type="button" variant="ghost" size="icon" className="h-8 w-8"
-              title="Export PNG" disabled={mode !== "preview" || exportingPng}
-              onClick={async () => {
-                setExportingPng(true)
-                try { await exportIframeAsPng(iframeRef.current, file.name) }
-                finally { setExportingPng(false) }
-              }}
-            >
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Export PNG" disabled={mode !== "preview" || exportingPng}
+              onClick={async () => { setExportingPng(true); try { await exportIframeAsPng(iframeRef.current, file.name) } finally { setExportingPng(false) } }}>
               <ImageIcon className="h-4 w-4" />
             </Button>
-            <Button
-              type="button" variant="ghost" size="icon" className="h-8 w-8"
-              title="Export Markdown" disabled={!source}
-              onClick={() => source && exportHtmlAsMarkdown(source, file.name)}
-            >
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Export Markdown" disabled={!source} onClick={() => source && exportHtmlAsMarkdown(source, file.name)}>
               <FileDown className="h-4 w-4" />
             </Button>
-            <Button
-              type="button" variant="ghost" size="icon" className="h-8 w-8"
-              title="Export ZIP"
-              onClick={() => downloadWorkspaceArchive(workspaceId, file.name)}
-            >
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Export ZIP" onClick={() => downloadWorkspaceArchive(workspaceId, file.name)}>
               <Archive className="h-4 w-4" />
             </Button>
-            <Button
-              type="button" variant="ghost" size="icon" className="h-8 w-8"
-              title="Export HTML" disabled={!source}
-              onClick={() => source && exportHtmlAsStandaloneHtml(source, file.name)}
-            >
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Export HTML" disabled={!source} onClick={() => source && exportHtmlAsStandaloneHtml(source, file.name)}>
               <Download className="h-4 w-4" />
             </Button>
             <Button asChild variant="ghost" size="icon" className="h-8 w-8" title="Open in new tab">
-              <a href={src} target="_blank" rel="noreferrer">
-                <ExternalLink className="h-4 w-4" />
-              </a>
+              <a href={src} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /></a>
             </Button>
           </>
         }
       />
-      <div
-        className={cn(
-          "min-h-0 flex-1 overflow-auto bg-muted/30",
-          mode === "preview" ? "p-4 flex items-center justify-center" : "",
-        )}
-      >
+      <div className={cn("min-h-0 flex-1 overflow-auto bg-muted/30", mode === "preview" ? "p-4 flex items-center justify-center" : "")}>
         {mode === "source" ? (
           <CodeWithLines text={source ?? ""} />
         ) : (
-          <div
-            className="mx-auto"
-            style={{
-              transform: `scale(${previewScale})`,
-              transformOrigin: "center center",
-              width: `${100 / previewScale}%`,
-              height: `${100 / previewScale}%`,
-              minHeight: `${520 / previewScale}px`,
-            }}
-          >
-            <iframe
-              ref={iframeRef}
-              key={src}
-              title={file.name}
-              src={src}
+          <div className="mx-auto" style={{ transform: `scale(${previewScale})`, transformOrigin: "center center", width: `${100 / previewScale}%`, height: `${100 / previewScale}%`, minHeight: `${520 / previewScale}px` }}>
+            <iframe ref={iframeRef} key={src} title={file.name} src={src}
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
-              className={cn("mx-auto h-full rounded-md border bg-white", viewportClass[viewport])}
-            />
+              className={cn("mx-auto h-full rounded-md border bg-white", viewportClass[viewport])} />
           </div>
         )}
       </div>
@@ -257,10 +186,7 @@ function ImageViewer({ workspaceId, file }: FileViewerProps) {
   const src = `${workspaceRawUrl(workspaceId, file.name)}?v=${Math.round(file.mtime)}`
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ViewerToolbar
-        left={<span className="text-xs text-muted-foreground">{file.kind} · {humanSize(file.size)}</span>}
-        right={<FileActions workspaceId={workspaceId} file={file} />}
-      />
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">{file.kind} · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-muted/30 p-5">
         <img src={src} alt={file.name} className="max-h-full max-w-full rounded-md object-contain" />
       </div>
@@ -280,10 +206,7 @@ function SvgViewer({ workspaceId, file }: FileViewerProps) {
         right={<FileActions workspaceId={workspaceId} file={file} extra={<ReloadButton onClick={() => setText(null)} />} />}
       />
       <div className={cn("min-h-0 flex-1 overflow-auto bg-muted/30 p-5", mode === "preview" && "flex items-center justify-center")}>
-        {mode === "preview"
-          ? <img src={src} alt={file.name} className="max-h-full max-w-full rounded-md object-contain" />
-          : <CodeWithLines text={text ?? ""} />
-        }
+        {mode === "preview" ? <img src={src} alt={file.name} className="max-h-full max-w-full rounded-md object-contain" /> : <CodeWithLines text={text ?? ""} />}
       </div>
     </div>
   )
@@ -294,15 +217,11 @@ function MediaViewer({ workspaceId, file }: FileViewerProps) {
   const src = workspaceRawUrl(workspaceId, file.name)
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ViewerToolbar
-        left={<span className="text-xs text-muted-foreground">{file.kind} · {humanSize(file.size)}</span>}
-        right={<FileActions workspaceId={workspaceId} file={file} />}
-      />
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">{file.kind} · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
       <div className="flex min-h-0 flex-1 items-center justify-center bg-muted/30 p-5">
         {file.kind === "video"
           ? <video src={src} controls playsInline preload="metadata" className="max-h-full max-w-full rounded-md" />
-          : <audio src={src} controls preload="metadata" className="w-full max-w-xl" />
-        }
+          : <audio src={src} controls preload="metadata" className="w-full max-w-xl" />}
       </div>
     </div>
   )
@@ -317,13 +236,7 @@ function MarkdownViewer({ workspaceId, file }: FileViewerProps) {
     <div className="flex h-full min-h-0 flex-col">
       <ViewerToolbar
         left={<Segmented value={mode} options={["preview", "source"]} onChange={(v) => setMode(v as SourceMode)} />}
-        right={
-          <>
-            <ReloadButton onClick={() => setText(null)} />
-            <CopyButton copied={copied} onClick={() => copy(text ?? "")} />
-            <FileActions workspaceId={workspaceId} file={file} />
-          </>
-        }
+        right={<><ReloadButton onClick={() => setText(null)} /><CopyButton copied={copied} onClick={() => copy(text ?? "")} /><FileActions workspaceId={workspaceId} file={file} /></>}
       />
       <div className="min-h-0 flex-1 overflow-auto">
         {mode === "source" ? (
@@ -342,25 +255,14 @@ function MarkdownViewer({ workspaceId, file }: FileViewerProps) {
 function TextViewer({ workspaceId, file }: FileViewerProps) {
   const [copied, copy] = useCopyState()
   const [text, setText] = useWorkspaceText(workspaceId, file)
-  const displayText = useMemo(
-    () => (file.kind === "json" ? formatJsonSafely(text ?? "") : text ?? ""),
-    [file.kind, text],
-  )
+  const displayText = useMemo(() => (file.kind === "json" ? formatJsonSafely(text ?? "") : text ?? ""), [file.kind, text])
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ViewerToolbar
         left={<span className="text-xs text-muted-foreground">{file.kind} · {humanSize(file.size)}</span>}
-        right={
-          <>
-            <ReloadButton onClick={() => setText(null)} />
-            <CopyButton copied={copied} onClick={() => copy(displayText)} />
-            <FileActions workspaceId={workspaceId} file={file} />
-          </>
-        }
+        right={<><ReloadButton onClick={() => setText(null)} /><CopyButton copied={copied} onClick={() => copy(displayText)} /><FileActions workspaceId={workspaceId} file={file} /></>}
       />
-      <div className="min-h-0 flex-1 overflow-auto">
-        <CodeWithLines text={displayText} />
-      </div>
+      <div className="min-h-0 flex-1 overflow-auto"><CodeWithLines text={displayText} /></div>
     </div>
   )
 }
@@ -369,21 +271,13 @@ function TextViewer({ workspaceId, file }: FileViewerProps) {
 function PdfViewer({ workspaceId, file }: FileViewerProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ViewerToolbar
-        left={<span className="text-xs text-muted-foreground">PDF · {humanSize(file.size)}</span>}
-        right={<FileActions workspaceId={workspaceId} file={file} />}
-      />
-      <iframe
-        title={file.name}
-        src={`${workspaceRawUrl(workspaceId, file.name)}?v=${Math.round(file.mtime)}`}
-        className="min-h-0 flex-1 border-0 bg-white"
-      />
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">PDF · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
+      <iframe title={file.name} src={`${workspaceRawUrl(workspaceId, file.name)}?v=${Math.round(file.mtime)}`} className="min-h-0 flex-1 border-0 bg-white" />
     </div>
   )
 }
 
 // ─── Excel Viewer ─────────────────────────────────────────────────────────────
-// Uses @js-preview/excel. Promise-chain error handling borrowed from ragflow.
 function ExcelViewer({ workspaceId, file }: FileViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(true)
@@ -397,27 +291,20 @@ function ExcelViewer({ workspaceId, file }: FileViewerProps) {
       try {
         setLoading(true)
         setError(null)
-
         const res = await fetch(workspaceRawUrl(workspaceId, file.name))
-        if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
-        const arrayBuffer = await res.arrayBuffer()
-
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const buf = await res.arrayBuffer()
         if (cancelled || !containerRef.current) return
         previewer = jsPreviewExcel.init(containerRef.current)
         previewer
-          .preview(arrayBuffer)
+          .preview(buf)
           .then(() => { if (!cancelled) setLoading(false) })
           .catch((e: unknown) => {
-            console.warn("Excel preview failed:", e)
             previewer?.destroy()
-            if (!cancelled) { setError("Preview unavailable for this file"); setLoading(false) }
+            if (!cancelled) { setError(String(e)); setLoading(false) }
           })
-      } catch (err) {
-        console.error("Excel load error:", err)
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load")
-          setLoading(false)
-        }
+      } catch (e) {
+        if (!cancelled) { setError(String(e)); setLoading(false) }
       }
     }
 
@@ -427,12 +314,9 @@ function ExcelViewer({ workspaceId, file }: FileViewerProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ViewerToolbar
-        left={<span className="text-xs text-muted-foreground">Excel · {humanSize(file.size)}</span>}
-        right={<FileActions workspaceId={workspaceId} file={file} />}
-      />
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">Excel · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
       <div className="relative flex-1 overflow-auto" style={{ minHeight: 320 }}>
-        <div ref={containerRef} className="h-full w-full" style={{ minHeight: 320 }} />
+        <div ref={containerRef} style={{ minHeight: 320 }} />
         <ViewerOverlay loading={loading} error={error} />
       </div>
     </div>
@@ -440,7 +324,7 @@ function ExcelViewer({ workspaceId, file }: FileViewerProps) {
 }
 
 // ─── CSV Viewer ───────────────────────────────────────────────────────────────
-// ragflow approach: fetch blob → FileReader.readAsText for encoding reliability.
+// Blob → FileReader for reliable cross-browser encoding (ragflow pattern)
 function CsvViewer({ workspaceId, file }: FileViewerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -449,80 +333,53 @@ function CsvViewer({ workspaceId, file }: FileViewerProps) {
 
   useEffect(() => {
     let cancelled = false
-
     const load = async () => {
       try {
-        setLoading(true)
-        setError(null)
-
+        setLoading(true); setError(null)
         const res = await fetch(workspaceRawUrl(workspaceId, file.name))
-        if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const blob = await res.blob()
-
-        // FileReader gives consistent encoding handling across browsers (ragflow pattern)
         const text = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader()
           reader.readAsText(blob)
           reader.onload = () => resolve(reader.result as string)
           reader.onerror = () => reject(reader.error)
         })
-
         if (cancelled) return
-
         const result = Papa.parse<string[]>(text, { header: false, skipEmptyLines: false })
-        const allRows = result.data as string[][]
-        if (allRows.length > 0) {
-          setHeaders(allRows[0])
-          setRows(allRows.slice(1))
-        }
-      } catch (err) {
-        console.error("CSV load error:", err)
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load")
+        const all = result.data as string[][]
+        if (all.length > 0) { setHeaders(all[0]); setRows(all.slice(1)) }
+      } catch (e) {
+        if (!cancelled) setError(String(e))
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
-
     load()
     return () => { cancelled = true }
   }, [file.name, file.mtime, workspaceId])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ViewerToolbar
-        left={<span className="text-xs text-muted-foreground">CSV · {humanSize(file.size)}</span>}
-        right={<FileActions workspaceId={workspaceId} file={file} />}
-      />
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">CSV · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
       <div className="relative flex-1 overflow-auto" style={{ minHeight: 320 }}>
         <ViewerOverlay loading={loading} error={error} />
         {!loading && !error && headers.length > 0 && (
           <table className="min-w-full divide-y divide-border text-sm">
-            <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
-              <tr>
-                {headers.map((h, i) => (
-                  <th key={i} className="px-4 py-2 text-left font-medium text-foreground whitespace-nowrap">
-                    {h || `Column ${i + 1}`}
-                  </th>
-                ))}
-              </tr>
+            <thead className="sticky top-0 bg-muted/90 backdrop-blur-sm">
+              <tr>{headers.map((h, i) => <th key={i} className="px-4 py-2 text-left font-medium whitespace-nowrap">{h || `Col ${i + 1}`}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((row, ri) => (
                 <tr key={ri} className="hover:bg-muted/30">
-                  {row.map((cell, ci) => (
-                    <td key={ci} className="px-4 py-2 whitespace-nowrap text-muted-foreground">
-                      {cell || "–"}
-                    </td>
-                  ))}
+                  {row.map((cell, ci) => <td key={ci} className="px-4 py-2 whitespace-nowrap text-muted-foreground">{cell || "–"}</td>)}
                 </tr>
               ))}
             </tbody>
           </table>
         )}
         {!loading && !error && headers.length === 0 && (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            File is empty
-          </div>
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">File is empty</div>
         )}
       </div>
     </div>
@@ -530,80 +387,57 @@ function CsvViewer({ workspaceId, file }: FileViewerProps) {
 }
 
 // ─── DOCX Viewer ──────────────────────────────────────────────────────────────
-// ragflow approach:
-//  1. Check backend PDF conversion (LibreOffice) first.
-//  2. Fetch as blob, probe ZIP magic bytes to detect docx vs legacy doc.
-//  3. Convert with mammoth, render inside an iframe with srcDoc so the HTML
-//     is fully isolated from Tailwind's CSS reset — no typography plugin needed.
+// Step 1: Try LibreOffice PDF via backend.
+// Step 2: Fetch as blob → probe ZIP magic (0x50 0x4B) → mammoth → iframe srcDoc.
+// iframe srcDoc isolates mammoth HTML from Tailwind CSS resets entirely.
 function DocxViewer({ workspaceId, file }: FileViewerProps) {
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [htmlContent, setHtmlContent] = useState<string>("")
-  const [usePdfPreview, setUsePdfPreview] = useState(false)
+  const [status, setStatus] = useState<"loading" | "pdf" | "html" | "unsupported" | "error">("loading")
+  const [htmlContent, setHtmlContent] = useState("")
+  const [pdfSrc, setPdfSrc] = useState("")
+  const [errorMsg, setErrorMsg] = useState("")
 
   useEffect(() => {
     let cancelled = false
+    setStatus("loading")
+    setHtmlContent("")
+    setPdfSrc("")
+    setErrorMsg("")
 
     const load = async () => {
       try {
-        setLoading(true)
-        setError(null)
-
-        // Step 1 — try backend LibreOffice PDF conversion
-        const previewInfo = await fetchWorkspaceFilePreviewInfo(workspaceId, file.name)
-        if (!cancelled && previewInfo?.previewAvailable) {
-          setUsePdfPreview(true)
-          setLoading(false)
-          return
-        }
-
-        // Step 2 — fetch as blob and probe ZIP magic bytes (ragflow pattern)
-        const res = await fetch(workspaceRawUrl(workspaceId, file.name))
-        if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
-        const blob = await res.blob()
-        if (cancelled) return
-
-        const headerBuf = await blob.slice(0, 4).arrayBuffer()
-        const hdr = new Uint8Array(headerBuf)
-        const isZip = hdr.length >= 2 && hdr[0] === 0x50 && hdr[1] === 0x4b
-
-        if (!isZip) {
-          // Legacy .doc (CFBF binary) — mammoth cannot handle it
+        // Step 1 — LibreOffice backend conversion
+        const info = await fetchWorkspaceFilePreviewInfo(workspaceId, file.name)
+        if (info?.previewAvailable) {
           if (!cancelled) {
-            setHtmlContent(`
-              <div style="display:flex;height:100%;min-height:300px;align-items:center;justify-content:center;padding:2rem">
-                <div style="border:1px dashed #ccc;border-radius:12px;padding:2rem;max-width:480px;text-align:center">
-                  <p style="font-size:1rem;font-weight:600;margin-bottom:0.75rem">Preview not available</p>
-                  <p style="font-size:0.85rem;opacity:0.65;line-height:1.6">
-                    Only modern <code>.docx</code> files are supported.<br/>
-                    This appears to be a legacy <code>.doc</code> format.<br/>
-                    Please download the file to view it.
-                  </p>
-                </div>
-              </div>
-            `)
-            setLoading(false)
+            setPdfSrc(`${workspacePreviewPdfUrl(workspaceId, file.name)}?v=${Math.round(file.mtime)}`)
+            setStatus("pdf")
           }
           return
         }
 
-        // Step 3 — ZIP-like payload: convert with mammoth
-        const arrayBuffer = await blob.arrayBuffer()
-        const result = await mammoth.convertToHtml(
-          { arrayBuffer },
-          { includeDefaultStyleMap: true },
-        )
+        // Step 2 — client-side mammoth fallback
+        const rawUrl = workspaceRawUrl(workspaceId, file.name)
+        const res = await fetch(rawUrl)
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${rawUrl}`)
+        const blob = await res.blob()
+        if (cancelled) return
 
-        if (!cancelled) {
-          setHtmlContent(result.value)
-          setLoading(false)
+        // Probe ZIP magic bytes — valid .docx files are ZIP archives (PK header)
+        const hdrBuf = await blob.slice(0, 4).arrayBuffer()
+        const hdr = new Uint8Array(hdrBuf)
+        const isZip = hdr[0] === 0x50 && hdr[1] === 0x4b
+
+        if (!isZip) {
+          if (!cancelled) setStatus("unsupported")
+          return
         }
-      } catch (err) {
-        console.error("DOCX load error:", err)
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load document")
-          setLoading(false)
-        }
+
+        const buf = await blob.arrayBuffer()
+        const result = await mammoth.convertToHtml({ arrayBuffer: buf }, { includeDefaultStyleMap: true })
+        if (!cancelled) { setHtmlContent(result.value); setStatus("html") }
+      } catch (e) {
+        console.error("[DocxViewer]", e)
+        if (!cancelled) { setErrorMsg(String(e)); setStatus("error") }
       }
     }
 
@@ -618,75 +452,89 @@ function DocxViewer({ workspaceId, file }: FileViewerProps) {
         right={<FileActions workspaceId={workspaceId} file={file} />}
       />
       <div className="relative flex-1" style={{ minHeight: 400 }}>
-        {usePdfPreview && (
-          <iframe
-            title={file.name}
-            src={`${workspacePreviewPdfUrl(workspaceId, file.name)}?v=${Math.round(file.mtime)}`}
-            className="absolute inset-0 h-full w-full border-0"
-          />
+        {status === "loading" && <ViewerOverlay loading error={null} />}
+        {status === "error" && (
+          <div className="flex h-full items-center justify-center p-8 text-sm text-destructive">
+            Failed to load: {errorMsg}
+          </div>
         )}
-        {/* iframe srcDoc fully isolates mammoth HTML from Tailwind resets */}
-        {!usePdfPreview && htmlContent && !loading && (
+        {status === "unsupported" && (
+          <div className="flex h-full items-center justify-center p-8">
+            <div className="max-w-sm rounded-xl border border-dashed p-6 text-center">
+              <p className="font-semibold">Preview not available</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Only modern <code>.docx</code> files are supported.<br />
+                This file uses the legacy <code>.doc</code> format.
+              </p>
+            </div>
+          </div>
+        )}
+        {status === "pdf" && (
+          <iframe title={file.name} src={pdfSrc} className="absolute inset-0 h-full w-full border-0" />
+        )}
+        {status === "html" && (
           <iframe
             title={file.name}
             srcDoc={`<!doctype html><html><head><meta charset="utf-8"><style>${DOCX_IFRAME_STYLE}</style></head><body>${htmlContent}</body></html>`}
             className="absolute inset-0 h-full w-full border-0 bg-white"
           />
         )}
-        <ViewerOverlay loading={loading} error={error} />
       </div>
     </div>
   )
 }
 
 // ─── PPTX Viewer ──────────────────────────────────────────────────────────────
-// ragflow approach:
-//  • containerRef wraps the whole area — its clientWidth/clientHeight are reliable
-//    because it has a fixed minHeight (600px), so pptx-preview gets real dimensions.
-//  • wrapperRef is the actual render target passed to initPptxPreview, kept separate
-//    so the layout container is not mutated by the library.
+// containerRef = outer wrapper (fixed minHeight → reliable clientWidth/Height)
+// wrapperRef   = render target passed to pptx-preview library
 function PptxViewer({ workspaceId, file }: FileViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [usePdfPreview, setUsePdfPreview] = useState(false)
+  const [status, setStatus] = useState<"loading" | "pdf" | "rendered" | "error">("loading")
+  const [pdfSrc, setPdfSrc] = useState("")
+  const [errorMsg, setErrorMsg] = useState("")
 
   useEffect(() => {
     let cancelled = false
     let viewer: any = null
+    setStatus("loading")
+    setPdfSrc("")
+    setErrorMsg("")
 
     const load = async () => {
       try {
-        setLoading(true)
-        setError(null)
-
-        // Step 1 — try backend LibreOffice PDF conversion
-        const previewInfo = await fetchWorkspaceFilePreviewInfo(workspaceId, file.name)
-        if (!cancelled && previewInfo?.previewAvailable) {
-          setUsePdfPreview(true)
-          setLoading(false)
+        // Step 1 — LibreOffice backend conversion
+        const info = await fetchWorkspaceFilePreviewInfo(workspaceId, file.name)
+        if (info?.previewAvailable) {
+          if (!cancelled) {
+            setPdfSrc(`${workspacePreviewPdfUrl(workspaceId, file.name)}?v=${Math.round(file.mtime)}`)
+            setStatus("pdf")
+          }
           return
         }
 
-        // Step 2 — fetch and pass to pptx-preview
-        const res = await fetch(workspaceRawUrl(workspaceId, file.name))
-        if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
-        const arrayBuffer = await res.arrayBuffer()
+        // Step 2 — pptx-preview library fallback
+        const rawUrl = workspaceRawUrl(workspaceId, file.name)
+        const res = await fetch(rawUrl)
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${rawUrl}`)
+        const buf = await res.arrayBuffer()
 
-        if (!cancelled && containerRef.current && wrapperRef.current) {
-          // containerRef has minHeight:600 so clientWidth/Height are real values here
-          const width = (containerRef.current.clientWidth || 860) - 50
-          const height = (containerRef.current.clientHeight || 650) - 50
+        if (cancelled) return
 
-          viewer = initPptxPreview(wrapperRef.current, { width, height })
-          await viewer.preview(arrayBuffer)
-        }
-      } catch (err) {
-        console.error("PPTX load error:", err)
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load presentation")
-      } finally {
-        if (!cancelled) setLoading(false)
+        // containerRef has minHeight:600 so dimensions are available immediately
+        const el = containerRef.current
+        const wrap = wrapperRef.current
+        if (!el || !wrap) throw new Error("Container not mounted")
+
+        const width = Math.max(el.clientWidth - 50, 300)
+        const height = Math.max(el.clientHeight - 50, 300)
+
+        viewer = initPptxPreview(wrap, { width, height })
+        await viewer.preview(buf)
+        if (!cancelled) setStatus("rendered")
+      } catch (e) {
+        console.error("[PptxViewer]", e)
+        if (!cancelled) { setErrorMsg(String(e)); setStatus("error") }
       }
     }
 
@@ -700,23 +548,26 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         left={<span className="text-xs text-muted-foreground">Presentation · {humanSize(file.size)}</span>}
         right={<FileActions workspaceId={workspaceId} file={file} />}
       />
-      {/* containerRef: fixed minHeight gives reliable clientHeight for pptx-preview init */}
-      <div ref={containerRef} className="relative flex-1 overflow-auto ppt-previewer" style={{ minHeight: 600 }}>
-        {usePdfPreview ? (
-          <iframe
-            title={file.name}
-            src={`${workspacePreviewPdfUrl(workspaceId, file.name)}?v=${Math.round(file.mtime)}`}
-            className="absolute inset-0 h-full w-full border-0"
-          />
-        ) : (
-          <div className="overflow-auto p-2">
-            <div className="flex flex-col gap-4">
-              {/* wrapperRef: separate render target for pptx-preview library */}
-              <div ref={wrapperRef} />
+      {/* containerRef: fixed minHeight gives reliable dimensions for pptx-preview */}
+      <div ref={containerRef} className="relative flex-1 overflow-auto" style={{ minHeight: 600 }}>
+        {status === "loading" && <ViewerOverlay loading error={null} />}
+        {status === "error" && (
+          <div className="flex h-full min-h-[600px] items-center justify-center p-8">
+            <div className="max-w-sm rounded-xl border border-dashed p-6 text-center">
+              <p className="font-semibold">Preview failed</p>
+              <p className="mt-2 text-sm text-muted-foreground">{errorMsg}</p>
             </div>
           </div>
         )}
-        <ViewerOverlay loading={loading} error={error} />
+        {status === "pdf" && (
+          <iframe title={file.name} src={pdfSrc} className="absolute inset-0 h-full w-full border-0" />
+        )}
+        {/* wrapperRef: render target for pptx-preview; only visible when rendered */}
+        <div className={cn("overflow-auto p-2", status !== "rendered" && "hidden")}>
+          <div className="flex flex-col gap-4">
+            <div ref={wrapperRef} />
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -726,24 +577,19 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
 function BinaryViewer({ workspaceId, file }: FileViewerProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ViewerToolbar
-        left={<span className="text-xs text-muted-foreground">binary · {humanSize(file.size)}</span>}
-        right={<FileActions workspaceId={workspaceId} file={file} />}
-      />
+      <ViewerToolbar left={<span className="text-xs text-muted-foreground">binary · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
       <div className="flex min-h-0 flex-1 items-center justify-center p-6">
         <div className="w-full max-w-md rounded-lg border bg-card p-5 text-center">
           <FileQuestion className="mx-auto h-8 w-8 text-muted-foreground" />
           <h3 className="mt-3 text-sm font-semibold">{file.name}</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Preview is unavailable for this file type. Size: {humanSize(file.size)}
-          </p>
+          <p className="mt-1 text-xs text-muted-foreground">Preview is unavailable for this file type. Size: {humanSize(file.size)}</p>
         </div>
       </div>
     </div>
   )
 }
 
-// ─── Shared UI primitives ─────────────────────────────────────────────────────
+// ─── Shared UI ────────────────────────────────────────────────────────────────
 
 function ViewerToolbar({ left, right }: { left?: ReactNode; right?: ReactNode }) {
   return (
@@ -754,71 +600,38 @@ function ViewerToolbar({ left, right }: { left?: ReactNode; right?: ReactNode })
   )
 }
 
-/** Shared loading / error overlay — requires parent to have `position: relative` */
+/** Requires parent `position: relative`. */
 function ViewerOverlay({ loading, error }: { loading: boolean; error: string | null }) {
   if (!loading && !error) return null
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm pointer-events-none">
-      {loading && <span className="text-sm text-muted-foreground animate-pulse">Loading preview…</span>}
-      {!loading && error && (
-        <span className="text-sm text-destructive">Preview unavailable: {error}</span>
-      )}
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70 backdrop-blur-sm">
+      {loading && <span className="animate-pulse text-sm text-muted-foreground">Loading preview…</span>}
+      {!loading && error && <span className="text-sm text-destructive">{error}</span>}
     </div>
   )
 }
 
-function FileActions({
-  workspaceId,
-  file,
-  extra,
-}: {
-  workspaceId: string
-  file: WorkspaceFile
-  extra?: React.ReactNode
-}) {
+function FileActions({ workspaceId, file, extra }: { workspaceId: string; file: WorkspaceFile; extra?: ReactNode }) {
   return (
     <>
       {extra}
       <Button asChild variant="ghost" size="icon" className="h-8 w-8" title="Download">
-        <a href={workspaceRawUrl(workspaceId, file.name)} download>
-          <Download className="h-4 w-4" />
-        </a>
+        <a href={workspaceRawUrl(workspaceId, file.name)} download><Download className="h-4 w-4" /></a>
       </Button>
       <Button asChild variant="ghost" size="icon" className="h-8 w-8" title="Open in new tab">
-        <a href={workspaceRawUrl(workspaceId, file.name)} target="_blank" rel="noreferrer">
-          <ExternalLink className="h-4 w-4" />
-        </a>
+        <a href={workspaceRawUrl(workspaceId, file.name)} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /></a>
       </Button>
     </>
   )
 }
 
-function Segmented({
-  value,
-  options,
-  labels,
-  onChange,
-}: {
-  value: string
-  options: string[]
-  labels?: Record<string, string>
-  onChange: (value: string) => void
-}) {
+function Segmented({ value, options, labels, onChange }: { value: string; options: string[]; labels?: Record<string, string>; onChange: (v: string) => void }) {
   return (
     <div className="flex items-center gap-1 rounded-md border bg-muted/50 p-0.5">
       {options.map((item) => (
-        <button
-          key={item}
-          type="button"
-          aria-pressed={value === item}
-          className={cn(
-            "h-7 rounded-[5px] px-2 text-xs font-medium capitalize transition-colors",
-            value === item
-              ? "bg-primary text-primary-foreground shadow-sm"
-              : "text-muted-foreground hover:bg-background hover:text-foreground",
-          )}
-          onClick={() => onChange(item)}
-        >
+        <button key={item} type="button" aria-pressed={value === item}
+          className={cn("h-7 rounded-[5px] px-2 text-xs font-medium capitalize transition-colors", value === item ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground")}
+          onClick={() => onChange(item)}>
           {labels?.[item] ?? item}
         </button>
       ))}
@@ -827,26 +640,17 @@ function Segmented({
 }
 
 function ReloadButton({ onClick }: { onClick: () => void }) {
-  return (
-    <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Reload from disk" onClick={onClick}>
-      <RefreshCw className="h-4 w-4" />
-    </Button>
-  )
+  return <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Reload" onClick={onClick}><RefreshCw className="h-4 w-4" /></Button>
 }
 
 function CopyButton({ copied, onClick }: { copied: boolean; onClick: () => void }) {
-  return (
-    <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Copy" onClick={onClick}>
-      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-    </Button>
-  )
+  return <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Copy" onClick={onClick}>{copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}</Button>
 }
 
 function CodeWithLines({ text }: { text: string }) {
-  const lines = text.split("\n")
   return (
     <pre className="h-full overflow-auto p-4 text-xs leading-6">
-      {lines.map((line, i) => (
+      {text.split("\n").map((line, i) => (
         <div key={i} className="grid grid-cols-[3rem_1fr] gap-3">
           <span className="select-none text-right text-muted-foreground">{i + 1}</span>
           <span className="whitespace-pre-wrap break-words">{line || " "}</span>
@@ -858,18 +662,13 @@ function CodeWithLines({ text }: { text: string }) {
 
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
-function useWorkspaceText(
-  workspaceId: string,
-  file: WorkspaceFile,
-): [string | null, (value: string | null) => void] {
+function useWorkspaceText(workspaceId: string, file: WorkspaceFile): [string | null, (v: string | null) => void] {
   const [text, setText] = useState<string | null>(null)
   useEffect(() => {
     if (text !== null) return
     let cancelled = false
-    fetchWorkspaceFileText(workspaceId, file.name, {
-      cacheBustKey: file.mtime,
-      cache: "no-store",
-    }).then((value) => { if (!cancelled) setText(value ?? "") })
+    fetchWorkspaceFileText(workspaceId, file.name, { cacheBustKey: file.mtime, cache: "no-store" })
+      .then((v) => { if (!cancelled) setText(v ?? "") })
     return () => { cancelled = true }
   }, [file.mtime, file.name, text, workspaceId])
   return [text, setText]
@@ -878,32 +677,22 @@ function useWorkspaceText(
 function useCopyState(): [boolean, (text: string) => Promise<void>] {
   const [copied, setCopied] = useState(false)
   async function copy(text: string) {
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
+    try { await navigator.clipboard.writeText(text) } catch {
       const el = document.createElement("textarea")
-      el.value = text
-      el.style.cssText = "position:fixed;opacity:0"
-      document.body.appendChild(el)
-      el.select()
-      document.execCommand("copy")
-      document.body.removeChild(el)
+      el.value = text; el.style.cssText = "position:fixed;opacity:0"
+      document.body.appendChild(el); el.select()
+      document.execCommand("copy"); document.body.removeChild(el)
     }
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+    setCopied(true); setTimeout(() => setCopied(false), 1500)
   }
   return [copied, copy]
 }
 
-// ─── Pure helpers ─────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatJsonSafely(text: string): string {
-  try {
-    if (hasPrecisionSensitiveJsonNumberText(text)) return text
-    return JSON.stringify(JSON.parse(text), null, 2)
-  } catch {
-    return text
-  }
+  try { return hasPrecisionSensitiveJsonNumberText(text) ? text : JSON.stringify(JSON.parse(text), null, 2) }
+  catch { return text }
 }
 
 function hasPrecisionSensitiveJsonNumberText(text: string): boolean {
