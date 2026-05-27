@@ -495,6 +495,7 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
   const [errorMsg, setErrorMsg] = useState("")
   const [errorDetails, setErrorDetails] = useState("")
   const [copiedError, copyError] = useCopyState()
+  const [debugInfo, setDebugInfo] = useState<string>("init")
 
   useEffect(() => {
     let cancelled = false
@@ -503,19 +504,23 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
     setPdfSrc("")
     setErrorMsg("")
     setErrorDetails("")
+    setDebugInfo("Starting load...")
 
     const load = async () => {
       try {
+        setDebugInfo("Step 1: Checking backend LibreOffice...")
         // Step 1 — LibreOffice backend conversion
         const info = await fetchWorkspaceFilePreviewInfo(workspaceId, file.name)
         if (info?.previewAvailable) {
           if (!cancelled) {
+            setDebugInfo("Backend returned previewAvailable=true. Loading iframe...")
             setPdfSrc(`${workspacePreviewPdfUrl(workspaceId, file.name)}?v=${Math.round(file.mtime)}`)
             setStatus("pdf")
           }
           return
         }
 
+        setDebugInfo("Step 2: Backend LibreOffice not available. Fetching raw file for frontend parsing...")
         // Step 2 — pptx-preview library fallback
         const rawUrl = workspaceRawUrl(workspaceId, file.name)
         const res = await fetch(rawUrl)
@@ -532,12 +537,17 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         const width = Math.max(el.clientWidth - 50, 300)
         const height = Math.max(el.clientHeight - 50, 300)
 
+        setDebugInfo(`Step 3: Calling initPptxPreview with width=${width}, height=${height}, bytes=${buf.byteLength}`)
         viewer = initPptxPreview(wrap, { width, height })
         await viewer.preview(buf)
-        if (!cancelled) setStatus("rendered")
+        if (!cancelled) {
+          setDebugInfo("Step 4: pptx-preview finished rendering successfully.")
+          setStatus("rendered")
+        }
       } catch (e: any) {
         console.error("[PptxViewer]", e)
         if (!cancelled) { 
+          setDebugInfo(`Error caught: ${String(e)}`)
           setErrorMsg(String(e))
           setErrorDetails(e instanceof Error && e.stack ? e.stack : String(e))
           setStatus("error") 
@@ -557,6 +567,13 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
       />
       {/* containerRef: fixed minHeight gives reliable dimensions for pptx-preview */}
       <div ref={containerRef} className="relative flex-1 overflow-auto bg-muted/10" style={{ minHeight: 600 }}>
+        
+        {/* Debug Overlay */}
+        <div className="absolute top-0 right-0 z-50 bg-black/80 text-green-400 text-[10px] p-2 max-w-sm font-mono opacity-80 pointer-events-none">
+          Status: {status} <br/>
+          Debug: {debugInfo}
+        </div>
+
         {status === "loading" && <ViewerOverlay loading error={null} />}
         {status === "error" && (
           <div className="flex h-full min-h-[600px] items-center justify-center p-8">
