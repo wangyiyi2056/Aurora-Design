@@ -602,8 +602,8 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         {status === "pdf" && (
           <iframe title={file.name} src={pdfSrc} className="absolute inset-0 h-full w-full border-0" />
         )}
-        {/* wrapperRef: render target for pptx-preview; only visible when rendered */}
-        <div className={cn("overflow-auto p-2", status !== "rendered" && "hidden")}>
+        {/* wrapperRef: render target for pptx-preview; always in layout so library can compute size */}
+        <div className="overflow-auto p-2">
           <div className="flex flex-col gap-4">
             <div ref={wrapperRef} />
           </div>
