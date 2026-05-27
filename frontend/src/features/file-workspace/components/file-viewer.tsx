@@ -33,7 +33,6 @@ import type { WorkspaceFile } from "../types"
 import jsPreviewExcel from "@js-preview/excel"
 import "@js-preview/excel/lib/index.css"
 import mammoth from "mammoth"
-import Papa from "papaparse"
 import { init as initPptxPreview } from "pptx-preview"
 
 interface FileViewerProps {
@@ -88,7 +87,6 @@ export function FileViewer({ workspaceId, file }: FileViewerProps) {
   }
   if (file.kind === "pdf") return <PdfViewer workspaceId={workspaceId} file={file} />
   if (file.kind === "spreadsheet") {
-    if (file.name.toLowerCase().endsWith(".csv")) return <CsvViewer workspaceId={workspaceId} file={file} />
     return <ExcelViewer workspaceId={workspaceId} file={file} />
   }
   if (file.kind === "document") return <DocxViewer workspaceId={workspaceId} file={file} />
@@ -316,71 +314,8 @@ function ExcelViewer({ workspaceId, file }: FileViewerProps) {
     <div className="flex h-full min-h-0 flex-col">
       <ViewerToolbar left={<span className="text-xs text-muted-foreground">Excel · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
       <div className="relative flex-1 overflow-auto" style={{ minHeight: 320 }}>
-        <div ref={containerRef} style={{ minHeight: 320 }} />
+        <div ref={containerRef} className="absolute inset-0" />
         <ViewerOverlay loading={loading} error={error} />
-      </div>
-    </div>
-  )
-}
-
-// ─── CSV Viewer ───────────────────────────────────────────────────────────────
-// Blob → FileReader for reliable cross-browser encoding (ragflow pattern)
-function CsvViewer({ workspaceId, file }: FileViewerProps) {
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [headers, setHeaders] = useState<string[]>([])
-  const [rows, setRows] = useState<string[][]>([])
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      try {
-        setLoading(true); setError(null)
-        const res = await fetch(workspaceRawUrl(workspaceId, file.name))
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const blob = await res.blob()
-        const text = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.readAsText(blob)
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = () => reject(reader.error)
-        })
-        if (cancelled) return
-        const result = Papa.parse<string[]>(text, { header: false, skipEmptyLines: false })
-        const all = result.data as string[][]
-        if (all.length > 0) { setHeaders(all[0]); setRows(all.slice(1)) }
-      } catch (e) {
-        if (!cancelled) setError(String(e))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [file.name, file.mtime, workspaceId])
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <ViewerToolbar left={<span className="text-xs text-muted-foreground">CSV · {humanSize(file.size)}</span>} right={<FileActions workspaceId={workspaceId} file={file} />} />
-      <div className="relative flex-1 overflow-auto" style={{ minHeight: 320 }}>
-        <ViewerOverlay loading={loading} error={error} />
-        {!loading && !error && headers.length > 0 && (
-          <table className="min-w-full divide-y divide-border text-sm">
-            <thead className="sticky top-0 bg-muted/90 backdrop-blur-sm">
-              <tr>{headers.map((h, i) => <th key={i} className="px-4 py-2 text-left font-medium whitespace-nowrap">{h || `Col ${i + 1}`}</th>)}</tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.map((row, ri) => (
-                <tr key={ri} className="hover:bg-muted/30">
-                  {row.map((cell, ci) => <td key={ci} className="px-4 py-2 whitespace-nowrap text-muted-foreground">{cell || "–"}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {!loading && !error && headers.length === 0 && (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">File is empty</div>
-        )}
       </div>
     </div>
   )
@@ -559,7 +494,7 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         right={<FileActions workspaceId={workspaceId} file={file} />}
       />
       {/* containerRef: fixed minHeight gives reliable dimensions for pptx-preview */}
-      <div ref={containerRef} className="relative flex-1 overflow-auto bg-muted/10" style={{ minHeight: 600 }}>
+      <div ref={containerRef} className="relative flex-1 overflow-auto bg-background [&_.pptx-wrapper]:!bg-transparent" style={{ minHeight: 600 }}>
         
         {status === "loading" && <ViewerOverlay loading error={null} />}
         {status === "error" && (
