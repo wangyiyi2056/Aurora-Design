@@ -542,10 +542,10 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         await viewer.preview(buf)
         
         if (!cancelled) {
-          // pptx-preview sometimes resolves successfully but renders absolutely nothing
-          // (e.g. for unsupported legacy formats or corrupted internal XML).
-          // We can detect this silent failure by checking if it actually appended any slides.
-          if (wrap.children.length === 0) {
+          // pptx-preview injects a wrapper div (usually .pptx-wrapper). 
+          // If the file is unreadable but doesn't throw, this wrapper will be completely empty.
+          const injectedWrapper = wrap.querySelector('.pptx-wrapper') || wrap.querySelector('.pptx-preview-wrapper') || wrap
+          if (injectedWrapper.children.length === 0) {
             throw new Error("The presentation contains no supported slides, or is an incompatible format. Please download the file to view it.")
           }
           
