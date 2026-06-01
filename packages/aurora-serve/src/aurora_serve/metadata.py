@@ -221,6 +221,23 @@ class SavedQueryEntity(TimestampMixin, Base):
     description: Mapped[str] = mapped_column(String(500), default="")
 
 
+class UserCredentialEntity(TimestampMixin, Base):
+    __tablename__ = "user_credentials"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    password_hash: Mapped[str] = mapped_column(String(256))
+
+
+class APIKeyEntity(TimestampMixin, Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    key_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    last_used_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
 class MetadataStore(BaseComponent):
     name = "metadata_store"
 
