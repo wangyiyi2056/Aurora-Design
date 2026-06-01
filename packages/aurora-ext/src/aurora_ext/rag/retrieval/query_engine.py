@@ -621,6 +621,9 @@ class QueryEngine:
                 "content": r.get("content", ""),
                 "file_path": r.get("file_path", ""),
                 "chunk_id": r.get("id", ""),
+                "page_number": r.get("page_number"),
+                "start_pos": r.get("start_pos"),
+                "end_pos": r.get("end_pos"),
                 "weight": float(r.get("weight", 0.0)),
             }
             for r in raw

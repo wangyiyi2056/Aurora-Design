@@ -103,6 +103,20 @@ async def query_knowledge(
     name: str,
     query: str,
     top_k: int = 5,
+    source_filter: str | None = None,
+    min_score: float = 0.0,
     service: KnowledgeService = Depends(get_knowledge_service),
 ) -> Dict[str, Any]:
-    return await service.query(name, query, top_k=top_k)
+    """Query a knowledge base and receive results with citation tracking.
+
+    Returns an answer together with a list of citations pointing back to
+    the original source documents, including file path, page number,
+    chunk ID, and relevance score.
+    """
+    return await service.query(
+        name,
+        query,
+        top_k=top_k,
+        source_filter=source_filter,
+        min_score=min_score,
+    )
