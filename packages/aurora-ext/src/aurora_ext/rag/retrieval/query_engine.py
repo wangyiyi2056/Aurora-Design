@@ -39,7 +39,8 @@ class QueryMode(str, Enum):
 class QueryParam:
     """Full query parameter set — migrated from LightRAG.
 
-    All 18 parameters as documented in the migration plan.
+    All 18 parameters as documented in the migration plan, plus
+    Aurora-specific tuning knobs.
     """
 
     query: str
@@ -60,6 +61,9 @@ class QueryParam:
     include_references: bool = True
     include_chunk_content: bool = False
     stream: bool = False
+    related_chunk_number: int = 5
+    kg_chunk_pick_method: str = "VECTOR"
+    max_graph_nodes: int = 1000
 
 
 @dataclass
@@ -312,8 +316,12 @@ class QueryEngine:
         entities: list[dict[str, Any]] = []
         relationships: list[dict[str, Any]] = []
         chunk_ids: set[str] = set()
+        node_count = 0
 
         for result in entity_results:
+            if node_count >= param.max_graph_nodes:
+                break
+
             entity_name = result.get("id", result.get("entity_name", ""))
             if not entity_name:
                 continue
@@ -322,12 +330,13 @@ class QueryEngine:
             node = await self._graph.get_node(entity_name)
             if node:
                 entities.append(node)
+                node_count += 1
                 # Extract source_ids for chunk lookup
                 source_ids = node.get("source_id", "")
-                for sid in source_ids.split("<SEP>"):
-                    sid = sid.strip()
-                    if sid:
-                        chunk_ids.add(sid)
+                related_ids = self._pick_chunk_ids(
+                    source_ids, param.related_chunk_number, param.kg_chunk_pick_method
+                )
+                chunk_ids.update(related_ids)
 
             # Get connected edges
             edges = await self._graph.get_node_edges(entity_name)
@@ -336,10 +345,10 @@ class QueryEngine:
                 if edge:
                     relationships.append(edge)
                     source_ids = edge.get("source_id", "")
-                    for sid in source_ids.split("<SEP>"):
-                        sid = sid.strip()
-                        if sid:
-                            chunk_ids.add(sid)
+                    related_ids = self._pick_chunk_ids(
+                        source_ids, param.related_chunk_number, param.kg_chunk_pick_method
+                    )
+                    chunk_ids.update(related_ids)
 
         # Fetch chunks by IDs
         chunks = await self._fetch_chunks(list(chunk_ids), param.chunk_top_k)
@@ -355,26 +364,31 @@ class QueryEngine:
         relationships: list[dict[str, Any]] = []
         chunk_ids: set[str] = set()
         seen_entities: set[str] = set()
+        node_count = 0
 
         for result in rel_results:
+            if node_count >= param.max_graph_nodes:
+                break
+
             src = result.get("source_entity", result.get("src_id", ""))
             tgt = result.get("target_entity", result.get("tgt_id", ""))
 
             if src and tgt:
                 relationships.append(result)
                 source_ids = result.get("source_id", "")
-                for sid in source_ids.split("<SEP>"):
-                    sid = sid.strip()
-                    if sid:
-                        chunk_ids.add(sid)
+                related_ids = self._pick_chunk_ids(
+                    source_ids, param.related_chunk_number, param.kg_chunk_pick_method
+                )
+                chunk_ids.update(related_ids)
 
                 # Get connected entities
                 for eid in [src, tgt]:
-                    if eid not in seen_entities:
+                    if eid not in seen_entities and node_count < param.max_graph_nodes:
                         seen_entities.add(eid)
                         node = await self._graph.get_node(eid)
                         if node:
                             entities.append(node)
+                            node_count += 1
 
         chunks = await self._fetch_chunks(list(chunk_ids), param.chunk_top_k)
         return entities, relationships, chunks
@@ -392,10 +406,49 @@ class QueryEngine:
                 "content": r.get("content", ""),
                 "file_path": r.get("file_path", ""),
                 "chunk_id": r.get("id", ""),
+                "weight": float(r.get("weight", 0.0)),
             }
             for r in raw
             if r is not None
         ]
+
+    @staticmethod
+    def _pick_chunk_ids(
+        source_ids: str,
+        related_chunk_number: int,
+        method: str = "VECTOR",
+    ) -> set[str]:
+        """Select chunk IDs from a source-ID string based on the pick method.
+
+        Parameters
+        ----------
+        source_ids:
+            ``<SEP>``-delimited chunk ID string from a graph node/edge.
+        related_chunk_number:
+            Maximum number of chunk IDs to return.
+        method:
+            ``"VECTOR"`` keeps the *last* N IDs (most recently appended,
+            which are the ones most similar to the embedding query).
+            ``"WEIGHT"`` keeps the *first* N IDs (which in a weight-sorted
+            list correspond to the highest-weight entities/relations).
+        """
+        if not source_ids:
+            return set()
+
+        ids = [s.strip() for s in source_ids.split("<SEP>") if s.strip()]
+        if not ids:
+            return set()
+
+        if method.upper() == "WEIGHT":
+            # WEIGHT mode: assume IDs are ordered by entity/edge weight
+            # (highest first), so take the first N.
+            selected = ids[:related_chunk_number]
+        else:
+            # VECTOR mode (default): take the last N IDs (newest / most
+            # relevant to the embedding search that produced them).
+            selected = ids[-related_chunk_number:]
+
+        return set(selected)
 
     # ── Finalize and budget ──────────────────────────────────────
 

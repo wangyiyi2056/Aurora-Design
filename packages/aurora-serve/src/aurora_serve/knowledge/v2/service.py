@@ -73,6 +73,9 @@ def _doc_status_to_dict(info: DocStatusInfo) -> dict[str, Any]:
         "metadata": info.metadata,
         "file_path": info.file_path,
         "kb_name": info.kb_name,
+        "content_hash": info.content_hash,
+        "duplicate_kind": info.duplicate_kind,
+        "basename": info.basename,
     }
 
 
@@ -648,6 +651,19 @@ class KnowledgeV2Service(BaseService):
                         },
                     )
 
+                    # Check if this document should skip KG extraction.
+                    # The ``!`` filename hint (e.g. ``doc.[!].pdf``) sets
+                    # ``skip_kg=True`` in the parse options.
+                    parse_options = doc_info.metadata.get("parse_options", {})
+                    skip_kg = parse_options.get("skip_kg", False)
+
+                    if skip_kg:
+                        # Chunking + embedding only — no entity/relation extraction
+                        await self._process_skip_kg(
+                            kb_name, doc_id, file_path, chunks, processing_start
+                        )
+                        continue  # finally block calls task_done()
+
                     from aurora_ext.rag.extraction.types import (
                         GraphEntity,
                         GraphRelationship,
@@ -932,6 +948,82 @@ class KnowledgeV2Service(BaseService):
             else:
                 await self._graph.upsert_edge(src_key, tgt_key, rel.to_dict())
 
+    async def _process_skip_kg(
+        self,
+        kb_name: str,
+        doc_id: str,
+        file_path: str,
+        chunks: list,
+        processing_start: float,
+    ) -> None:
+        """Process a document with chunking + embedding only (no KG extraction).
+
+        Used when the ``skip_kg`` flag is set via filename hints or metadata.
+        Chunks are stored in KV storage and embedded into vector storage, but
+        no entity/relation extraction is performed and nothing is merged into
+        the knowledge graph.
+        """
+        total_chunks = len(chunks)
+
+        for chunk_idx, chunk in enumerate(chunks):
+            self._pipeline.check_cancellation()
+
+            chunk_key = self._ns(
+                kb_name,
+                f"{NameSpace.KV_STORE_TEXT_CHUNKS}:{doc_id}:{chunk.chunk_index}",
+            )
+
+            await self._kv.upsert({
+                chunk_key: {
+                    "content": chunk.content,
+                    "full_doc_id": doc_id,
+                    "chunk_order_index": chunk.chunk_index,
+                    "tokens": chunk.tokens,
+                    "file_path": file_path,
+                    "id": chunk_key,
+                }
+            })
+
+            chunks_done = chunk_idx + 1
+            if chunks_done % 2 == 0 or chunks_done == total_chunks:
+                await self._doc_status.update_status(
+                    doc_id,
+                    DocStatus.PROCESSING,
+                    chunks_count=total_chunks,
+                    metadata={
+                        "chunks_processed": chunks_done,
+                        "total_chunks": total_chunks,
+                        "processing_start_time": processing_start,
+                        "skip_kg": True,
+                    },
+                )
+
+        # Embed chunks (no entity embedding since there are no entities)
+        await self._embed_doc_chunks(kb_name, doc_id, file_path, chunks, {})
+
+        # Mark as PROCESSED
+        await self._doc_status.update_status(
+            doc_id,
+            DocStatus.PROCESSED,
+            chunks_count=total_chunks,
+            metadata={
+                "processing_start_time": processing_start,
+                "processing_end_time": time.time(),
+                "total_chunks": total_chunks,
+                "skip_kg": True,
+            },
+        )
+        await self._pipeline.update_progress(
+            f"Completed (skip-KG) {doc_id[:30]}",
+            processed=1,
+            processing_delta=-1,
+        )
+        logger.info(
+            "Processed doc %s with skip_kg=True (%d chunks, no KG extraction)",
+            doc_id,
+            total_chunks,
+        )
+
     async def _embed_doc_chunks(
         self,
         kb_name: str,
@@ -1093,6 +1185,22 @@ class KnowledgeV2Service(BaseService):
         file_content = await file.read()
         filename = file.filename or f"upload_{track_id}"
 
+        # ── Filename dedup ───────────────────────────────────────────
+        basename = os.path.basename(filename)
+        existing_by_name = await self._doc_status.get_doc_by_basename(
+            basename, kb_name=kb_name
+        )
+        if existing_by_name is not None:
+            return InsertResponse(
+                status=InsertStatusEnum.SUCCESS,
+                message=(
+                    f"Duplicate filename detected "
+                    f"('{basename}' already exists as "
+                    f"'{existing_by_name.file_path}')"
+                ),
+                track_id=existing_by_name.track_id,
+            )
+
         # ── Content-hash dedup (C17) ────────────────────────────────
         text_for_hash = (
             file_content.decode("utf-8", errors="replace")
@@ -1129,6 +1237,11 @@ class KnowledgeV2Service(BaseService):
             hash_key: {"file_path": str(dest), "track_id": track_id}
         })
 
+        # Parse filename hints (e.g. ``doc.[!].pdf`` → skip_kg=True)
+        from aurora_ext.rag.parser.routing import parse_filename_hints
+
+        parse_options = parse_filename_hints(filename)
+
         doc_info = DocStatusInfo(
             id=track_id,
             file_path=str(dest),
@@ -1137,6 +1250,9 @@ class KnowledgeV2Service(BaseService):
             content_length=len(file_content),
             track_id=track_id,
             kb_name=kb_name,
+            content_hash=content_hash,
+            basename=os.path.basename(filename),
+            metadata={"parse_options": parse_options},
         )
         await self._doc_status.upsert({track_id: doc_info})
 

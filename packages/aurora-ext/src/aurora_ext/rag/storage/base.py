@@ -44,6 +44,9 @@ class DocStatusInfo:
     created_at: str = ""
     updated_at: str = ""
     kb_name: str = ""
+    content_hash: str = ""
+    duplicate_kind: str = ""
+    basename: str = ""
 
 
 # ── Base mixin ───────────────────────────────────────────────────
@@ -302,6 +305,47 @@ class BaseDocStatusStorage(StorageNameSpace, ABC):
         **extra: Any,
     ) -> None:
         """Update a single document's status."""
+
+    @abstractmethod
+    async def get_doc_by_basename(
+        self, basename: str, *, kb_name: Optional[str] = None
+    ) -> Optional[DocStatusInfo]:
+        """Find a document by its filename basename.
+
+        Parameters
+        ----------
+        basename:
+            The filename without directory path (e.g. ``"report.pdf"``).
+        kb_name:
+            When provided, only documents belonging to that knowledge base
+            are considered.
+
+        Returns
+        -------
+        Optional[DocStatusInfo]
+            The first matching document, or ``None`` if not found.
+        """
+
+    @abstractmethod
+    async def get_doc_by_content_hash(
+        self, content_hash: str, *, kb_name: Optional[str] = None
+    ) -> Optional[DocStatusInfo]:
+        """Find a document by its content hash.
+
+        Parameters
+        ----------
+        content_hash:
+            The MD5-based content hash (as produced by
+            :func:`compute_mdhash_id`).
+        kb_name:
+            When provided, only documents belonging to that knowledge base
+            are considered.
+
+        Returns
+        -------
+        Optional[DocStatusInfo]
+            The first matching document, or ``None`` if not found.
+        """
 
     @abstractmethod
     async def delete(self, doc_ids: list[str]) -> None:

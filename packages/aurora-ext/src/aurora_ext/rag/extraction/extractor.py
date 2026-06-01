@@ -81,8 +81,24 @@ class EntityRelationExtractor:
     instance can serve different pipelines.
     """
 
-    def __init__(self, llm: BaseLLM) -> None:
+    def __init__(
+        self,
+        llm: BaseLLM,
+        *,
+        force_llm_summary_on_merge: int = 8,
+        summary_max_tokens: int = 1200,
+        source_ids_limit_method: str = "FIFO",
+        max_source_ids_per_entity: int = 300,
+        max_source_ids_per_relation: int = 300,
+        max_file_paths: int = 100,
+    ) -> None:
         self._llm = llm
+        self.force_llm_summary_on_merge = force_llm_summary_on_merge
+        self.summary_max_tokens = summary_max_tokens
+        self.source_ids_limit_method = source_ids_limit_method
+        self.max_source_ids_per_entity = max_source_ids_per_entity
+        self.max_source_ids_per_relation = max_source_ids_per_relation
+        self.max_file_paths = max_file_paths
 
     # ── Public API ────────────────────────────────────────────────
 
