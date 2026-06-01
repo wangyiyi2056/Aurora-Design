@@ -28,6 +28,13 @@ from aurora_ext.rag.storage.factory import StorageFactory
 from aurora_ext.rag.storage.json_doc_status import JsonDocStatusStorage
 from aurora_ext.rag.storage.json_kv import JsonKVStorage
 from aurora_ext.rag.storage.networkx_graph import NetworkXGraphStorage
+from aurora_ext.rag.storage.workspace import (
+    WorkspaceConfig,
+    WorkspaceManager,
+    default_workspace_manager,
+    get_workspace_manager,
+    validate_workspace_id,
+)
 
 # ── Storage registry ─────────────────────────────────────────────
 _STORAGE_REGISTRY: dict[str, type] = {
@@ -226,6 +233,11 @@ __all__ = [
     "RedisKVStorage",
     "StorageFactory",
     "StorageNameSpace",
+    "WorkspaceConfig",
+    "WorkspaceManager",
+    "default_workspace_manager",
     "get_storage_class",
+    "get_workspace_manager",
     "register_storage",
+    "validate_workspace_id",
 ]

@@ -12,6 +12,7 @@ import re
 from typing import Any, Optional
 
 from aurora_ext.rag.storage.base import BaseVectorStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +24,17 @@ def _sanitize_index_name(namespace: str) -> str:
 
 
 class OpenSearchVectorDBStorage(BaseVectorStorage):
-    """OpenSearch k-NN-backed vector storage with HNSW indexing."""
+    """OpenSearch k-NN-backed vector storage with HNSW indexing.
+
+    Supports workspace isolation via index name prefixing.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
-        self._index = _sanitize_index_name(namespace)
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
+        ws_ns = wm.get_collection_name(namespace)
+        self._index = _sanitize_index_name(ws_ns)
 
         self._embedding_func = global_config.get("embedding_func")
 

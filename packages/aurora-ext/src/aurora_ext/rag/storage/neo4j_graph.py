@@ -13,6 +13,7 @@ import os
 from typing import Any, Optional
 
 from aurora_ext.rag.storage.base import BaseGraphStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +43,18 @@ def _deserialize_props(props: dict[str, Any]) -> dict[str, Any]:
 
 
 class Neo4jGraphStorage(BaseGraphStorage):
-    """Neo4j-backed knowledge graph storage."""
+    """Neo4j-backed knowledge graph storage.
+
+    Supports workspace isolation: when a ``WorkspaceManager`` is present
+    in ``global_config``, the namespace prefix and node labels are
+    prefixed with the workspace ID to isolate graph data per tenant.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
-        self._ns_prefix = f"{namespace}__"
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
+        self._ns_prefix = wm.get_namespace_prefix(namespace)
         self._indexes_ready = False
 
         uri = (

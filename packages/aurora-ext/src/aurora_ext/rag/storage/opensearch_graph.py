@@ -15,6 +15,7 @@ from collections import deque
 from typing import Any, Optional
 
 from aurora_ext.rag.storage.base import BaseGraphStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +47,18 @@ def _sanitize_index_name(prefix: str, namespace: str) -> str:
 
 
 class OpenSearchGraphStorage(BaseGraphStorage):
-    """OpenSearch-backed graph storage using dual indices."""
+    """OpenSearch-backed graph storage using dual indices.
+
+    Supports workspace isolation via index name prefixing.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
-        self._nodes_index = _sanitize_index_name("aurora_graph_nodes", namespace)
-        self._edges_index = _sanitize_index_name("aurora_graph_edges", namespace)
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
+        ws_ns = wm.get_collection_name(namespace)
+        self._nodes_index = _sanitize_index_name("aurora_graph_nodes", ws_ns)
+        self._edges_index = _sanitize_index_name("aurora_graph_edges", ws_ns)
 
         uri = (
             global_config.get("opensearch_uri")

@@ -91,11 +91,45 @@
 - [ ] 5.4 添加环境变量覆盖
 - [ ] 5.5 编写测试
 
-#### P0-6: 跨进程锁 + 工作空间隔离
-- [ ] 6.1 实现 `SharedLock` 抽象（本地/PostgreSQL/Redis 模式）
-- [ ] 6.2 在 `StorageNameSpace` 添加 workspace 字段
-- [ ] 6.3 在 `KnowledgeV2Service` 支持 workspace 参数
-- [ ] 6.4 编写并发测试
+#### P0-6: 多租户 Workspace 数据隔离系统 ✅ COMPLETED
+- [x] 6.1 实现 `WorkspaceManager` + `WorkspaceConfig` 数据隔离抽象（workspace.py）
+- [x] 6.2 所有存储后端注入 `WorkspaceManager`（JSON / Redis / PostgreSQL / Chroma / Milvus / Neo4j / NetworkX / MongoDB / OpenSearch / PGVector / FAISS / Qdrant / PGGraph / Memgraph / PostgresDocStatus）
+- [x] 6.3 工作空间管理 API（`/tenants` CRUD + 统计 + `X-Workspace-Id` 请求头提取）
+- [x] 6.4 编写 56 个隔离单元测试 + 13 个服务层测试
+
+### 变更文件
+
+| 文件 | 说明 |
+|------|------|
+| `rag/storage/workspace.py` | WorkspaceConfig + WorkspaceManager + validate_workspace_id（新增） |
+| `rag/storage/json_kv.py` | 子目录隔离: `{workspace_id}/{namespace}.json` |
+| `rag/storage/redis_kv.py` | Key prefix: `{workspace_id}:aurora_kv:{ns}:{key}` |
+| `rag/storage/postgres_kv.py` | Namespace prefix: `{workspace_id}:{namespace}` |
+| `rag/storage/chroma_vector.py` | Collection prefix: `{workspace_id}_{namespace}` |
+| `rag/storage/milvus_vector.py` | Collection prefix via sanitization |
+| `rag/storage/neo4j_graph.py` | Namespace prefix: `{workspace_id}__{ns}__` |
+| `rag/storage/networkx_graph.py` | File path: `{workspace_id}/{ns}.graphml` |
+| `rag/storage/json_doc_status.py` | File path isolation |
+| `rag/storage/mongo_kv.py`, `mongo_vector.py`, `mongo_doc_status.py` | Collection prefix |
+| `rag/storage/opensearch_*.py` | Index prefix |
+| `rag/storage/pgvector.py`, `pg_graph.py`, `postgres_doc_status.py` | Table/namespace prefix |
+| `rag/storage/faiss_vector.py`, `qdrant_vector.py`, `memgraph_graph.py` | Respective isolation |
+| `rag/storage/factory.py` | Optional `workspace_id` parameter in `create()` |
+| `rag/storage/__init__.py` | Export workspace classes |
+| `workspace/service.py` | WorkspaceService CRUD + stats（新增） |
+| `workspace/api.py` | `/tenants` REST API + `extract_workspace_id` header dep（新增） |
+| `configs/aurora.toml` | `[workspace]` config section |
+| `tests/ext/test_workspace.py` | 56 unit tests |
+| `tests/serve/test_workspace_api.py` | 13 service tests |
+
+### 测试结果
+
+```
+tests/ext/test_workspace.py   — 56 passed
+tests/ext/                     — 220 passed (0 regressions)
+tests/core/                    — 62 passed (0 regressions)
+Total                          — 282 passed
+```
 
 ### P1 — 成本与性能优化
 

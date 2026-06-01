@@ -10,7 +10,7 @@ crash the application.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +242,7 @@ class StorageFactory:
         backend: str,
         namespace: str,
         config: dict[str, Any],
+        workspace_id: Optional[str] = None,
     ) -> Any:
         """Create a storage instance by type and backend name.
 
@@ -255,6 +256,10 @@ class StorageFactory:
             Storage namespace (table/collection/file prefix).
         config:
             Global configuration dict passed to the storage constructor.
+        workspace_id:
+            Optional workspace ID for multi-tenant isolation.  When
+            provided, a ``WorkspaceManager`` is injected into *config*
+            if one is not already present.
 
         Returns
         -------
@@ -280,6 +285,13 @@ class StorageFactory:
                 f"Unknown backend '{backend}' for storage type "
                 f"'{storage_type}'. Available: {available}"
             )
+
+        # Inject workspace manager if workspace_id is provided and
+        # no workspace manager is already present in config
+        if workspace_id is not None and "workspace_manager" not in config:
+            from aurora_ext.rag.storage.workspace import WorkspaceManager
+
+            config = {**config, "workspace_manager": WorkspaceManager(workspace_id)}
 
         return storage_cls(namespace, config)
 

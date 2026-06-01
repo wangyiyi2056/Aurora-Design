@@ -13,16 +13,28 @@ import os
 from typing import Any, Optional
 
 from aurora_ext.rag.storage.base import BaseKVStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
 
 class RedisKVStorage(BaseKVStorage):
-    """Redis-backed key-value store with hash-based namespacing."""
+    """Redis-backed key-value store with hash-based namespacing.
+
+    Supports workspace isolation: when a ``WorkspaceManager`` is present
+    in ``global_config``, the key prefix becomes
+    ``{workspace_id}:aurora_kv:{namespace}:`` to isolate data per tenant.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
-        self._prefix = f"aurora_kv:{namespace}:"
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
+        base_prefix = f"aurora_kv:{namespace}"
+        if wm.enabled:
+            self._prefix = f"{wm.workspace_id}:{base_prefix}:"
+        else:
+            self._prefix = f"{base_prefix}:"
 
         uri = (
             global_config.get("redis_uri")

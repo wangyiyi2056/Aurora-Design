@@ -18,6 +18,7 @@ from aurora_ext.rag.storage.base import (
     DocStatus,
     DocStatusInfo,
 )
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,16 @@ def _now_iso() -> str:
 
 
 class MongoDocStatusStorage(BaseDocStatusStorage):
-    """MongoDB-backed document status storage."""
+    """MongoDB-backed document status storage.
+
+    Supports workspace isolation via collection name prefixing.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
+
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
 
         uri = (
             global_config.get("mongo_uri")
@@ -43,7 +50,8 @@ class MongoDocStatusStorage(BaseDocStatusStorage):
 
         self._client = AsyncIOMotorClient(uri)
         self._db = self._client[db_name]
-        self._collection = self._db[f"doc_status_{namespace}"]
+        coll_name = wm.get_collection_name(f"doc_status_{namespace}")
+        self._collection = self._db[coll_name]
         self._indexes_ready = False
 
     async def _ensure_indexes(self) -> None:

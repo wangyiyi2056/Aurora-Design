@@ -19,6 +19,7 @@ from aurora_ext.rag.storage.base import (
     DocStatus,
     DocStatusInfo,
 )
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +69,20 @@ _DOC_COLS = (
 
 
 class PostgresDocStatusStorage(BaseDocStatusStorage):
-    """PostgreSQL-backed document status storage."""
+    """PostgreSQL-backed document status storage.
+
+    Supports workspace isolation: the namespace is prefixed with
+    workspace ID to partition document status data per tenant.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
+        if wm.enabled:
+            self._ws_namespace = f"{wm.workspace_id}:{namespace}"
+        else:
+            self._ws_namespace = namespace
         self._table_ready = False
 
         uri = (
@@ -140,7 +151,7 @@ class PostgresDocStatusStorage(BaseDocStatusStorage):
             cur = await conn.execute(
                 f"SELECT {', '.join(_DOC_COLS)} FROM aurora_doc_status "
                 "WHERE namespace = %s AND doc_id = %s",
-                [self.namespace, doc_id],
+                [self._ws_namespace, doc_id],
             )
             row = await cur.fetchone()
             if row is None:
@@ -157,7 +168,7 @@ class PostgresDocStatusStorage(BaseDocStatusStorage):
             cur = await conn.execute(
                 f"SELECT {', '.join(_DOC_COLS)} FROM aurora_doc_status "
                 "WHERE namespace = %s AND doc_id = ANY(%s)",
-                [self.namespace, doc_ids],
+                [self._ws_namespace, doc_ids],
             )
             rows = await cur.fetchall()
             lookup: dict[str, DocStatusInfo] = {}
@@ -170,7 +181,7 @@ class PostgresDocStatusStorage(BaseDocStatusStorage):
         self, status: DocStatus, *, kb_name: str | None = None
     ) -> list[DocStatusInfo]:
         await self._ensure_table()
-        params: list[Any] = [self.namespace, status.value]
+        params: list[Any] = [self._ws_namespace, status.value]
         kb_clause = ""
         if kb_name:
             kb_clause = " AND kb_name = %s"
@@ -210,7 +221,7 @@ class PostgresDocStatusStorage(BaseDocStatusStorage):
         order_dir = "DESC" if sort_direction == "desc" else "ASC"
 
         where_parts = ["namespace = %s"]
-        params: list[Any] = [self.namespace]
+        params: list[Any] = [self._ws_namespace]
 
         if kb_name:
             where_parts.append("kb_name = %s")
@@ -253,7 +264,7 @@ class PostgresDocStatusStorage(BaseDocStatusStorage):
         self, *, kb_name: str | None = None
     ) -> dict[str, int]:
         await self._ensure_table()
-        params: list[Any] = [self.namespace]
+        params: list[Any] = [self._ws_namespace]
         kb_clause = ""
         if kb_name:
             kb_clause = " AND kb_name = %s"
@@ -303,7 +314,7 @@ class PostgresDocStatusStorage(BaseDocStatusStorage):
                         updated_at = now()
                     """,
                     [
-                        self.namespace,
+                        self._ws_namespace,
                         doc_id,
                         record["status"],
                         record.get("file_path", ""),
@@ -339,7 +350,7 @@ class PostgresDocStatusStorage(BaseDocStatusStorage):
             params.append(v)
 
         set_clause = ", ".join(set_parts)
-        insert_params: list[Any] = [self.namespace, doc_id, status.value]
+        insert_params: list[Any] = [self._ws_namespace, doc_id, status.value]
 
         async with self._pool.connection() as conn:
             await conn.execute(
@@ -362,7 +373,7 @@ class PostgresDocStatusStorage(BaseDocStatusStorage):
             await conn.execute(
                 "DELETE FROM aurora_doc_status "
                 "WHERE namespace = %s AND doc_id = ANY(%s)",
-                [self.namespace, doc_ids],
+                [self._ws_namespace, doc_ids],
             )
             await conn.commit()
 
@@ -371,7 +382,7 @@ class PostgresDocStatusStorage(BaseDocStatusStorage):
         async with self._pool.connection() as conn:
             await conn.execute(
                 "DELETE FROM aurora_doc_status WHERE namespace = %s",
-                [self.namespace],
+                [self._ws_namespace],
             )
             await conn.commit()
 
@@ -382,7 +393,7 @@ class PostgresDocStatusStorage(BaseDocStatusStorage):
     ) -> list[DocStatusInfo]:
         """Find documents by their file basename."""
         await self._ensure_table()
-        params: list[Any] = [self.namespace, basename]
+        params: list[Any] = [self._ws_namespace, basename]
         kb_clause = ""
         if kb_name:
             kb_clause = " AND kb_name = %s"
@@ -405,7 +416,7 @@ class PostgresDocStatusStorage(BaseDocStatusStorage):
     ) -> list[DocStatusInfo]:
         """Find documents by content hash (duplicate detection)."""
         await self._ensure_table()
-        params: list[Any] = [self.namespace, content_hash]
+        params: list[Any] = [self._ws_namespace, content_hash]
         kb_clause = ""
         if kb_name:
             kb_clause = " AND kb_name = %s"

@@ -13,6 +13,7 @@ import re
 from typing import Any, Optional
 
 from aurora_ext.rag.storage.base import BaseVectorStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +33,20 @@ def _sanitize_collection_name(namespace: str) -> str:
 
 
 class MilvusVectorStorage(BaseVectorStorage):
-    """Milvus-backed vector storage with HNSW indexing."""
+    """Milvus-backed vector storage with HNSW indexing.
+
+    Supports workspace isolation: when a ``WorkspaceManager`` is present
+    in ``global_config``, the collection name is prefixed with the
+    workspace ID to isolate vector data per tenant.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
 
-        self._collection_name = _sanitize_collection_name(namespace)
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
+        ws_namespace = wm.get_collection_name(namespace)
+        self._collection_name = _sanitize_collection_name(ws_namespace)
         self._embedding_func = global_config.get("embedding_func")
 
         # Determine embedding dimension

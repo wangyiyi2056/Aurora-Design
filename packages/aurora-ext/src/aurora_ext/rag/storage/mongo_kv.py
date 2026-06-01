@@ -12,15 +12,23 @@ import os
 from typing import Any, Optional
 
 from aurora_ext.rag.storage.base import BaseKVStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
 
 class MongoKVStorage(BaseKVStorage):
-    """MongoDB-backed key-value store."""
+    """MongoDB-backed key-value store.
+
+    Supports workspace isolation via collection name prefixing.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
+
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
+        coll_name = wm.get_collection_name(f"kv_{namespace}")
 
         uri = (
             global_config.get("mongo_uri")
@@ -33,7 +41,7 @@ class MongoKVStorage(BaseKVStorage):
 
         self._client = AsyncIOMotorClient(uri)
         self._db = self._client[db_name]
-        self._collection = self._db[f"kv_{namespace}"]
+        self._collection = self._db[coll_name]
 
     # ── BaseKVStorage interface ──────────────────────────────────
 

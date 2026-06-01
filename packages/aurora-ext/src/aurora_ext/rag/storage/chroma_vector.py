@@ -11,24 +11,34 @@ import os
 from typing import Any, Optional
 
 from aurora_ext.rag.storage.base import BaseVectorStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
 
 class ChromaVectorStorage(BaseVectorStorage):
-    """ChromaDB persistent vector storage."""
+    """ChromaDB persistent vector storage.
+
+    Supports workspace isolation: when a ``WorkspaceManager`` is present
+    in ``global_config``, the ChromaDB collection name is prefixed with
+    the workspace ID — ``{workspace_id}_{namespace}`` — to isolate
+    vector data per tenant.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
         working_dir = global_config.get("working_dir", "./rag_storage")
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
         persist_dir = os.path.join(working_dir, "chroma")
         self._embedding_func = global_config.get("embedding_func")
+        self._collection_name = wm.get_collection_name(namespace)
 
         import chromadb
 
         self._client = chromadb.PersistentClient(path=persist_dir)
         self._collection = self._client.get_or_create_collection(
-            name=namespace,
+            name=self._collection_name,
             metadata={"hnsw:space": "cosine"},
         )
 
@@ -111,8 +121,8 @@ class ChromaVectorStorage(BaseVectorStorage):
         try:
             self._client.delete_collection(self._collection.name)
             self._collection = self._client.get_or_create_collection(
-                name=self.namespace,
+                name=self._collection_name,
                 metadata={"hnsw:space": "cosine"},
             )
         except Exception as exc:
-            logger.warning("Failed to drop collection %s: %s", self.namespace, exc)
+            logger.warning("Failed to drop collection %s: %s", self._collection_name, exc)

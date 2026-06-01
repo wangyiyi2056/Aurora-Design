@@ -20,6 +20,7 @@ from aurora_ext.rag.storage.base import (
     DocStatus,
     DocStatusInfo,
 )
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +30,19 @@ def _now_iso() -> str:
 
 
 class JsonDocStatusStorage(BaseDocStatusStorage):
-    """JSON file-backed document status storage."""
+    """JSON file-backed document status storage.
+
+    Supports workspace isolation: when a ``WorkspaceManager`` is present
+    in ``global_config``, the status file is placed in a workspace
+    subdirectory — ``{working_dir}/{workspace_id}/{namespace}_status.json``.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
         working_dir = global_config.get("working_dir", "./rag_storage")
-        self._file_path = os.path.join(working_dir, f"{namespace}_status.json")
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
+        self._file_path = wm.get_file_path(working_dir, f"{namespace}_status.json")
         self._data: dict[str, dict[str, Any]] = {}
         self._loaded = False
 

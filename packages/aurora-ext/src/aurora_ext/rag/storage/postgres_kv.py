@@ -13,6 +13,7 @@ import os
 from typing import Any, Optional
 
 from aurora_ext.rag.storage.base import BaseKVStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +29,23 @@ CREATE TABLE IF NOT EXISTS aurora_kv (
 
 
 class PostgresKVStorage(BaseKVStorage):
-    """PostgreSQL JSONB-backed key-value store."""
+    """PostgreSQL JSONB-backed key-value store.
+
+    Supports workspace isolation: when a ``WorkspaceManager`` is present
+    in ``global_config``, the namespace is prefixed with the workspace ID
+    — ``{workspace_id}:{namespace}`` — so that data from different tenants
+    is stored in separate rows of the shared ``aurora_kv`` table.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
+        # Apply workspace prefix to the namespace used in queries
+        if wm.enabled:
+            self._ws_namespace = f"{wm.workspace_id}:{namespace}"
+        else:
+            self._ws_namespace = namespace
         self._table_ready = False
 
         uri = (
@@ -74,7 +88,7 @@ class PostgresKVStorage(BaseKVStorage):
         async with self._pool.connection() as conn:
             cur = await conn.execute(
                 "SELECT key FROM aurora_kv WHERE namespace = %s",
-                [self.namespace],
+                [self._ws_namespace],
             )
             rows = await cur.fetchall()
             return [row[0] for row in rows]
@@ -84,7 +98,7 @@ class PostgresKVStorage(BaseKVStorage):
         async with self._pool.connection() as conn:
             cur = await conn.execute(
                 "SELECT value FROM aurora_kv WHERE namespace = %s AND key = %s",
-                [self.namespace, key],
+                [self._ws_namespace, key],
             )
             row = await cur.fetchone()
             if row is None:
@@ -101,7 +115,7 @@ class PostgresKVStorage(BaseKVStorage):
             cur = await conn.execute(
                 "SELECT key, value FROM aurora_kv "
                 "WHERE namespace = %s AND key = ANY(%s)",
-                [self.namespace, keys],
+                [self._ws_namespace, keys],
             )
             rows = await cur.fetchall()
             lookup: dict[str, dict[str, Any]] = {}
@@ -118,7 +132,7 @@ class PostgresKVStorage(BaseKVStorage):
             cur = await conn.execute(
                 "SELECT value FROM aurora_kv "
                 "WHERE namespace = %s AND value->>%s = %s",
-                [self.namespace, field, str(value)],
+                [self._ws_namespace, field, str(value)],
             )
             rows = await cur.fetchall()
             out: list[dict[str, Any]] = []
@@ -141,7 +155,7 @@ class PostgresKVStorage(BaseKVStorage):
                         SET value = EXCLUDED.value,
                             updated_at = now()
                     """,
-                    [self.namespace, key, json.dumps(record, ensure_ascii=False)],
+                    [self._ws_namespace, key, json.dumps(record, ensure_ascii=False)],
                 )
             await conn.commit()
 
@@ -153,7 +167,7 @@ class PostgresKVStorage(BaseKVStorage):
             await conn.execute(
                 "DELETE FROM aurora_kv "
                 "WHERE namespace = %s AND key = ANY(%s)",
-                [self.namespace, keys],
+                [self._ws_namespace, keys],
             )
             await conn.commit()
 
@@ -162,6 +176,6 @@ class PostgresKVStorage(BaseKVStorage):
         async with self._pool.connection() as conn:
             await conn.execute(
                 "DELETE FROM aurora_kv WHERE namespace = %s",
-                [self.namespace],
+                [self._ws_namespace],
             )
             await conn.commit()

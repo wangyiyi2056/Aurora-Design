@@ -15,15 +15,21 @@ from typing import Any, Optional
 import numpy as np
 
 from aurora_ext.rag.storage.base import BaseVectorStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
 
 class FaissVectorDBStorage(BaseVectorStorage):
-    """FAISS-backed vector storage with HNSW or flat index."""
+    """FAISS-backed vector storage with HNSW or flat index.
+
+    Supports workspace isolation via subdirectory for FAISS index files.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
         self._embedding_func = global_config.get("embedding_func")
 
         embedding_dim = 1536
@@ -34,7 +40,10 @@ class FaissVectorDBStorage(BaseVectorStorage):
         self._embedding_dim = global_config.get("embedding_dim", embedding_dim)
 
         working_dir = global_config.get("working_dir", "./rag_storage")
-        faiss_dir = os.path.join(working_dir, "faiss")
+        faiss_base = os.path.join(working_dir, "faiss")
+        faiss_dir = wm.get_file_path(faiss_base, ".")
+        # get_file_path with "." gives us the workspace subdir
+        faiss_dir = os.path.dirname(wm.get_file_path(faiss_base, "placeholder"))
         os.makedirs(faiss_dir, exist_ok=True)
 
         self._index_path = os.path.join(faiss_dir, f"{namespace}.index")

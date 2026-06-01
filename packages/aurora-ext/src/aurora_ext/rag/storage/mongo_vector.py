@@ -16,15 +16,22 @@ import os
 from typing import Any, Optional
 
 from aurora_ext.rag.storage.base import BaseVectorStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
 
 class MongoVectorDBStorage(BaseVectorStorage):
-    """MongoDB Atlas Vector Search-backed vector storage."""
+    """MongoDB Atlas Vector Search-backed vector storage.
+
+    Supports workspace isolation via collection name prefixing.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
+
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
 
         self._embedding_func = global_config.get("embedding_func")
 
@@ -49,7 +56,8 @@ class MongoVectorDBStorage(BaseVectorStorage):
 
         self._client = AsyncIOMotorClient(uri)
         self._db = self._client[db_name]
-        self._collection = self._db[f"vector_{namespace}"]
+        coll_name = wm.get_collection_name(f"vector_{namespace}")
+        self._collection = self._db[coll_name]
 
     # ── BaseVectorStorage interface ──────────────────────────────
 

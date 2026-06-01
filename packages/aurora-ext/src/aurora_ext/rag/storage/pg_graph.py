@@ -19,6 +19,7 @@ from collections import deque
 from typing import Any, Optional
 
 from aurora_ext.rag.storage.base import BaseGraphStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +80,20 @@ _CREATE_INDEXES = [
 
 
 class PGGraphStorage(BaseGraphStorage):
-    """PostgreSQL-backed graph storage using relational tables."""
+    """PostgreSQL-backed graph storage using relational tables.
+
+    Supports workspace isolation: the namespace is prefixed with
+    workspace ID to partition graph data per tenant in shared tables.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
+        if wm.enabled:
+            self._ws_namespace = f"{wm.workspace_id}:{namespace}"
+        else:
+            self._ws_namespace = namespace
         self._table_ready = False
 
         uri = (
@@ -126,7 +137,7 @@ class PGGraphStorage(BaseGraphStorage):
             cur = await conn.execute(
                 "SELECT 1 FROM aurora_graph_nodes "
                 "WHERE namespace = %s AND node_id = %s",
-                [self.namespace, node_id],
+                [self._ws_namespace, node_id],
             )
             return await cur.fetchone() is not None
 
@@ -136,7 +147,7 @@ class PGGraphStorage(BaseGraphStorage):
             cur = await conn.execute(
                 "SELECT node_id, label, properties FROM aurora_graph_nodes "
                 "WHERE namespace = %s AND node_id = %s",
-                [self.namespace, node_id],
+                [self._ws_namespace, node_id],
             )
             row = await cur.fetchone()
             if row is None:
@@ -165,7 +176,7 @@ class PGGraphStorage(BaseGraphStorage):
                     properties = EXCLUDED.properties,
                     updated_at = now()
                 """,
-                [self.namespace, node_id, label, json.dumps(safe_data, ensure_ascii=False)],
+                [self._ws_namespace, node_id, label, json.dumps(safe_data, ensure_ascii=False)],
             )
             await conn.commit()
 
@@ -175,12 +186,12 @@ class PGGraphStorage(BaseGraphStorage):
             await conn.execute(
                 "DELETE FROM aurora_graph_edges "
                 "WHERE namespace = %s AND (source_id = %s OR target_id = %s)",
-                [self.namespace, node_id, node_id],
+                [self._ws_namespace, node_id, node_id],
             )
             await conn.execute(
                 "DELETE FROM aurora_graph_nodes "
                 "WHERE namespace = %s AND node_id = %s",
-                [self.namespace, node_id],
+                [self._ws_namespace, node_id],
             )
             await conn.commit()
 
@@ -190,7 +201,7 @@ class PGGraphStorage(BaseGraphStorage):
             cur = await conn.execute(
                 "SELECT COUNT(*) FROM aurora_graph_edges "
                 "WHERE namespace = %s AND (source_id = %s OR target_id = %s)",
-                [self.namespace, node_id, node_id],
+                [self._ws_namespace, node_id, node_id],
             )
             row = await cur.fetchone()
             return int(row[0]) if row else 0
@@ -200,7 +211,7 @@ class PGGraphStorage(BaseGraphStorage):
         async with self._pool.connection() as conn:
             cur = await conn.execute(
                 "SELECT label FROM aurora_graph_nodes WHERE namespace = %s",
-                [self.namespace],
+                [self._ws_namespace],
             )
             rows = await cur.fetchall()
             return [row[0] for row in rows]
@@ -221,7 +232,7 @@ class PGGraphStorage(BaseGraphStorage):
                 ORDER BY degree DESC
                 LIMIT %s
                 """,
-                [self.namespace, limit],
+                [self._ws_namespace, limit],
             )
             rows = await cur.fetchall()
             return [row[0] for row in rows]
@@ -233,7 +244,7 @@ class PGGraphStorage(BaseGraphStorage):
                 "SELECT label FROM aurora_graph_nodes "
                 "WHERE namespace = %s AND label ILIKE %s "
                 "LIMIT %s",
-                [self.namespace, f"%{query}%", limit],
+                [self._ws_namespace, f"%{query}%", limit],
             )
             rows = await cur.fetchall()
             return [row[0] for row in rows]
@@ -246,7 +257,7 @@ class PGGraphStorage(BaseGraphStorage):
             cur = await conn.execute(
                 "SELECT 1 FROM aurora_graph_edges "
                 "WHERE namespace = %s AND source_id = %s AND target_id = %s",
-                [self.namespace, source_id, target_id],
+                [self._ws_namespace, source_id, target_id],
             )
             return await cur.fetchone() is not None
 
@@ -258,7 +269,7 @@ class PGGraphStorage(BaseGraphStorage):
             cur = await conn.execute(
                 "SELECT properties FROM aurora_graph_edges "
                 "WHERE namespace = %s AND source_id = %s AND target_id = %s",
-                [self.namespace, source_id, target_id],
+                [self._ws_namespace, source_id, target_id],
             )
             row = await cur.fetchone()
             if row is None:
@@ -288,7 +299,7 @@ class PGGraphStorage(BaseGraphStorage):
                     updated_at = now()
                 """,
                 [
-                    self.namespace,
+                    self._ws_namespace,
                     source_id,
                     target_id,
                     json.dumps(safe_data, ensure_ascii=False),
@@ -302,7 +313,7 @@ class PGGraphStorage(BaseGraphStorage):
             await conn.execute(
                 "DELETE FROM aurora_graph_edges "
                 "WHERE namespace = %s AND source_id = %s AND target_id = %s",
-                [self.namespace, source_id, target_id],
+                [self._ws_namespace, source_id, target_id],
             )
             await conn.commit()
 
@@ -312,7 +323,7 @@ class PGGraphStorage(BaseGraphStorage):
             cur = await conn.execute(
                 "SELECT properties FROM aurora_graph_edges "
                 "WHERE namespace = %s AND source_id = %s AND target_id = %s",
-                [self.namespace, source_id, target_id],
+                [self._ws_namespace, source_id, target_id],
             )
             row = await cur.fetchone()
             if row is None:
@@ -328,7 +339,7 @@ class PGGraphStorage(BaseGraphStorage):
             cur = await conn.execute(
                 "SELECT source_id, target_id FROM aurora_graph_edges "
                 "WHERE namespace = %s AND (source_id = %s OR target_id = %s)",
-                [self.namespace, node_id, node_id],
+                [self._ws_namespace, node_id, node_id],
             )
             rows = await cur.fetchall()
             return [(row[0], row[1]) for row in rows]
@@ -343,7 +354,7 @@ class PGGraphStorage(BaseGraphStorage):
                 FROM aurora_graph_edges
                 WHERE namespace = %s AND (source_id = %s OR target_id = %s)
                 """,
-                [node_id, self.namespace, node_id, node_id],
+                [node_id, self._ws_namespace, node_id, node_id],
             )
             rows = await cur.fetchall()
             return [row[0] for row in rows]
@@ -368,7 +379,7 @@ class PGGraphStorage(BaseGraphStorage):
                     ORDER BY n.node_id
                     LIMIT %s
                     """,
-                    [self.namespace, max_nodes],
+                    [self._ws_namespace, max_nodes],
                 )
                 rows = await cur.fetchall()
 
@@ -437,7 +448,7 @@ class PGGraphStorage(BaseGraphStorage):
                 "SELECT source_id, target_id, properties "
                 "FROM aurora_graph_edges "
                 "WHERE namespace = %s AND source_id = ANY(%s) AND target_id = ANY(%s)",
-                [self.namespace, node_ids, node_ids],
+                [self._ws_namespace, node_ids, node_ids],
             )
             rows = await cur.fetchall()
 
@@ -458,7 +469,7 @@ class PGGraphStorage(BaseGraphStorage):
             cur = await conn.execute(
                 "SELECT node_id, label, properties FROM aurora_graph_nodes "
                 "WHERE namespace = %s",
-                [self.namespace],
+                [self._ws_namespace],
             )
             rows = await cur.fetchall()
             return self._rows_to_nodes(rows)
@@ -469,7 +480,7 @@ class PGGraphStorage(BaseGraphStorage):
             cur = await conn.execute(
                 "SELECT source_id, target_id, properties FROM aurora_graph_edges "
                 "WHERE namespace = %s",
-                [self.namespace],
+                [self._ws_namespace],
             )
             rows = await cur.fetchall()
 
@@ -487,10 +498,10 @@ class PGGraphStorage(BaseGraphStorage):
         async with self._pool.connection() as conn:
             await conn.execute(
                 "DELETE FROM aurora_graph_edges WHERE namespace = %s",
-                [self.namespace],
+                [self._ws_namespace],
             )
             await conn.execute(
                 "DELETE FROM aurora_graph_nodes WHERE namespace = %s",
-                [self.namespace],
+                [self._ws_namespace],
             )
             await conn.commit()
