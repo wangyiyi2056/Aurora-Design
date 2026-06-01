@@ -143,3 +143,32 @@ async def query_data(
     except Exception as exc:
         logger.exception("Data query failed: %s", req.query[:100])
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/token-stats")
+async def get_token_stats(
+    name: str,
+    service: Any = Depends(get_knowledge_v2_service),
+) -> dict[str, Any]:
+    """Return token usage statistics for a knowledge base.
+
+    Includes LLM call counts, embedding call counts, per-category
+    token usage (entities, relations, chunks), and truncation events.
+    """
+    stats = service.get_token_stats(name)
+    stats["kb_name"] = name
+    return stats
+
+
+@router.post("/token-stats/reset")
+async def reset_token_stats(
+    name: str,
+    service: Any = Depends(get_knowledge_v2_service),
+) -> dict[str, Any]:
+    """Reset token usage statistics for a knowledge base."""
+    success = service.reset_token_stats(name)
+    return {
+        "kb_name": name,
+        "reset": success,
+        "message": "Statistics reset" if success else "No statistics to reset",
+    }

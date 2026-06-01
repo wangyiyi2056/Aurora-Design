@@ -25,6 +25,8 @@ from aurora_core.rag.utils.embedding import EmbeddingConfig, EmbeddingFunc
 from aurora_core.rag.utils.hashing import compute_args_hash, compute_mdhash_id
 from aurora_ext.rag.pipeline.status import PipelineCancelledError, PipelineManager
 from aurora_ext.rag.retrieval.query_engine import QueryEngine, QueryMode, QueryParam
+from aurora_ext.rag.utils.token_tracker import TokenBudget as TrackerBudget
+from aurora_ext.rag.utils.token_tracker import TokenTracker
 from aurora_ext.rag.storage.base import (
     BaseDocStatusStorage,
     BaseGraphStorage,
@@ -174,6 +176,9 @@ class KnowledgeV2Service(BaseService):
 
         # Initialise the pipeline manager (Phase 2)
         self._pipeline = PipelineManager(doc_status_storage=doc_status_storage)
+
+        # Per-KB token trackers for usage statistics
+        self._token_trackers: dict[str, TokenTracker] = {}
 
         # Role registry for per-role LLM bindings (VLM, extraction, etc.)
         self._role_registry = None
@@ -1332,6 +1337,17 @@ class KnowledgeV2Service(BaseService):
                          f"Please bind them in the Models page first."
             }
         engine_mode = _schema_mode_to_engine(mode)
+
+        # Attach per-KB token tracker to the query params
+        tracker = self.get_token_tracker(kb_name)
+        tracker_budget = TrackerBudget(
+            max_entity_tokens=max_entity_tokens,
+            max_relation_tokens=max_relation_tokens,
+            max_total_tokens=max_total_tokens,
+            max_chunk_tokens=8000,
+        )
+        tracker.budget = tracker_budget
+
         param = QueryParam(
             query=query,
             mode=engine_mode,
@@ -1343,6 +1359,8 @@ class KnowledgeV2Service(BaseService):
             max_entity_tokens=max_entity_tokens,
             max_relation_tokens=max_relation_tokens,
             max_total_tokens=max_total_tokens,
+            max_chunk_tokens=8000,
+            token_tracker=tracker,
             hl_keywords=hl_keywords or [],
             ll_keywords=ll_keywords or [],
             conversation_history=conversation_history or [],
@@ -2269,6 +2287,27 @@ class KnowledgeV2Service(BaseService):
             "relationship_count": result.relationship_count,
         }
 
+    # ── Token Budget Stats ─────────────────────────────────────────────
+
+    def get_token_tracker(self, kb_name: str) -> TokenTracker:
+        """Return (or lazily create) the token tracker for a knowledge base."""
+        if kb_name not in self._token_trackers:
+            self._token_trackers[kb_name] = TokenTracker(TrackerBudget())
+        return self._token_trackers[kb_name]
+
+    def get_token_stats(self, kb_name: str) -> dict[str, Any]:
+        """Return token usage statistics for a knowledge base."""
+        tracker = self.get_token_tracker(kb_name)
+        return tracker.get_stats()
+
+    def reset_token_stats(self, kb_name: str) -> bool:
+        """Reset token usage statistics for a knowledge base."""
+        tracker = self._token_trackers.get(kb_name)
+        if tracker is None:
+            return False
+        tracker.reset_stats()
+        return True
+
     # ── RAGAS Evaluation ──────────────────────────────────────────────
 
     async def evaluate(
@@ -2373,3 +2412,148 @@ class KnowledgeV2Service(BaseService):
         evaluator = RAGASEvaluator(llm=lc_llm, embeddings=lc_embeddings)
         report = evaluator.evaluate(eval_items, metrics=metrics)
         return report.to_dict()
+
+    # ── Extraction configuration (Phase 5+) ─────────────────────────
+
+    # Per-knowledge-base extraction config store.  Keyed by ``kb_name``.
+    _extraction_configs: dict[str, Any] | None = None
+
+    def _ensure_extraction_configs(self) -> dict[str, Any]:
+        if self._extraction_configs is None:
+            self._extraction_configs = {}
+        return self._extraction_configs
+
+    def get_extraction_config(self, kb_name: str) -> Any:
+        """Return the :class:`KGExtractionFullConfig` for *kb_name*.
+
+        Falls back to sensible defaults when no custom config has been
+        set for the given knowledge base.
+        """
+        from aurora_ext.rag.extraction.config import KGExtractionFullConfig
+
+        store = self._ensure_extraction_configs()
+        if kb_name not in store:
+            store[kb_name] = KGExtractionFullConfig()
+        return store[kb_name]
+
+    def update_extraction_config(
+        self,
+        kb_name: str,
+        updates: dict[str, Any],
+    ) -> Any:
+        """Partially update the extraction config for *kb_name*.
+
+        Returns the updated :class:`KGExtractionFullConfig`.
+        """
+        from dataclasses import replace as _dc_replace
+
+        from aurora_ext.rag.extraction.config import (
+            AddonParams,
+            ExtractionConfig,
+            EntityTypeConfig,
+            KGExtractionFullConfig,
+        )
+
+        current = self.get_extraction_config(kb_name)
+        store = self._ensure_extraction_configs()
+
+        # Build updated sub-configs.
+        ext_fields = {
+            f: updates[f]
+            for f in (
+                "entity_extract_max_gleaning",
+                "relation_extract_max_gleaning",
+                "max_parallel_extract",
+                "enable_incremental_extract",
+                "max_total_records",
+                "max_entity_records",
+                "use_json",
+                "enable_cache",
+            )
+            if f in updates
+        }
+        new_ext = _dc_replace(current.extraction, **ext_fields) if ext_fields else current.extraction
+
+        # Entity types.
+        et_data = updates.get("entity_types")
+        if et_data:
+            custom_types = et_data.get("custom_types", current.entity_types.custom_types)
+            if isinstance(custom_types, list):
+                custom_types = tuple(custom_types)
+            new_et = _dc_replace(
+                current.entity_types,
+                custom_types=custom_types,
+                type_prompt_file=et_data.get(
+                    "type_prompt_file", current.entity_types.type_prompt_file
+                ),
+            )
+        else:
+            new_et = current.entity_types
+
+        # Relation types.
+        rt_data = updates.get("relation_types")
+        if rt_data:
+            custom_rel = rt_data.get("custom_types", current.entity_types.custom_relation_types)
+            if isinstance(custom_rel, list):
+                custom_rel = tuple(custom_rel)
+            new_et = _dc_replace(new_et, custom_relation_types=custom_rel)
+
+        # Addon / language.
+        addon_fields: dict[str, Any] = {}
+        lang_data = updates.get("language")
+        if lang_data and isinstance(lang_data, dict):
+            addon_fields["language"] = lang_data.get(
+                "output_language", current.addon.language
+            )
+        for key in ("entity_types_guidance", "relation_types_guidance"):
+            if key in updates:
+                addon_fields[key] = updates[key]
+        new_addon = (
+            _dc_replace(current.addon, **addon_fields)
+            if addon_fields
+            else current.addon
+        )
+
+        merged = KGExtractionFullConfig(
+            extraction=new_ext,
+            entity_types=new_et,
+            addon=new_addon,
+        )
+        store[kb_name] = merged
+        return merged
+
+    async def batch_extract(
+        self,
+        kb_name: str,
+        chunks: list[dict[str, str]],
+    ) -> Any:
+        """Run batch concurrent extraction on *chunks* for *kb_name*.
+
+        Uses the :class:`ExtractionOrchestrator` with the per-KB
+        extraction configuration.
+        """
+        from aurora_ext.rag.extraction.config import KGExtractionFullConfig
+        from aurora_ext.rag.extraction.extractor import EntityRelationExtractor
+        from aurora_ext.rag.extraction.orchestrator import ExtractionOrchestrator
+
+        cfg: KGExtractionFullConfig = self.get_extraction_config(kb_name)
+
+        # Build an extractor using the KB's LLM (extract role).
+        self._try_rebuild_llm()
+        llm = self._llm
+        if llm is None and self._role_registry is not None:
+            from aurora_core.model.roles import LLMRole
+            try:
+                llm = await self._role_registry.get_llm(LLMRole.EXTRACT)
+            except Exception:
+                llm = None
+
+        if llm is None:
+            raise RuntimeError(
+                "No LLM available for extraction. "
+                "Configure a default LLM or bind the extract role."
+            )
+
+        extractor = EntityRelationExtractor(llm=llm)
+        orchestrator = ExtractionOrchestrator.from_full_config(extractor, cfg)
+        return await orchestrator.extract_batch(chunks)

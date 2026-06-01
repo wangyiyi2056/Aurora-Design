@@ -23,11 +23,14 @@ class TokenBudget:
         Maximum tokens allocated to relationship descriptions.
     max_total_tokens:
         Maximum total tokens for the entire context.
+    max_chunk_tokens:
+        Maximum tokens allocated to text chunk content.
     """
 
     max_entity_tokens: int = 6000
     max_relation_tokens: int = 8000
     max_total_tokens: int = 30000
+    max_chunk_tokens: int = 8000
 
     def truncate_entities(
         self, entities: list[dict[str, Any]]
@@ -50,7 +53,8 @@ class TokenBudget:
     ) -> list[dict[str, Any]]:
         """Truncate chunk list to fit within remaining total budget."""
         remaining = self.max_total_tokens - reserved
-        return self._truncate_by_field(chunks, "content", remaining)
+        chunk_budget = min(self.max_chunk_tokens, max(0, remaining))
+        return self._truncate_by_field(chunks, "content", chunk_budget)
 
     @staticmethod
     def _truncate_by_field(

@@ -52,6 +52,7 @@ from aurora_ext.rag.retrieval.keyword_extractor import KeywordExtractor
 from aurora_ext.rag.retrieval.reranker import RerankerBase
 from aurora_ext.rag.retrieval.token_budget import TokenBudget
 from aurora_ext.rag.storage.base import BaseGraphStorage, BaseKVStorage, BaseVectorStorage
+from aurora_ext.rag.utils.token_tracker import TokenTracker
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,8 @@ class QueryParam:
     max_entity_tokens: int = 6000
     max_relation_tokens: int = 8000
     max_total_tokens: int = 30000
+    max_chunk_tokens: int = 8000
+    token_tracker: Optional[TokenTracker] = None
     hl_keywords: list[str] = field(default_factory=list)
     ll_keywords: list[str] = field(default_factory=list)
     conversation_history: list[dict[str, str]] = field(default_factory=list)
@@ -291,6 +294,7 @@ class QueryEngine:
             max_entity_tokens=param.max_entity_tokens,
             max_relation_tokens=param.max_relation_tokens,
             max_total_tokens=param.max_total_tokens,
+            max_chunk_tokens=param.max_chunk_tokens,
         )
         chunks = budget.truncate_chunks(chunks)
 
@@ -678,16 +682,37 @@ class QueryEngine:
         chunks: list[dict],
         is_kg: bool,
     ) -> QueryContext:
-        """Apply token budget and build context."""
-        budget = TokenBudget(
-            max_entity_tokens=param.max_entity_tokens,
-            max_relation_tokens=param.max_relation_tokens,
-            max_total_tokens=param.max_total_tokens,
-        )
+        """Apply token budget and build context.
 
-        entities = budget.truncate_entities(entities)
-        relationships = budget.truncate_relations(relationships)
-        chunks = budget.truncate_chunks(chunks)
+        When a ``TokenTracker`` is attached to the query parameters,
+        the tracker's priority-based truncation is used instead of
+        the simple per-category truncation.
+        """
+        if param.token_tracker is not None:
+            # Use the fine-grained tracker with priority ordering
+            from aurora_ext.rag.utils.token_tracker import TokenBudget as TrackerBudget
+
+            tracker_budget = TrackerBudget(
+                max_entity_tokens=param.max_entity_tokens,
+                max_relation_tokens=param.max_relation_tokens,
+                max_total_tokens=param.max_total_tokens,
+                max_chunk_tokens=param.max_chunk_tokens,
+            )
+            param.token_tracker.budget = tracker_budget
+            entities, relationships, chunks = param.token_tracker.truncate_to_budget(
+                entities, relationships, chunks
+            )
+        else:
+            # Legacy per-category truncation
+            budget = TokenBudget(
+                max_entity_tokens=param.max_entity_tokens,
+                max_relation_tokens=param.max_relation_tokens,
+                max_total_tokens=param.max_total_tokens,
+                max_chunk_tokens=param.max_chunk_tokens,
+            )
+            entities = budget.truncate_entities(entities)
+            relationships = budget.truncate_relations(relationships)
+            chunks = budget.truncate_chunks(chunks)
 
         return self._context_builder.build(
             entities=entities,
