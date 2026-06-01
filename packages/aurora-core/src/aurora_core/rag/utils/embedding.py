@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from aurora_core.rag.utils.embedding_cache import EmbeddingCache
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +63,8 @@ class EmbeddingFunc:
         ``list[list[float]]``.
     config:
         Embedding configuration.
+    cache:
+        Optional embedding cache for avoiding redundant API calls.
 
     Usage::
 
@@ -79,9 +84,11 @@ class EmbeddingFunc:
         self,
         embed_func: Callable[[list[str]], Awaitable[list[list[float]]]],
         config: Optional[EmbeddingConfig] = None,
+        cache: Optional[EmbeddingCache] = None,
     ) -> None:
         self._embed_func = embed_func
         self._config = config or EmbeddingConfig()
+        self._cache = cache
 
     @property
     def embedding_dim(self) -> int:
@@ -90,6 +97,11 @@ class EmbeddingFunc:
     @property
     def max_token_size(self) -> int:
         return self._config.max_token_size
+
+    @property
+    def cache(self) -> Optional[EmbeddingCache]:
+        """Return the cache instance, if configured."""
+        return self._cache
 
     def _apply_prefix(self, texts: list[str], is_query: bool) -> list[str]:
         """Prepend query or document prefix if asymmetric mode is enabled."""
@@ -109,7 +121,7 @@ class EmbeddingFunc:
         texts: list[str],
         is_query: bool = False,
     ) -> np.ndarray:
-        """Embed *texts* with batching and optional prefix.
+        """Embed *texts* with batching, optional prefix, and caching.
 
         Parameters
         ----------
@@ -126,15 +138,50 @@ class EmbeddingFunc:
         """
         prefixed = self._apply_prefix(texts, is_query)
 
+        if self._cache is not None and self._cache.enabled:
+            all_embeddings = await self._embed_with_cache(prefixed)
+        else:
+            all_embeddings = await self._embed_batched(prefixed)
+
+        return np.array(all_embeddings, dtype=np.float32)
+
+    async def _embed_with_cache(
+        self, texts: list[str]
+    ) -> list[list[float]]:
+        """Embed texts with cache lookup and population."""
+        assert self._cache is not None
+
+        results: list[Optional[list[float]]] = [None] * len(texts)
+        uncached_indices: list[int] = []
+        uncached_texts: list[str] = []
+
+        for i, text in enumerate(texts):
+            cached = await self._cache.get(text)
+            if cached is not None:
+                results[i] = cached
+            else:
+                uncached_indices.append(i)
+                uncached_texts.append(text)
+
+        if uncached_texts:
+            computed = await self._embed_batched(uncached_texts)
+            for idx, embedding in zip(uncached_indices, computed):
+                results[idx] = embedding
+                await self._cache.put(texts[idx], embedding)
+
+        return [r for r in results if r is not None]
+
+    async def _embed_batched(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts in batches without caching."""
         batch_size = max(1, self._config.batch_num)
         all_embeddings: list[list[float]] = []
 
-        for i in range(0, len(prefixed), batch_size):
-            batch = prefixed[i : i + batch_size]
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
             result = await self._embed_func(batch)
             all_embeddings.extend(result)
 
-        return np.array(all_embeddings, dtype=np.float32)
+        return all_embeddings
 
     async def embed_query(self, text: str) -> np.ndarray:
         """Embed a single query string."""
