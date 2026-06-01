@@ -365,3 +365,57 @@ tests/test_citation_tracker.py  — 41 passed (0 regressions)
 tests/ext/test_knowledge_graph.py — 32 passed
 tests/ext/                        — 164 passed (0 regressions)
 ```
+
+---
+
+## 阶段九（2026-06-01） / Phase 9: 智能缓存管理系统
+
+### 待办事项
+
+- [x] **配置层** — 使用 frozen dataclass 定义 `CacheConfig`, `LLMCacheConfig`, `EntityCacheConfig`, `EmbeddingCacheConfig`
+- [x] **基础接口** — 定义 `BaseCache` 抽象基类（get/put/delete/stats/clear）
+- [x] **LLM 响应缓存** — LRU + TTL + 可选磁盘持久化
+- [x] **实体提取缓存** — 基于 content_hash 的文档级缓存
+- [x] **Embedding 相似度缓存** — 阈值匹配 + 可选 LLM 二次验证
+- [x] **缓存管理器** — `CacheManager` 协调三层缓存
+- [x] **缓存统计** — `CacheStats` 收集器 + 命中率计算
+- [x] **API 路由** — `POST /knowledge/{name}/cache/clear` + `GET /knowledge/{name}/cache/stats`
+- [x] **配置更新** — `configs/aurora.toml` 添加 `[cache]` 配置节
+- [x] **完整测试** — 覆盖率 > 80%
+
+### 变更文件
+
+| 文件 | 说明 |
+|------|------|
+| `cache/config.py` | CacheConfig + 子配置 dataclass（新增） |
+| `cache/base.py` | BaseCache 抽象接口 + CacheStats dataclass（新增） |
+| `cache/llm_cache.py` | LLMResponseCache + LRU + TTL（新增） |
+| `cache/entity_cache.py` | EntityExtractionCache + content_hash（新增） |
+| `cache/embedding_cache.py` | EmbeddingSimilarityCache + 阈值匹配（新增） |
+| `cache/manager.py` | CacheManager 协调器（新增） |
+| `cache/stats.py` | CacheStatsCollector 统计收集器（新增） |
+| `cache/__init__.py` | 公共导出（新增） |
+| `knowledge/v2/cache_routes.py` | API 路由（新增） |
+| `router.py` | 注册 cache_routes（更新） |
+| `configs/aurora.toml` | 添加 [cache] 配置（更新） |
+| `tests/rag/cache/test_llm_cache.py` | LLM 缓存测试（新增） |
+| `tests/rag/cache/test_entity_cache.py` | 实体缓存测试（新增） |
+| `tests/rag/cache/test_embedding_cache.py` | Embedding 缓存测试（新增） |
+| `tests/rag/cache/test_manager.py` | 缓存管理器测试（新增） |
+
+### 测试结果
+
+```
+tests/rag/cache/ — 91 passed (0 regressions)
+Coverage: 91% overall (target: 80%)
+
+Per-module coverage:
+  __init__.py:        100%
+  base.py:            100%
+  config.py:          100%
+  embedding_cache.py:  92%
+  entity_cache.py:     91%
+  llm_cache.py:        92%
+  manager.py:          87%
+  stats.py:            82%
+```

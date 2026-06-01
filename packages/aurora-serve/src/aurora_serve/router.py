@@ -13,8 +13,12 @@ from aurora_serve.feedback.api import router as feedback_router
 from aurora_serve.files.api import router as files_router
 from aurora_serve.files.workspace_api import router as workspaces_router
 from aurora_serve.health.api import router as health_router
+from aurora_serve.health.api import prometheus_router
 from aurora_serve.knowledge.api import router as knowledge_router
+from aurora_serve.knowledge.v2.cache_routes import router as v2_cache_router
 from aurora_serve.knowledge.v2.document_routes import router as v2_document_router
+from aurora_serve.knowledge.v2.evaluation_routes import router as v2_evaluation_router
+from aurora_serve.knowledge.v2.extraction_routes import router as v2_extraction_router
 from aurora_serve.knowledge.v2.query_routes import router as v2_query_router
 from aurora_serve.knowledge.v2.graph_routes import router as v2_graph_router
 from aurora_serve.models.api import router as models_router
@@ -43,6 +47,15 @@ api_router.include_router(
 )
 api_router.include_router(
     v2_graph_router, prefix="/knowledge/{name}"
+)
+api_router.include_router(
+    v2_evaluation_router, prefix="/knowledge/{name}"
+)
+api_router.include_router(
+    v2_cache_router, prefix="/knowledge/{name}"
+)
+api_router.include_router(
+    v2_extraction_router, prefix="/knowledge/{name}"
 )
 api_router.include_router(files_router)
 api_router.include_router(workspaces_router)
