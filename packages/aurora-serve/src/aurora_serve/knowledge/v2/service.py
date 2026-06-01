@@ -56,6 +56,7 @@ class _BatchRunContext:
     graph_lock: asyncio.Lock
     extractor: Any  # EntityRelationExtractor
     chunker: Any  # FixedTokenChunker
+    analyzer: Any | None = None  # MultimodalAnalyzer (optional)
 
 
 def _doc_status_to_dict(info: DocStatusInfo) -> dict[str, Any]:
@@ -120,6 +121,7 @@ class KnowledgeV2Service(BaseService):
 
     # Concurrency configuration (mirrors LightRAG defaults)
     MAX_PARSE_WORKERS: int = 4
+    MAX_ANALYZE_WORKERS: int = 2
     MAX_PROCESS_WORKERS: int = 2
     QUEUE_SIZE: int = 100
 
@@ -142,6 +144,7 @@ class KnowledgeV2Service(BaseService):
         working_dir: str = "",
         input_dir: str = "",
         reranker: Any | None = None,
+        role_configs: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         self._llm = llm
         self._embedding_func = embedding_func
@@ -172,6 +175,15 @@ class KnowledgeV2Service(BaseService):
         # Initialise the pipeline manager (Phase 2)
         self._pipeline = PipelineManager(doc_status_storage=doc_status_storage)
 
+        # Role registry for per-role LLM bindings (VLM, extraction, etc.)
+        self._role_registry = None
+        self._role_configs = role_configs
+        if model_registry is not None:
+            from aurora_core.model.roles import LLMRoleRegistry
+            self._role_registry = LLMRoleRegistry(model_registry)
+            if role_configs:
+                self._apply_role_configs(role_configs)
+
     def _spawn_task(self, coro) -> asyncio.Task:
         """Create a background task and keep it alive until it finishes."""
         task = asyncio.create_task(coro)
@@ -194,6 +206,45 @@ class KnowledgeV2Service(BaseService):
         logger.info("Spawned background pipeline task: %s", task.get_name())
         return task
 
+    def _apply_role_configs(
+        self, role_configs: dict[str, dict[str, Any]]
+    ) -> None:
+        """Apply TOML + env-var role configs to the internal role registry.
+
+        Called during synchronous ``__init__``. When the caller is inside an
+        async context (e.g. FastAPI lifespan), the async apply is scheduled
+        as a task that completes before any request is served.
+        """
+        if self._role_registry is None:
+            return
+
+        from aurora_core.llm.role_config import LLMRoleConfigManager
+
+        manager = LLMRoleConfigManager(role_configs)
+        configured = manager.configured_roles()
+        if not configured:
+            logger.debug("No LLM role configs to apply")
+            return
+
+        async def _apply() -> None:
+            await manager.apply_to(self._role_registry)
+
+        try:
+            loop = asyncio.get_running_loop()
+            # Schedule but keep a reference so the task is not GC'd.
+            task = loop.create_task(_apply(), name="apply-role-configs")
+            self._active_tasks.add(task)
+            task.add_done_callback(self._active_tasks.discard)
+        except RuntimeError:
+            # No running loop — run synchronously in a throwaway loop.
+            asyncio.run(_apply())
+
+        logger.info(
+            "Scheduled %d LLM role config(s): %s",
+            len(configured),
+            ", ".join(r.value for r in configured),
+        )
+
     # ── Factory ──────────────────────────────────────────────────────
 
     @classmethod
@@ -208,6 +259,7 @@ class KnowledgeV2Service(BaseService):
         working_dir: str = "",
         input_dir: str = "",
         reranker: Any | None = None,
+        role_configs: dict[str, dict[str, Any]] | None = None,
     ) -> "KnowledgeV2Service":
         """Build a KnowledgeV2Service from a ModelRegistry + storage backends.
 
@@ -252,6 +304,7 @@ class KnowledgeV2Service(BaseService):
             working_dir=working_dir,
             input_dir=input_dir,
             reranker=reranker,
+            role_configs=role_configs,
         )
 
     # ── Helpers ──────────────────────────────────────────────────────
@@ -342,9 +395,11 @@ class KnowledgeV2Service(BaseService):
 
         Uses cascading async queues with worker pools for concurrent processing:
 
-            q_parse  →  parse_workers × 4   (file I/O, fast)
-                ↓
-            q_process → process_workers × 2  (LLM extraction, semaphore-gated)
+            q_parse  →  parse_workers × 4     (file I/O, fast)
+                ↓                    ↓ (VLM hints present)
+                ↓               q_analyze → analyze_workers × 2 (VLM analysis)
+                ↓                    ↓
+            q_process → process_workers × 2   (LLM extraction, semaphore-gated)
         """
         logger.info("🚀 Pipeline task started for kb=%s track_id=%s", kb_name, track_id)
 
@@ -410,6 +465,14 @@ class KnowledgeV2Service(BaseService):
             extractor = EntityRelationExtractor(self._llm)
             chunker = FixedTokenChunker(ChunkParameters(chunk_size=1200, chunk_overlap=100))
 
+            # Initialise multimodal analyzer (optional — requires role registry)
+            analyzer = None
+            if self._role_registry is not None:
+                from aurora_ext.rag.extraction.multimodal_analyzer import (
+                    MultimodalAnalyzer,
+                )
+                analyzer = MultimodalAnalyzer(self._role_registry)
+
             # Build batch context
             ctx = _BatchRunContext(
                 kb_name=kb_name,
@@ -417,10 +480,14 @@ class KnowledgeV2Service(BaseService):
                 graph_lock=asyncio.Lock(),
                 extractor=extractor,
                 chunker=chunker,
+                analyzer=analyzer,
             )
 
-            # Create cascading queues
+            # Create cascading queues (three-layer pipeline)
             q_parse: asyncio.Queue[DocStatusInfo | None] = asyncio.Queue(
+                maxsize=self.QUEUE_SIZE
+            )
+            q_analyze: asyncio.Queue[tuple | None] = asyncio.Queue(
                 maxsize=self.QUEUE_SIZE
             )
             q_process: asyncio.Queue[tuple | None] = asyncio.Queue(
@@ -430,13 +497,22 @@ class KnowledgeV2Service(BaseService):
             # Spawn parse workers (Layer 1 — file I/O, fast)
             parse_workers = [
                 asyncio.create_task(
-                    self._parse_worker(q_parse, q_process, ctx),
+                    self._parse_worker(q_parse, q_analyze, q_process, ctx),
                     name=f"parse-worker-{i}",
                 )
                 for i in range(self.MAX_PARSE_WORKERS)
             ]
 
-            # Spawn process workers (Layer 2 — LLM extraction, semaphore-gated)
+            # Spawn analyze workers (Layer 2 — VLM multimodal analysis)
+            analyze_workers = [
+                asyncio.create_task(
+                    self._analyze_worker(q_analyze, q_process, ctx),
+                    name=f"analyze-worker-{i}",
+                )
+                for i in range(self.MAX_ANALYZE_WORKERS)
+            ]
+
+            # Spawn process workers (Layer 3 — LLM extraction, semaphore-gated)
             process_workers = [
                 asyncio.create_task(
                     self._process_worker(q_process, ctx),
@@ -456,7 +532,14 @@ class KnowledgeV2Service(BaseService):
             # Wait for all parse workers to finish
             await asyncio.gather(*parse_workers)
 
-            # All parsing done — send sentinels to process workers
+            # All parsing done — send sentinels to analyze workers
+            for _ in range(self.MAX_ANALYZE_WORKERS):
+                await q_analyze.put(None)
+
+            # Wait for all analyze workers to finish
+            await asyncio.gather(*analyze_workers)
+
+            # All analysis done — send sentinels to process workers
             for _ in range(self.MAX_PROCESS_WORKERS):
                 await q_process.put(None)
 
@@ -499,10 +582,17 @@ class KnowledgeV2Service(BaseService):
     async def _parse_worker(
         self,
         q_parse: asyncio.Queue[DocStatusInfo | None],
+        q_analyze: asyncio.Queue[tuple | None],
         q_process: asyncio.Queue[tuple | None],
         ctx: _BatchRunContext,
     ) -> None:
-        """Layer 1: Parse files and push parsed data to the process queue."""
+        """Layer 1: Parse files and route to analyze or process queue.
+
+        Documents with VLM hints (``i``, ``t``, ``e``) are routed to
+        ``q_analyze`` for multimodal analysis. All others go directly
+        to ``q_process``.
+        """
+        from aurora_ext.rag.extraction.multimodal_analyzer import has_vlm_hints
         from aurora_ext.rag.parser.routing import parse_file
 
         while True:
@@ -573,12 +663,25 @@ class KnowledgeV2Service(BaseService):
                     }
                 })
 
-                # Hand off to process queue
-                await q_process.put((doc_info, raw_text))
-                await self._pipeline.update_progress(
-                    f"Parsed {doc_info.content_summary[:50]}",
-                    parsing_delta=-1,
+                # Route to analyze queue (VLM hints) or directly to process queue
+                parse_options = doc_info.metadata.get("parse_options", {})
+                needs_vlm = (
+                    has_vlm_hints(parse_options)
+                    and ctx.analyzer is not None
                 )
+
+                if needs_vlm:
+                    await q_analyze.put((doc_info, raw_text))
+                    await self._pipeline.update_progress(
+                        f"Parsed (→VLM) {doc_info.content_summary[:50]}",
+                        parsing_delta=-1,
+                    )
+                else:
+                    await q_process.put((doc_info, raw_text))
+                    await self._pipeline.update_progress(
+                        f"Parsed {doc_info.content_summary[:50]}",
+                        parsing_delta=-1,
+                    )
 
             except PipelineCancelledError:
                 await self._doc_status.update_status(
@@ -600,12 +703,129 @@ class KnowledgeV2Service(BaseService):
             finally:
                 q_parse.task_done()
 
+    async def _analyze_worker(
+        self,
+        q_analyze: asyncio.Queue[tuple | None],
+        q_process: asyncio.Queue[tuple | None],
+        ctx: _BatchRunContext,
+    ) -> None:
+        """Layer 2: Run VLM multimodal analysis on documents with hints.
+
+        Documents with ``i`` / ``t`` / ``e`` filename hints are routed here
+        after parsing. The analyzer inspects images, tables, and equations
+        extracted from the document and stores the results in
+        ``doc_status.metadata`` before forwarding to the process queue.
+        """
+        from aurora_ext.rag.extraction.multimodal_analyzer import get_enabled_modes
+
+        while True:
+            try:
+                item = await q_analyze.get()
+            except asyncio.CancelledError:
+                return
+
+            if item is None:  # sentinel
+                q_analyze.task_done()
+                return
+
+            doc_info, raw_text = item
+            doc_id = doc_info.id
+            kb_name = ctx.kb_name
+
+            try:
+                self._pipeline.check_cancellation()
+
+                # Mark as ANALYZING
+                await self._doc_status.update_status(
+                    doc_id, DocStatus.ANALYZING
+                )
+                await self._pipeline.update_progress(
+                    f"Analysing (VLM) {doc_info.content_summary[:50]}",
+                    analyzing_delta=1,
+                )
+
+                parse_options = doc_info.metadata.get("parse_options", {})
+                enabled_modes = get_enabled_modes(parse_options)
+
+                # Collect multimodal elements from the parse result metadata.
+                # The parser may have extracted images/tables/equations as
+                # base64 data in the parse result metadata.
+                vlm_elements = doc_info.metadata.get("vlm_elements", {})
+
+                images = vlm_elements.get("images", [])
+                tables = vlm_elements.get("tables", [])
+                equations = vlm_elements.get("equations", [])
+
+                # Run VLM analysis
+                report = await ctx.analyzer.analyze_document(
+                    images=images,
+                    tables=tables,
+                    equations=equations,
+                    enabled_modes=enabled_modes,
+                )
+
+                # Store analysis results in doc_status metadata
+                analysis_metadata = report.to_metadata_dict()
+                await self._doc_status.update_status(
+                    doc_id,
+                    DocStatus.ANALYZING,
+                    metadata={
+                        **doc_info.metadata,
+                        **analysis_metadata,
+                    },
+                )
+
+                logger.info(
+                    "VLM analysis for doc %s: %d images, %d tables, %d equations",
+                    doc_id,
+                    len(report.image_results),
+                    len(report.table_results),
+                    len(report.equation_results),
+                )
+
+                # Forward to process queue (enriched with VLM results)
+                await q_process.put((doc_info, raw_text))
+                await self._pipeline.update_progress(
+                    f"Analysed (VLM) {doc_info.content_summary[:50]}",
+                    analyzing_delta=-1,
+                )
+
+            except PipelineCancelledError:
+                await self._doc_status.update_status(
+                    doc_id, DocStatus.FAILED, error_msg="Pipeline cancelled"
+                )
+                await self._pipeline.update_progress(
+                    "Pipeline cancelled", failed=1, analyzing_delta=-1
+                )
+            except Exception as exc:
+                logger.exception("VLM analysis failed for doc %s", doc_id)
+                # On analysis failure, still forward to process queue
+                # so the document can be processed without VLM enrichment.
+                logger.info(
+                    "Falling back to non-VLM processing for doc %s", doc_id
+                )
+                await self._doc_status.update_status(
+                    doc_id,
+                    DocStatus.ANALYZING,
+                    metadata={
+                        **doc_info.metadata,
+                        "vlm_analysis_error": str(exc)[:500],
+                    },
+                )
+                await q_process.put((doc_info, raw_text))
+                await self._pipeline.update_progress(
+                    f"VLM failed (fallback) {doc_info.content_summary[:50]}: {str(exc)[:80]}",
+                    analyzing_delta=-1,
+                )
+            finally:
+                q_analyze.task_done()
+
     async def _process_worker(
         self,
         q_process: asyncio.Queue[tuple | None],
         ctx: _BatchRunContext,
     ) -> None:
-        """Layer 2: Process parsed documents — chunk, extract, merge graph, embed."""
+        """Layer 3: Process parsed documents — chunk, extract, merge graph, embed."""
         while True:
             try:
                 item = await q_process.get()
@@ -728,6 +948,7 @@ class KnowledgeV2Service(BaseService):
                                 chunk_id=chunk_key,
                                 file_path=file_path,
                                 use_json=True,
+                                language="Chinese",
                             )
                             print(f"[SERVICE] Extractor returned {len(extraction_result.entities)} entities, {len(extraction_result.relationships)} relationships\n", flush=True)
                             from dataclasses import asdict
@@ -1808,57 +2029,51 @@ class KnowledgeV2Service(BaseService):
         *,
         entities_to_change: list[str],
         entity_to_change_into: str,
+        merge_strategy: str = "join_unique",
     ) -> dict[str, Any]:
         """Merge multiple entities into a single target entity.
 
+        Uses :class:`GraphManager` with configurable merge strategies:
+
+        - ``concatenate`` — join all values with field separator.
+        - ``keep_first``  — keep target values, discard source values.
+        - ``join_unique`` — join only values not already present (default).
+
         All edges from the source entities are re-wired to the target.
-        Descriptions are concatenated.  Source entities are deleted.
+        Source entities are deleted after merging.
         """
-        if not await self._graph.has_node(entity_to_change_into):
-            raise ValueError(
-                f"Target entity '{entity_to_change_into}' does not exist"
-            )
+        from aurora_ext.rag.knowledge.graph_manager import (
+            GraphManager,
+            MergeStrategy,
+        )
 
-        target_data = await self._graph.get_node(entity_to_change_into) or {}
-        descriptions: list[str] = [target_data.get("description", "")]
-        source_ids: list[str] = [target_data.get("source_id", "")]
+        strategy_map = {
+            "concatenate": MergeStrategy.CONCATENATE,
+            "keep_first": MergeStrategy.KEEP_FIRST,
+            "join_unique": MergeStrategy.JOIN_UNIQUE,
+        }
+        strategy = strategy_map.get(merge_strategy, MergeStrategy.JOIN_UNIQUE)
 
-        for entity_name in entities_to_change:
-            if entity_name == entity_to_change_into:
-                continue
+        manager = GraphManager(
+            graph_storage=self._graph,
+            vector_storage=self._vector,
+            embedding_func=self._embedding_func,
+        )
 
-            if not await self._graph.has_node(entity_name):
-                logger.warning("Skipping merge source '%s': not found", entity_name)
-                continue
+        result = await manager.merge_entities(
+            target_entity=entity_to_change_into,
+            source_entities=entities_to_change,
+            strategy=strategy,
+        )
 
-            src_data = await self._graph.get_node(entity_name) or {}
-            desc = src_data.get("description", "")
-            if desc:
-                descriptions.append(desc)
-            sid = src_data.get("source_id", "")
-            if sid:
-                source_ids.append(sid)
-
-            # Re-wire edges
-            edges = await self._graph.get_node_edges(entity_name)
-            for src, tgt in edges:
-                edge_data = await self._graph.get_edge(src, tgt)
-                new_src = entity_to_change_into if src == entity_name else src
-                new_tgt = entity_to_change_into if tgt == entity_name else tgt
-                # Skip self-loops after merge
-                if new_src == new_tgt:
-                    continue
-                if not await self._graph.has_edge(new_src, new_tgt):
-                    if edge_data:
-                        await self._graph.upsert_edge(new_src, new_tgt, edge_data)
-                await self._graph.delete_edge(src, tgt)
-
-            await self._graph.delete_node(entity_name)
-
-        # Update target with merged description and source_ids
-        target_data["description"] = "<SEP>".join(d for d in descriptions if d)
-        target_data["source_id"] = "<SEP>".join(s for s in source_ids if s)
-        await self._graph.upsert_node(entity_to_change_into, target_data)
+        if not result.success:
+            return {
+                "merged": result.merged_count > 0,
+                "merge_status": "partial",
+                "operation_status": "partial_success",
+                "renamed": False,
+                "final_entity": entity_to_change_into,
+            }
 
         return {
             "merged": True,
@@ -1879,3 +2094,282 @@ class KnowledgeV2Service(BaseService):
         """Delete a relationship between two entities."""
         # kb_name reserved for multi-KB storage scoping
         await self._graph.delete_edge(source_id, target_id)
+
+    # ── Graph Import ─────────────────────────────────────────────────
+
+    async def import_graph(
+        self,
+        kb_name: str,
+        *,
+        entities: list[dict[str, Any]],
+        relationships: list[dict[str, Any]],
+        merge_strategy: str = "merge",
+    ) -> dict[str, Any]:
+        """Batch-import entities and relationships into the knowledge graph.
+
+        Parameters
+        ----------
+        kb_name:
+            Knowledge base name for multi-KB scoping.
+        entities:
+            List of entity dicts (from JSON or parsed YAML).
+        relationships:
+            List of relationship dicts (from JSON or parsed YAML).
+        merge_strategy:
+            Conflict resolution: ``overwrite``, ``merge``, or ``skip``.
+
+        Returns
+        -------
+        dict
+            Injection statistics: created/updated/skipped counts and errors.
+        """
+        from aurora_ext.rag.injection.custom_kg_injector import (
+            CustomKGInjector,
+            MergeStrategy,
+        )
+
+        strategy_map = {
+            "overwrite": MergeStrategy.OVERWRITE,
+            "merge": MergeStrategy.MERGE,
+            "skip": MergeStrategy.SKIP,
+        }
+        strategy = strategy_map.get(merge_strategy, MergeStrategy.MERGE)
+
+        import_entities = CustomKGInjector.parse_entities_from_dict(entities)
+        import_relationships = CustomKGInjector.parse_relationships_from_dict(
+            relationships
+        )
+
+        if not import_entities and not import_relationships:
+            return {
+                "status": "success",
+                "message": "No valid entities or relationships to import",
+                "stats": {
+                    "entities_created": 0,
+                    "entities_updated": 0,
+                    "entities_skipped": 0,
+                    "relationships_created": 0,
+                    "relationships_updated": 0,
+                    "relationships_skipped": 0,
+                    "errors": [],
+                },
+            }
+
+        self._try_rebuild_embedding()
+
+        injector = CustomKGInjector(
+            graph_storage=self._graph,
+            vector_storage=self._vector,
+            embedding_func=self._embedding_func,
+        )
+
+        stats = await injector.inject(
+            entities=import_entities,
+            relationships=import_relationships,
+            strategy=strategy,
+            kb_name=kb_name,
+        )
+
+        total = stats.total_entities + stats.total_relationships
+        return {
+            "status": "success" if not stats.errors else "partial_success",
+            "message": (
+                f"Imported {total} items: "
+                f"{stats.entities_created} entities created, "
+                f"{stats.entities_updated} updated, "
+                f"{stats.entities_skipped} skipped; "
+                f"{stats.relationships_created} relationships created, "
+                f"{stats.relationships_updated} updated, "
+                f"{stats.relationships_skipped} skipped"
+                + (f"; {len(stats.errors)} errors" if stats.errors else "")
+            ),
+            "stats": stats.to_dict(),
+        }
+
+    # ── KG Export ────────────────────────────────────────────────────
+
+    async def export_graph(
+        self,
+        kb_name: str,
+        *,
+        export_format: str = "csv",
+        export_scope: str = "all",
+        include_embeddings: bool = False,
+        entity_filter: list[str] | None = None,
+        max_entities: int = 0,
+        max_relationships: int = 0,
+    ) -> dict[str, Any]:
+        """Export knowledge graph data in the specified format.
+
+        Parameters
+        ----------
+        kb_name:
+            Knowledge base name for multi-KB scoping.
+        export_format:
+            Output format: csv, excel, markdown, txt.
+        export_scope:
+            What to export: all, entities, relationships.
+        include_embeddings:
+            Whether to include vector embedding data.
+        entity_filter:
+            Optional list of entity names to filter by.
+        max_entities:
+            Maximum number of entities (0 = unlimited).
+        max_relationships:
+            Maximum number of relationships (0 = unlimited).
+
+        Returns
+        -------
+        dict
+            Export result with content bytes, filename, mime_type, and counts.
+        """
+        from aurora_ext.rag.knowledge.kg_exporter import (
+            ExportFormat,
+            ExportOptions,
+            ExportScope,
+            KGExporter,
+        )
+
+        format_map = {
+            "csv": ExportFormat.CSV,
+            "excel": ExportFormat.EXCEL,
+            "markdown": ExportFormat.MARKDOWN,
+            "txt": ExportFormat.TXT,
+        }
+        scope_map = {
+            "all": ExportScope.ALL,
+            "entities": ExportScope.ENTITIES_ONLY,
+            "relationships": ExportScope.RELATIONSHIPS_ONLY,
+        }
+
+        fmt = format_map.get(export_format, ExportFormat.CSV)
+        scope = scope_map.get(export_scope, ExportScope.ALL)
+
+        options = ExportOptions(
+            format=fmt,
+            scope=scope,
+            include_embeddings=include_embeddings,
+            entity_filter=entity_filter or [],
+            max_entities=max_entities,
+            max_relationships=max_relationships,
+        )
+
+        exporter = KGExporter(
+            graph_storage=self._graph,
+            vector_storage=self._vector,
+        )
+
+        result = await exporter.export(options, kb_name=kb_name)
+
+        return {
+            "content": result.content,
+            "filename": result.filename,
+            "mime_type": result.mime_type,
+            "entity_count": result.entity_count,
+            "relationship_count": result.relationship_count,
+        }
+
+    # ── RAGAS Evaluation ──────────────────────────────────────────────
+
+    async def evaluate(
+        self,
+        kb_name: str,
+        *,
+        items: list[dict[str, Any]],
+        metrics: list[str] | None = None,
+        auto_retrieve: bool = False,
+        query_mode: SchemaQueryMode | str = SchemaQueryMode.MIX,
+    ) -> dict[str, Any]:
+        """Evaluate RAG quality using the RAGAS framework.
+
+        For each item, the evaluator computes faithfulness, answer
+        relevancy, context precision, and (optionally) context recall.
+
+        When ``auto_retrieve`` is True and an item has no contexts, the
+        service queries this knowledge base to populate them and also
+        generates a fresh answer if the provided answer is empty.
+        """
+        from aurora_ext.rag.evaluation import (
+            EvaluationItem,
+            RAGASEvaluator,
+            wrap_embeddings,
+            wrap_llm,
+        )
+
+        # Build EvaluationItem list, optionally auto-retrieving contexts
+        eval_items: list[EvaluationItem] = []
+        for item_dict in items:
+            query = item_dict.get("query", "")
+            answer = item_dict.get("answer", "")
+            contexts = item_dict.get("contexts", [])
+            ground_truth = item_dict.get("ground_truth")
+
+            if auto_retrieve and not contexts:
+                query_result = await self.query(
+                    kb_name,
+                    query=query,
+                    mode=query_mode,
+                    only_need_context=True,
+                    stream=False,
+                )
+                # Extract chunk content from query result
+                chunks = query_result.get("chunks", [])
+                contexts = [
+                    c.get("content", str(c)) if isinstance(c, dict) else str(c)
+                    for c in chunks
+                ]
+
+                # If no answer provided, use the RAG-generated one
+                if not answer:
+                    answer = query_result.get("response", "")
+
+            eval_items.append(
+                EvaluationItem(
+                    query=query,
+                    answer=answer,
+                    contexts=contexts,
+                    ground_truth=ground_truth,
+                )
+            )
+
+        # Wrap Aurora LLM/Embeddings as LangChain interfaces for RAGAS
+        self._try_rebuild_llm()
+        self._try_rebuild_embedding()
+
+        lc_llm = None
+        lc_embeddings = None
+
+        if self._llm is not None:
+            try:
+                lc_llm = wrap_llm(self._llm)
+            except ImportError:
+                logger.warning(
+                    "langchain_core not installed — RAGAS will use its "
+                    "default model configuration"
+                )
+            except Exception:
+                logger.exception("Failed to wrap Aurora LLM for RAGAS")
+
+        if self._embedding_func is not None:
+            try:
+                # The embedding_func wraps a callable — unwrap the
+                # underlying BaseEmbeddings from the registry
+                if self._registry is not None:
+                    try:
+                        raw_emb = self._registry.get_embeddings()
+                        lc_embeddings = wrap_embeddings(raw_emb)
+                    except RuntimeError:
+                        pass
+            except ImportError:
+                logger.warning(
+                    "langchain_core not installed — RAGAS will use its "
+                    "default embedding configuration"
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to wrap Aurora embeddings for RAGAS"
+                )
+
+        evaluator = RAGASEvaluator(llm=lc_llm, embeddings=lc_embeddings)
+        report = evaluator.evaluate(eval_items, metrics=metrics)
+        return report.to_dict()

@@ -25,7 +25,7 @@ class LLMRole(str, Enum):
     """Roles that can be bound to specific LLMs."""
 
     EXTRACT = "extract"  # Entity/relation extraction
-    KEYWORD = "keyword"  # Query keyword extraction
+    KEYWORDS = "keywords"  # Query keyword extraction
     QUERY = "query"  # Final RAG answer generation
     VLM = "vlm"  # Visual language model (multimodal)
 

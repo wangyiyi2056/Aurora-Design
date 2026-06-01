@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     port: int = 8000
     llm_configs: List[Dict[str, Any]] = Field(default_factory=list)
     default_llm: str = ""
+    llm_roles: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     embedding_configs: List[Dict[str, Any]] = Field(default_factory=list)
     default_embedding: str = ""
     datasource_configs: List[Dict[str, Any]] = Field(default_factory=list)

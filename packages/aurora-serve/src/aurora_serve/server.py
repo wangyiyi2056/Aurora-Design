@@ -196,6 +196,7 @@ def create_app() -> FastAPI:
             doc_status_storage=JsonDocStatusStorage("rag_doc_status", _rag_config),
             working_dir=_rag_dir,
             input_dir=str(storage_dir() / "uploads" / "knowledge"),
+            role_configs=settings.llm_roles,
         )
         system_app.register_instance(knowledge_v2_service)
         app.state.knowledge_v2_service = knowledge_v2_service
@@ -277,6 +278,10 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(api_router, prefix="/api/v1")
+
+    # Prometheus metrics endpoint — mounted at top-level /metrics for scraper compatibility
+    from aurora_serve.health.api import prometheus_router
+    app.include_router(prometheus_router)
 
     # Ollama-compatible API — mounted at /api (not /api/v1) for Ollama client compatibility
     from aurora_serve.knowledge.v2.ollama_routes import router as ollama_router
