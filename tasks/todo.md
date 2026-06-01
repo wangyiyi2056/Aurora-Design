@@ -311,3 +311,57 @@ tests/ext/                      — 132 passed (no regressions)
 ```
 tests/test_citation_tracker.py  — 41 passed (0 regressions)
 ```
+
+---
+
+## 阶段八（2026-06-01） / Phase 8: Advanced Knowledge Graph Management
+
+### 已完成
+
+- [x] **实体合并 (merge_entities)** — `GraphManager` 类支持三种合并策略：
+  - `concatenate` — 连接所有属性值
+  - `keep_first` — 保留目标实体的原有值
+  - `join_unique` — 仅连接不重复的值（默认）
+  - 自动迁移所有关联关系到合并后的实体
+  - 自环检测与移除
+  - 权重累加
+  - 合并后更新向量存储
+- [x] **自定义 KG 注入 (insert_custom_kg)** — `KnowledgeKGInjector` 类：
+  - 支持 JSON/YAML 格式导入
+  - `FullImportData` 数据结构：chunks + entities + relationships
+  - 批量导入避免 N+1 查询（预获取现有节点）
+  - 数据格式验证
+  - Chunk KV 存储注入
+- [x] **KG 数据导出 (export_kg)** — `KGExporter` 类：
+  - 支持格式：CSV、Excel、Markdown、TXT
+  - 可选包含向量嵌入数据
+  - 选择性导出（实体、关系、或全部）
+  - 实体名称过滤
+  - 最大数量限制
+  - 字段分隔符清理（`<SEP>` → ` | `）
+  - Excel 导出使用 openpyxl（含 Entities 和 Relationships 两个 Sheet）
+- [x] **API 路由更新**：
+  - `EntityMergeRequest` 新增 `merge_strategy` 字段
+  - `POST /knowledge/{name}/graph/entities/merge` 传递 merge_strategy 参数
+  - 新增 `GET /knowledge/{name}/graph/export` 端点
+- [x] **32 个单元测试全部通过** — 覆盖三种策略、边迁移、错误处理、所有导出格式、过滤
+
+### 变更文件
+
+| 文件 | 说明 |
+|------|------|
+| `knowledge/graph_manager.py` | GraphManager + MergeStrategy + MergeResult（新增） |
+| `knowledge/custom_kg_injector.py` | KnowledgeKGInjector + FullImportData + ImportChunk（新增） |
+| `knowledge/kg_exporter.py` | KGExporter + ExportFormat + ExportOptions + ExportResult（新增） |
+| `knowledge/__init__.py` | 导出新类 |
+| `knowledge/v2/schemas.py` | ExportFormatEnum + ExportScopeEnum + EntityMergeStrategyEnum |
+| `knowledge/v2/graph_routes.py` | 新增 export_graph 端点 + merge_strategy 参数 |
+| `knowledge/v2/service.py` | merge_entities 使用 GraphManager + 新增 export_graph 方法 |
+| `tests/ext/test_knowledge_graph.py` | 32 个单元测试 |
+
+### 测试结果
+
+```
+tests/ext/test_knowledge_graph.py — 32 passed
+tests/ext/                        — 164 passed (0 regressions)
+```

@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── Enums ────────────────────────────────────────────────────────────
@@ -306,6 +306,10 @@ class EntityMergeRequest(BaseModel):
     entity_to_change_into: str = Field(
         ..., description="Target entity to merge into"
     )
+    merge_strategy: str = Field(
+        default="join_unique",
+        description="Merge strategy: concatenate, keep_first, join_unique",
+    )
 
 
 class GraphResponse(BaseModel):
@@ -325,6 +329,113 @@ class OperationSummaryResponse(BaseModel):
     final_entity: str = Field(default="", description="Final entity name after operation")
     target_entity: Optional[str] = Field(
         default=None, description="Target entity name if applicable"
+    )
+
+
+# ── Graph Import Models ──────────────────────────────────────────────
+
+
+class MergeStrategyEnum(str, Enum):
+    """Merge strategy for knowledge graph import conflicts."""
+
+    OVERWRITE = "overwrite"
+    MERGE = "merge"
+    SKIP = "skip"
+
+
+class GraphImportEntity(BaseModel):
+    """A single entity for batch import into the knowledge graph.
+
+    Accepts alternate key names (``name`` → ``entity_name``,
+    ``type`` → ``entity_type``) for compatibility with YAML inputs.
+    """
+
+    entity_name: str = Field(..., min_length=1, description="Entity name (required)")
+    entity_type: str = Field(default="", description="Entity type/category")
+    description: str = Field(default="", description="Entity description")
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Additional entity metadata"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalise_keys(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "entity_name" not in data and "name" in data:
+                data["entity_name"] = data["name"]
+            if "entity_type" not in data and "type" in data:
+                data["entity_type"] = data["type"]
+        return data
+
+
+class GraphImportRelationship(BaseModel):
+    """A single relationship for batch import into the knowledge graph.
+
+    Accepts alternate key names (``source`` → ``source_entity``,
+    ``target`` → ``target_entity``) for compatibility with YAML inputs.
+    """
+
+    source_entity: str = Field(..., min_length=1, description="Source entity name")
+    target_entity: str = Field(..., min_length=1, description="Target entity name")
+    description: str = Field(default="", description="Relationship description")
+    keywords: str = Field(default="", description="Relationship keywords")
+    weight: float = Field(default=1.0, ge=0.0, description="Relationship weight")
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Additional relationship metadata"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalise_keys(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "source_entity" not in data and "source" in data:
+                data["source_entity"] = data["source"]
+            if "target_entity" not in data and "target" in data:
+                data["target_entity"] = data["target"]
+        return data
+
+
+class GraphImportRequest(BaseModel):
+    """Request to batch-import entities and relationships into the knowledge graph.
+
+    Accepts either structured JSON (this schema) or YAML (via Content-Type
+    ``application/x-yaml``).  When YAML is sent, the server parses it into
+    the same structure before validation.
+    """
+
+    entities: List[GraphImportEntity] = Field(
+        default_factory=list, description="Entities to import"
+    )
+    relationships: List[GraphImportRelationship] = Field(
+        default_factory=list, description="Relationships to import"
+    )
+    merge_strategy: MergeStrategyEnum = Field(
+        default=MergeStrategyEnum.MERGE,
+        description="Conflict resolution: overwrite, merge, or skip",
+    )
+
+
+class GraphImportStats(BaseModel):
+    """Statistics from a graph import operation."""
+
+    entities_created: int = Field(default=0, description="New entities created")
+    entities_updated: int = Field(default=0, description="Existing entities updated")
+    entities_skipped: int = Field(default=0, description="Entities skipped (already exist)")
+    relationships_created: int = Field(default=0, description="New relationships created")
+    relationships_updated: int = Field(default=0, description="Existing relationships updated")
+    relationships_skipped: int = Field(default=0, description="Relationships skipped")
+    errors: List[str] = Field(
+        default_factory=list, description="Errors encountered during import"
+    )
+
+
+class GraphImportResponse(BaseModel):
+    """Response from a graph import operation."""
+
+    status: str = Field(default="success", description="Import status")
+    message: str = Field(default="", description="Human-readable summary")
+    stats: GraphImportStats = Field(
+        default_factory=GraphImportStats, description="Import statistics"
     )
 
 
@@ -364,3 +475,126 @@ class OllamaGenerateRequest(BaseModel):
     options: Dict[str, Any] = Field(
         default_factory=dict, description="Model options/parameters"
     )
+
+
+# ── RAGAS Evaluation Models ────────────────────────────────────────
+
+
+class EvaluationItemRequest(BaseModel):
+    """A single query-answer pair for RAGAS evaluation.
+
+    ``ground_truth`` is optional — when provided, ``context_recall``
+    can also be computed.
+    """
+
+    query: str = Field(..., min_length=1, description="The user's question")
+    answer: str = Field(
+        ..., min_length=1, description="The RAG-generated answer to evaluate"
+    )
+    contexts: List[str] = Field(
+        default_factory=list,
+        description="Retrieved context strings (chunks) used to generate the answer",
+    )
+    ground_truth: Optional[str] = Field(
+        default=None,
+        description="Optional reference answer for context_recall scoring",
+    )
+
+
+class EvaluationRequest(BaseModel):
+    """Batch evaluation request.
+
+    When ``auto_retrieve`` is True and ``contexts`` are empty on an item,
+    the service will automatically query the knowledge base to populate
+    contexts for that item.
+    """
+
+    items: List[EvaluationItemRequest] = Field(
+        ..., min_length=1, description="One or more items to evaluate"
+    )
+    metrics: List[str] = Field(
+        default_factory=lambda: [
+            "faithfulness",
+            "answer_relevancy",
+            "context_precision",
+            "context_recall",
+        ],
+        description=(
+            "Metrics to compute. Supported: faithfulness, "
+            "answer_relevancy, context_precision, context_recall"
+        ),
+    )
+    auto_retrieve: bool = Field(
+        default=False,
+        description=(
+            "When True and an item has empty contexts, automatically "
+            "query this knowledge base to populate them"
+        ),
+    )
+    query_mode: QueryMode = Field(
+        default=QueryMode.MIX,
+        description="Retrieval mode used when auto_retrieve is True",
+    )
+
+
+class EvaluationScoreDetail(BaseModel):
+    """Per-item evaluation score breakdown."""
+
+    index: int = Field(..., description="Item index in the batch")
+    query: str = Field(default="", description="The evaluated query")
+    scores: Dict[str, Optional[float]] = Field(
+        default_factory=dict,
+        description="Mapping of metric name → score (None if not computed)",
+    )
+
+
+class EvaluationResponse(BaseModel):
+    """Batch evaluation response with aggregate and per-item scores."""
+
+    scores: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Aggregate scores per metric (0.0–1.0)",
+    )
+    per_item_scores: List[EvaluationScoreDetail] = Field(
+        default_factory=list,
+        description="Per-item score breakdown",
+    )
+    num_items: int = Field(default=0, description="Number of items evaluated")
+    metrics_requested: List[str] = Field(
+        default_factory=list, description="Which metrics were requested"
+    )
+    elapsed_seconds: float = Field(
+        default=0.0, description="Wall-clock time for the evaluation run"
+    )
+    errors: List[str] = Field(
+        default_factory=list,
+        description="Error messages for items/metrics that failed",
+    )
+
+
+# ── KG Export Models ─────────────────────────────────────────────────
+
+
+class ExportFormatEnum(str, Enum):
+    """Supported KG export file formats."""
+
+    CSV = "csv"
+    EXCEL = "excel"
+    MARKDOWN = "markdown"
+    TXT = "txt"
+
+
+class ExportScopeEnum(str, Enum):
+    """What to include in the export."""
+
+    ALL = "all"
+    ENTITIES_ONLY = "entities"
+    RELATIONSHIPS_ONLY = "relationships"
+
+
+class EntityMergeStrategyEnum(str, Enum):
+    """Strategy for combining property values during entity merge."""
+
+    CONCATENATE = "concatenate"
+    KEEP_FIRST = "keep_first"
+    JOIN_UNIQUE = "join_unique"

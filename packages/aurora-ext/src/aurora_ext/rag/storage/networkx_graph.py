@@ -93,13 +93,41 @@ class NetworkXGraphStorage(BaseGraphStorage):
 
     async def search_labels(self, query: str, limit: int = 50) -> list[str]:
         await self._ensure_loaded()
-        query_lower = query.lower()
-        matches = [
-            node
-            for node in self._graph.nodes()
-            if query_lower in node.lower()
-        ]
-        return matches[:limit]
+        query_lower = query.lower().strip()
+
+        if not query_lower:
+            return []
+
+        # Collect matching nodes with relevance scores
+        matches = []
+        for node in self._graph.nodes():
+            node_str = str(node)
+            node_lower = node_str.lower()
+
+            # Skip if no match
+            if query_lower not in node_lower:
+                continue
+
+            # Calculate relevance score
+            # Exact match gets highest score
+            if node_lower == query_lower:
+                score = 1000
+            # Prefix match gets high score
+            elif node_lower.startswith(query_lower):
+                score = 500
+            # Contains match gets base score, with bonus for shorter strings
+            else:
+                # Shorter strings with matches are more relevant
+                score = 100 - len(node_str)
+                # Bonus for word boundary matches
+                if f" {query_lower}" in node_lower or f"_{query_lower}" in node_lower:
+                    score += 50
+                    
+            matches.append((node_str, score))
+
+        # Sort by score descending and return top limit
+        matches.sort(key=lambda x: x[1], reverse=True)
+        return [m[0] for m in matches[:limit]]
 
     # ── Edge operations ──────────────────────────────────────────
 
@@ -165,6 +193,31 @@ class NetworkXGraphStorage(BaseGraphStorage):
     ) -> dict[str, Any]:
         """BFS traversal from *label* up to *max_depth* and *max_nodes*."""
         await self._ensure_loaded()
+
+        # Handle wildcard: return top nodes by degree
+        if label == "*":
+            if self._graph.number_of_nodes() == 0:
+                return {"nodes": [], "edges": []}
+
+            degrees = dict(self._graph.degree())
+            sorted_nodes = sorted(degrees.items(), key=lambda x: x[1], reverse=True)
+            limited_nodes = [node for node, _ in sorted_nodes[:max_nodes]]
+
+            subgraph = self._graph.subgraph(limited_nodes)
+            nodes_out: list[dict[str, Any]] = []
+            for nid in subgraph.nodes():
+                ndata = dict(subgraph.nodes[nid])
+                ndata["id"] = nid
+                nodes_out.append(ndata)
+
+            edges_out: list[dict[str, Any]] = []
+            for src, tgt in subgraph.edges():
+                edata = dict(subgraph.edges[src, tgt])
+                edata["source_id"] = src
+                edata["target_id"] = tgt
+                edges_out.append(edata)
+
+            return {"nodes": nodes_out, "edges": edges_out}
 
         if not self._graph.has_node(label):
             return {"nodes": [], "edges": []}

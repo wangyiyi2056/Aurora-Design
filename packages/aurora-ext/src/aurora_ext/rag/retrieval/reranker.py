@@ -1,4 +1,4 @@
-"""Reranker integration — Cohere, Jina, Aliyun.
+"""Reranker integration — Cohere, Jina, Aliyun, vLLM.
 
 Migrated from LightRAG ``rerank.py``.
 """
@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -15,13 +16,28 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class RerankResult:
-    """A single reranking result."""
+    """A single reranking result.
+
+    Attributes
+    ----------
+    index:
+        Original document index in the input list.
+    score:
+        Relevance score from the reranker (higher is better).
+    content:
+        The document text (alias for backward compatibility).
+    """
 
     index: int
     score: float
-    text: str
+    content: str = field(default="")
+
+    @property
+    def text(self) -> str:
+        """Alias for content (backward compatibility)."""
+        return self.content
 
 
 @dataclass(frozen=True)
@@ -140,7 +156,7 @@ class CohereReranker(RerankerBase):
                     results.append(RerankResult(
                         index=item["index"],
                         score=score,
-                        text=documents[item["index"]],
+                        content=documents[item["index"]],
                     ))
             return results
 
@@ -210,7 +226,7 @@ class JinaReranker(RerankerBase):
                     results.append(RerankResult(
                         index=item["index"],
                         score=score,
-                        text=documents[item["index"]],
+                        content=documents[item["index"]],
                     ))
             return results
 
@@ -542,7 +558,7 @@ class AliyunReranker(RerankerBase):
                 aggregated.append(RerankResult(
                     index=doc_idx,
                     score=agg_score,
-                    text=documents[doc_idx],
+                    content=documents[doc_idx],
                 ))
 
         aggregated.sort(key=lambda r: r.score, reverse=True)
@@ -564,6 +580,391 @@ class AliyunReranker(RerankerBase):
                 results.append(RerankResult(
                     index=idx,
                     score=score,
-                    text=documents[idx],
+                    content=documents[idx],
+                ))
+        return results
+
+
+# ── vLLM Reranker ──────────────────────────────────────────────
+
+
+class VLLMReranker(CohereReranker):
+    """vLLM self-hosted reranker (Cohere API compatible).
+
+    vLLM provides a Cohere-compatible rerank API endpoint for self-hosted
+    models like BGE-reranker, Cohere-rerank, etc.
+
+    Parameters
+    ----------
+    api_key:
+        API key (often empty for local deployments).
+    model:
+        Model name as registered in vLLM.
+    endpoint:
+        vLLM server endpoint (e.g., ``http://localhost:8000/v1/rerank``).
+    max_tokens_per_doc:
+        Maximum tokens per document.
+    timeout:
+        Request timeout in seconds.
+    """
+
+    DEFAULT_MODEL = "BAAI/bge-reranker-v2-m3"
+    DEFAULT_ENDPOINT = "http://localhost:8000/v1/rerank"
+
+    def __init__(
+        self,
+        api_key: str = "",
+        model: str = DEFAULT_MODEL,
+        endpoint: str = DEFAULT_ENDPOINT,
+        max_tokens_per_doc: int = 4096,
+        timeout: float = 30.0,
+    ) -> None:
+        super().__init__(
+            api_key=api_key,
+            model=model,
+            endpoint=endpoint,
+            max_tokens_per_doc=max_tokens_per_doc,
+            timeout=timeout,
+        )
+
+
+# ── Configuration Management ─────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class RerankerConfig:
+    """Reranker configuration loaded from TOML or environment.
+
+    Attributes
+    ----------
+    enabled:
+        Whether reranking is enabled globally.
+    type:
+        Reranker type: ``"cohere"``, ``"jina"``, ``"aliyun"``, ``"vllm"``.
+    api_key:
+        API key for the reranker service.
+    api_base:
+        Base URL for the API endpoint.
+    model:
+        Model identifier.
+    top_k:
+        Default number of results to return.
+    timeout:
+        Request timeout in seconds.
+    max_retries:
+        Maximum retry attempts.
+    enable_chunking:
+        Whether to split long documents before reranking.
+    max_tokens_per_doc:
+        Token threshold for chunking.
+    score_aggregation:
+        Aggregation strategy: ``"max"``, ``"mean"``, or ``"first"``.
+    min_score:
+        Minimum score threshold.
+    """
+
+    enabled: bool = True
+    type: str = "cohere"
+    api_key: str = ""
+    api_base: str = ""
+    model: str = ""
+    top_k: int = 10
+    timeout: int = 30
+    max_retries: int = 3
+    enable_chunking: bool = False
+    max_tokens_per_doc: int = 4096
+    score_aggregation: str = "max"
+    min_score: float = 0.0
+
+    @classmethod
+    def from_toml(cls, config: dict[str, Any]) -> RerankerConfig:
+        """Load configuration from a TOML dictionary.
+
+        Parameters
+        ----------
+        config:
+            Dictionary with ``reranker`` section.
+
+        Returns
+        -------
+        RerankerConfig
+            Parsed configuration with defaults applied.
+
+        Example
+        -------
+        .. code-block:: toml
+
+            [reranker]
+            enabled = true
+            type = "cohere"
+            api_key = "your-api-key"
+            api_base = "https://api.cohere.ai/v1"
+            model = "rerank-multilingual-v3.0"
+            top_k = 10
+        """
+        reranker_section = config.get("reranker", {})
+
+        # Apply environment variable overrides
+        api_key = reranker_section.get("api_key") or os.environ.get(
+            "RERANKER_API_KEY", ""
+        )
+        api_base = reranker_section.get("api_base") or os.environ.get(
+            "RERANKER_API_BASE", ""
+        )
+        reranker_type = reranker_section.get("type", "cohere")
+
+        return cls(
+            enabled=reranker_section.get("enabled", True),
+            type=reranker_type,
+            api_key=api_key,
+            api_base=api_base,
+            model=reranker_section.get("model", ""),
+            top_k=reranker_section.get("top_k", 10),
+            timeout=reranker_section.get("timeout", 30),
+            max_retries=reranker_section.get("max_retries", 3),
+            enable_chunking=reranker_section.get("enable_chunking", False),
+            max_tokens_per_doc=reranker_section.get("max_tokens_per_doc", 4096),
+            score_aggregation=reranker_section.get("score_aggregation", "max"),
+            min_score=reranker_section.get("min_score", 0.0),
+        )
+
+    @classmethod
+    def from_env(cls) -> RerankerConfig:
+        """Load configuration purely from environment variables.
+
+        Environment Variables
+        ---------------------
+        RERANKER_ENABLED:
+            Whether reranking is enabled (``"true"`` or ``"false"``).
+        RERANKER_TYPE:
+            Reranker type (``cohere``, ``jina``, ``aliyun``, ``vllm``).
+        RERANKER_API_KEY:
+            API key for the service.
+        RERANKER_API_BASE:
+            Base URL for the API.
+        RERANKER_MODEL:
+            Model identifier.
+        RERANKER_TOP_K:
+            Default top_k value.
+        """
+        return cls(
+            enabled=os.environ.get("RERANKER_ENABLED", "true").lower() == "true",
+            type=os.environ.get("RERANKER_TYPE", "cohere"),
+            api_key=os.environ.get("RERANKER_API_KEY", ""),
+            api_base=os.environ.get("RERANKER_API_BASE", ""),
+            model=os.environ.get("RERANKER_MODEL", ""),
+            top_k=int(os.environ.get("RERANKER_TOP_K", "10")),
+            timeout=int(os.environ.get("RERANKER_TIMEOUT", "30")),
+            max_retries=int(os.environ.get("RERANKER_MAX_RETRIES", "3")),
+        )
+
+
+def create_reranker(config: RerankerConfig) -> Optional[RerankerBase]:
+    """Factory function to create a reranker from configuration.
+
+    Parameters
+    ----------
+    config:
+        Reranker configuration.
+
+    Returns
+    -------
+    Optional[RerankerBase]
+        Instantiated reranker, or ``None`` if disabled or invalid type.
+
+    Example
+    -------
+    .. code-block:: python
+
+        config = RerankerConfig(
+            enabled=True,
+            type="cohere",
+            api_key="your-key",
+            model="rerank-multilingual-v3.0",
+        )
+        reranker = create_reranker(config)
+    """
+    if not config.enabled:
+        logger.info("Reranker disabled in configuration")
+        return None
+
+    if not config.api_key and config.type not in ("vllm",):
+        logger.warning(
+            "Reranker type '%s' requires API key but none provided",
+            config.type,
+        )
+
+    options = RerankOptions(
+        enable_chunking=config.enable_chunking,
+        max_tokens_per_doc=config.max_tokens_per_doc,
+        score_aggregation=config.score_aggregation,
+        min_score=config.min_score,
+        timeout=config.timeout,
+        max_retries=config.max_retries,
+    )
+
+    reranker_type = config.type.lower()
+
+    if reranker_type == "cohere":
+        endpoint = config.api_base or CohereReranker.DEFAULT_ENDPOINT
+        model = config.model or CohereReranker.DEFAULT_MODEL
+        return CohereReranker(
+            api_key=config.api_key,
+            model=model,
+            endpoint=endpoint,
+            max_tokens_per_doc=config.max_tokens_per_doc,
+            timeout=float(config.timeout),
+        )
+
+    elif reranker_type == "jina":
+        endpoint = config.api_base or JinaReranker.DEFAULT_ENDPOINT
+        model = config.model or JinaReranker.DEFAULT_MODEL
+        return JinaReranker(
+            api_key=config.api_key,
+            model=model,
+            endpoint=endpoint,
+            timeout=float(config.timeout),
+        )
+
+    elif reranker_type == "aliyun":
+        endpoint = config.api_base or AliyunReranker.DEFAULT_ENDPOINT
+        model = config.model or AliyunReranker.DEFAULT_MODEL
+        return AliyunReranker(
+            api_key=config.api_key,
+            model=model,
+            endpoint=endpoint,
+            options=options,
+        )
+
+    elif reranker_type == "vllm":
+        endpoint = config.api_base or VLLMReranker.DEFAULT_ENDPOINT
+        model = config.model or VLLMReranker.DEFAULT_MODEL
+        return VLLMReranker(
+            api_key=config.api_key,
+            model=model,
+            endpoint=endpoint,
+            max_tokens_per_doc=config.max_tokens_per_doc,
+            timeout=float(config.timeout),
+        )
+
+    else:
+        logger.error("Unknown reranker type: %s", config.type)
+        return None
+
+
+# ── Robust Reranker Wrapper ──────────────────────────────────────
+
+
+class RobustReranker(RerankerBase):
+    """Wrapper that adds error handling, fallback, and rate limiting.
+
+    This wrapper ensures reranking never crashes the query pipeline by:
+    - Catching all exceptions and returning original order on failure
+    - Implementing exponential backoff with circuit breaker
+    - Detecting and handling rate limits (HTTP 429)
+    - Logging all failures for monitoring
+
+    Parameters
+    ----------
+    reranker:
+        The underlying reranker implementation.
+    fallback_to_original:
+        Whether to return original order on failure (default ``True``).
+    circuit_breaker_threshold:
+        Number of consecutive failures before opening circuit.
+    circuit_breaker_timeout:
+        Seconds to wait before attempting after circuit opens.
+    """
+
+    def __init__(
+        self,
+        reranker: RerankerBase,
+        fallback_to_original: bool = True,
+        circuit_breaker_threshold: int = 5,
+        circuit_breaker_timeout: float = 60.0,
+    ) -> None:
+        self._reranker = reranker
+        self._fallback = fallback_to_original
+        self._circuit_threshold = circuit_breaker_threshold
+        self._circuit_timeout = circuit_breaker_timeout
+        self._failure_count = 0
+        self._circuit_open_until = 0.0
+
+    async def rerank(
+        self,
+        query: str,
+        documents: list[str],
+        top_n: int,
+        min_score: float = 0.0,
+    ) -> list[RerankResult]:
+        """Rerank with robust error handling.
+
+        On failure, returns either:
+        - Original document order (if ``fallback_to_original=True``)
+        - Empty list (if ``fallback_to_original=False``)
+        """
+        # Check circuit breaker
+        if self._is_circuit_open():
+            logger.warning(
+                "Reranker circuit breaker open, using fallback order"
+            )
+            return self._fallback_results(documents, top_n, min_score)
+
+        try:
+            results = await self._reranker.rerank(
+                query, documents, top_n, min_score
+            )
+            # Reset failure count on success
+            self._failure_count = 0
+            return results
+
+        except Exception as exc:
+            self._handle_failure(exc)
+            return self._fallback_results(documents, top_n, min_score)
+
+    def _is_circuit_open(self) -> bool:
+        """Check if circuit breaker is currently open."""
+        if self._circuit_open_until > time.time():
+            return True
+        # Circuit closed or reset
+        return False
+
+    def _handle_failure(self, exc: Exception) -> None:
+        """Handle a reranker failure and update circuit breaker."""
+        self._failure_count += 1
+        logger.error(
+            "Reranker failure %d/%d: %s",
+            self._failure_count,
+            self._circuit_threshold,
+            exc,
+        )
+
+        # Open circuit if threshold exceeded
+        if self._failure_count >= self._circuit_threshold:
+            self._circuit_open_until = time.time() + self._circuit_timeout
+            logger.error(
+                "Reranker circuit breaker opened for %.0fs after %d failures",
+                self._circuit_timeout,
+                self._failure_count,
+            )
+
+    def _fallback_results(
+        self,
+        documents: list[str],
+        top_n: int,
+        min_score: float,
+    ) -> list[RerankResult]:
+        """Generate fallback results (original order or empty)."""
+        if not self._fallback:
+            return []
+
+        # Return original order with score=1.0 (neutral)
+        results = []
+        for i, doc in enumerate(documents[:top_n]):
+            if 1.0 >= min_score:
+                results.append(RerankResult(
+                    index=i,
+                    score=1.0,
+                    content=doc,
                 ))
         return results
