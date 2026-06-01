@@ -18,6 +18,10 @@ def create_app() -> FastAPI:
         from aurora_core.component import SystemApp
         from aurora_core.config.settings import Settings
         from aurora_core.model.adapter.anthropic_adapter import AnthropicLLM
+        from aurora_core.model.adapter.azure_adapter import AzureOpenAILLM
+        from aurora_core.model.adapter.azure_embeddings import AzureOpenAIEmbeddings
+        from aurora_core.model.adapter.ollama_adapter import OllamaLLM
+        from aurora_core.model.adapter.ollama_embeddings import OllamaEmbeddings
         from aurora_core.model.adapter.openai_adapter import OpenAILLM
         from aurora_core.model.adapter.openai_embeddings import OpenAIEmbeddings
         from aurora_core.model.registry import ModelRegistry
@@ -88,6 +92,36 @@ def create_app() -> FastAPI:
                     continue
                 llm_config = LLMConfig(**cfg)
                 registry.register_llm(cfg["model_name"], AnthropicLLM(llm_config))
+            elif model_type == "azure_openai":
+                api_key = cfg.get("api_key") or os.getenv("AZURE_OPENAI_API_KEY")
+                if not api_key:
+                    logger.warning(
+                        "Skipping LLM '%s': AZURE_OPENAI_API_KEY not set",
+                        cfg.get("model_name"),
+                    )
+                    continue
+                llm_config = LLMConfig(**cfg)
+                registry.register_llm(cfg["model_name"], AzureOpenAILLM(llm_config))
+                emb_config = LLMConfig(
+                    model_name=cfg.get("embedding_model", "text-embedding-3-small"),
+                    model_type="azure_openai",
+                    api_key=api_key,
+                    api_base=cfg.get("api_base") or os.getenv("AZURE_OPENAI_ENDPOINT"),
+                    extra=cfg.get("extra", {}),
+                )
+                registry.register_embeddings(
+                    "azure_openai", AzureOpenAIEmbeddings(emb_config)
+                )
+            elif model_type == "ollama":
+                llm_config = LLMConfig(**cfg)
+                registry.register_llm(cfg["model_name"], OllamaLLM(llm_config))
+                emb_model = cfg.get("embedding_model", "nomic-embed-text")
+                emb_config = LLMConfig(
+                    model_name=emb_model,
+                    model_type="ollama",
+                    api_base=cfg.get("api_base") or os.getenv("OLLAMA_BASE_URL"),
+                )
+                registry.register_embeddings("ollama", OllamaEmbeddings(emb_config))
         app.state.model_registry = registry
 
         # Log summary of registered models
