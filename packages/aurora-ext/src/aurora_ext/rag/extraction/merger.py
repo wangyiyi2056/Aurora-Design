@@ -38,6 +38,10 @@ def merge_entities(
     new_entities: list[ExtractedEntity],
     chunk_id: str,
     file_path: str,
+    *,
+    max_source_ids: int = _DEFAULT_MAX_SOURCE_IDS,
+    source_ids_method: str = "FIFO",
+    max_file_paths: int = 100,
 ) -> list[GraphEntity]:
     """Merge newly extracted entities into an existing graph entity list.
 
@@ -62,6 +66,12 @@ def merge_entities(
         Source chunk identifier for provenance.
     file_path:
         Source file path for provenance.
+    max_source_ids:
+        Maximum source IDs retained per entity after merge.
+    source_ids_method:
+        Trimming strategy (``"FIFO"`` or ``"KEEP"``).
+    max_file_paths:
+        Maximum file paths retained per entity after merge.
 
     Returns
     -------
@@ -115,6 +125,15 @@ def merge_entities(
             most_common_type = type_counts[key].most_common(1)[0][0]
             entity.entity_type = most_common_type
 
+    # Trim source IDs and file paths to configured limits.
+    for entity in result.values():
+        entity.source_id = limit_source_ids(
+            entity.source_id, max_ids=max_source_ids, method=source_ids_method
+        )
+        entity.file_path = _limit_delimited(
+            entity.file_path, max_values=max_file_paths, method=source_ids_method
+        )
+
     return list(result.values())
 
 
@@ -126,6 +145,10 @@ def merge_relationships(
     new_rels: list[ExtractedRelationship],
     chunk_id: str,
     file_path: str,
+    *,
+    max_source_ids: int = _DEFAULT_MAX_SOURCE_IDS,
+    source_ids_method: str = "FIFO",
+    max_file_paths: int = 100,
 ) -> list[GraphRelationship]:
     """Merge newly extracted relationships into an existing graph edge list.
 
@@ -149,6 +172,12 @@ def merge_relationships(
         Source chunk identifier.
     file_path:
         Source file path.
+    max_source_ids:
+        Maximum source IDs retained per relationship after merge.
+    source_ids_method:
+        Trimming strategy (``"FIFO"`` or ``"KEEP"``).
+    max_file_paths:
+        Maximum file paths retained per relationship after merge.
 
     Returns
     -------
@@ -195,6 +224,15 @@ def merge_relationships(
                 file_path=file_path,
                 weight=1.0,
             )
+
+    # Trim source IDs and file paths to configured limits.
+    for rel in result.values():
+        rel.source_id = limit_source_ids(
+            rel.source_id, max_ids=max_source_ids, method=source_ids_method
+        )
+        rel.file_path = _limit_delimited(
+            rel.file_path, max_values=max_file_paths, method=source_ids_method
+        )
 
     return list(result.values())
 
@@ -307,3 +345,84 @@ def _merge_keywords(current: str, new_keywords: str) -> str:
             all_kw.add(stripped)
 
     return ",".join(sorted(all_kw))
+
+
+def _limit_delimited(
+    values: str,
+    max_values: int = 100,
+    method: str = "FIFO",
+) -> str:
+    """Trim a :data:`GRAPH_FIELD_SEP`-delimited string to *max_values* entries.
+
+    Uses the same FIFO / KEEP semantics as :func:`limit_source_ids`.
+    """
+    if not values:
+        return values
+
+    parts = [v for v in values.split(GRAPH_FIELD_SEP) if v]
+    if len(parts) <= max_values:
+        return values
+
+    if method.upper() == "KEEP":
+        trimmed = parts[:max_values]
+    else:
+        trimmed = parts[-max_values:]
+
+    logger.debug(
+        "Trimmed delimited field from %d to %d (method=%s).",
+        len(parts),
+        len(trimmed),
+        method,
+    )
+    return GRAPH_FIELD_SEP.join(trimmed)
+
+
+# ── Summary trigger ──────────────────────────────────────────────
+
+
+def should_summarize(description: str, threshold: int) -> bool:
+    """Return True when a description has enough fragments to warrant LLM summary.
+
+    Parameters
+    ----------
+    description:
+        The :data:`GRAPH_FIELD_SEP`-delimited description string.
+    threshold:
+        Minimum number of fragments before summarisation is triggered.
+
+    Returns
+    -------
+    bool
+        ``True`` when the fragment count is ``>= threshold``.
+    """
+    if threshold <= 0 or not description:
+        return False
+
+    fragments = [p.strip() for p in description.split(GRAPH_FIELD_SEP) if p.strip()]
+    return len(fragments) >= threshold
+
+
+def get_description_fragments(description: str) -> list[str]:
+    """Split a merged description string into its individual fragments.
+
+    Parameters
+    ----------
+    description:
+        The :data:`GRAPH_FIELD_SEP`-delimited description string.
+
+    Returns
+    -------
+    list[str]
+        Deduplicated, stripped description fragments.
+    """
+    if not description:
+        return []
+
+    seen: set[str] = set()
+    fragments: list[str] = []
+    for part in description.split(GRAPH_FIELD_SEP):
+        stripped = part.strip()
+        if stripped and stripped not in seen:
+            seen.add(stripped)
+            fragments.append(stripped)
+    return fragments

@@ -70,6 +70,9 @@ class JsonDocStatusStorage(BaseDocStatusStorage):
             created_at=raw.get("created_at", ""),
             updated_at=raw.get("updated_at", ""),
             kb_name=raw.get("kb_name", ""),
+            content_hash=raw.get("content_hash", ""),
+            duplicate_kind=raw.get("duplicate_kind", ""),
+            basename=raw.get("basename", ""),
         )
 
     @staticmethod
@@ -192,6 +195,38 @@ class JsonDocStatusStorage(BaseDocStatusStorage):
         for k, v in extra.items():
             self._data[doc_id][k] = v
         await self._persist()
+
+    async def get_doc_by_basename(
+        self, basename: str, *, kb_name: str | None = None
+    ) -> Optional[DocStatusInfo]:
+        """Find a document by its filename basename.
+
+        Scans all stored documents for a matching ``basename`` field
+        within the given knowledge base scope.
+        """
+        await self._ensure_loaded()
+        for raw in self._data.values():
+            if not self._matches_kb(raw, kb_name):
+                continue
+            if raw.get("basename", "") == basename:
+                return self._to_info(raw)
+        return None
+
+    async def get_doc_by_content_hash(
+        self, content_hash: str, *, kb_name: str | None = None
+    ) -> Optional[DocStatusInfo]:
+        """Find a document by its content hash.
+
+        Scans all stored documents for a matching ``content_hash`` field
+        within the given knowledge base scope.
+        """
+        await self._ensure_loaded()
+        for raw in self._data.values():
+            if not self._matches_kb(raw, kb_name):
+                continue
+            if raw.get("content_hash", "") == content_hash:
+                return self._to_info(raw)
+        return None
 
     async def delete(self, doc_ids: list[str]) -> None:
         await self._ensure_loaded()
