@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from aurora_serve.apps.api import router as apps_router
+from aurora_serve.auth.routes import router as auth_router
 from aurora_serve.awel.api import router as awel_router
 from aurora_serve.agent.api import router as agent_router
 from aurora_serve.chat.api import router as chat_router
@@ -26,6 +27,7 @@ from aurora_serve.users.api import router as users_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
+api_router.include_router(auth_router)
 api_router.include_router(apps_router)
 api_router.include_router(awel_router)
 api_router.include_router(chat_router)

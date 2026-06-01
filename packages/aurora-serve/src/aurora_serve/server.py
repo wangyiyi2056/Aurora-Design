@@ -53,6 +53,11 @@ def create_app() -> FastAPI:
         system_app.register_instance(metadata_store)
         app.state.metadata_store = metadata_store
 
+        # Initialise authentication subsystem (JWT + API keys).
+        from aurora_serve.auth.middleware import _init_auth
+
+        _init_auth(app)
+
         registry = ModelRegistry()
         for cfg in settings.llm_configs:
             model_type = cfg.get("model_type", "openai")
@@ -220,6 +225,15 @@ def create_app() -> FastAPI:
         mcp_client.disconnect_all()
 
     app = FastAPI(title="Aurora", lifespan=lifespan)
+
+    # Global auth middleware — registered BEFORE CORSMiddleware so that
+    # Starlette's build_middleware_stack wraps CORSMiddleware around
+    # AuthMiddleware.  This ensures 401 responses from AuthMiddleware
+    # still receive CORS headers.
+    from aurora_serve.auth.middleware import AuthMiddleware
+
+    app.add_middleware(AuthMiddleware, aurora_app=app)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -227,6 +241,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
     app.include_router(api_router, prefix="/api/v1")
 
     # Ollama-compatible API — mounted at /api (not /api/v1) for Ollama client compatibility
