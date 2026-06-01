@@ -31,6 +31,9 @@ import type {
 import { createSession, deleteSession, listSessions, loadSession, upsertSessionMessage } from "@/services/chat"
 import type { APIChatMessage, ContentPart } from "@/services/chat"
 import { listDesignSkills, type DesignSkillSummary } from "@/services/design-skills"
+import { listDesignSystems, type DesignSystemSummary } from "@/services/design-systems"
+import { listCustomPrompts, type PromptTemplate } from "@/services/prompts"
+import { useDatasources } from "@/features/construct/database/hooks/use-datasources"
 import { useProviderStore } from "@/stores/provider-store"
 import { useChatStore, type SessionMeta } from "@/stores/chat-store"
 import { agentDisplayName } from "@/features/chat/utils/agent-labels"
@@ -95,6 +98,13 @@ export default function ChatPage() {
   const [designSkillsLoading, setDesignSkillsLoading] = useState(false)
   const [designSkillsError, setDesignSkillsError] = useState<string | null>(null)
   const [selectedDesignSkillId, setSelectedDesignSkillId] = useState<string | null>(null)
+  const [designSystems, setDesignSystems] = useState<DesignSystemSummary[]>([])
+  const [designSystemsLoading, setDesignSystemsLoading] = useState(false)
+  const [designSystemsError, setDesignSystemsError] = useState<string | null>(null)
+  const [selectedDesignSystemId, setSelectedDesignSystemId] = useState<string | null>(null)
+  const [selectedDatasourceName, setSelectedDatasourceName] = useState<string | null>(null)
+  const { data: dsData, isLoading: dsLoading } = useDatasources()
+  const [customPrompts, setCustomPrompts] = useState<PromptTemplate[]>([])
   const generatedArtifactKeys = useRef<Set<string>>(new Set())
   const messageLoadSeq = useRef(0)
   const sessionListLoadSeq = useRef(0)
@@ -117,6 +127,42 @@ export default function ChatPage() {
       })
       .finally(() => {
         if (!cancelled) setDesignSkillsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setDesignSystemsLoading(true)
+    setDesignSystemsError(null)
+    listDesignSystems()
+      .then((systems) => {
+        if (!cancelled) setDesignSystems(systems)
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setDesignSystems([])
+          setDesignSystemsError(error instanceof Error ? error.message : "Design systems unavailable")
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDesignSystemsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    listCustomPrompts()
+      .then((res) => {
+        if (!cancelled) setCustomPrompts(res.items)
+      })
+      .catch(() => {
+        if (!cancelled) setCustomPrompts([])
       })
     return () => {
       cancelled = true
@@ -408,9 +454,10 @@ export default function ChatPage() {
   const sendFromPane = async (
     prompt: string,
     paneAttachments: PaneChatAttachment[],
-    _commentAttachments: ChatCommentAttachment[]
+    _commentAttachments: ChatCommentAttachment[],
+    customPromptIds: string[] = [],
   ) => {
-    if ((!prompt.trim() && paneAttachments.length === 0) || loading) return
+    if ((!prompt.trim() && paneAttachments.length === 0 && customPromptIds.length === 0) || loading) return
     const question = prompt.trim()
     const contentParts: ContentPart[] = [
       ...paneAttachments.map((att) => ({
@@ -524,7 +571,10 @@ export default function ChatPage() {
         frontend_persistence: true,
         user_message_id: userMessageId,
         assistant_message_id: assistantMessageId,
+        ...(customPromptIds.length > 0 ? { custom_prompt_ids: customPromptIds } : {}),
         ...(selectedDesignSkillId ? { design_skill_id: selectedDesignSkillId } : {}),
+        ...(selectedDesignSystemId ? { design_system_id: selectedDesignSystemId } : {}),
+        ...(selectedDatasourceName ? { database_name: selectedDatasourceName } : {}),
       },
       shouldApply: () =>
         Boolean(streamSessionId) &&
@@ -667,6 +717,16 @@ export default function ChatPage() {
             designSkillsError={designSkillsError}
             selectedDesignSkillId={selectedDesignSkillId}
             onSelectDesignSkill={setSelectedDesignSkillId}
+            designSystems={designSystems}
+            designSystemsLoading={designSystemsLoading}
+            designSystemsError={designSystemsError}
+            selectedDesignSystemId={selectedDesignSystemId}
+            onSelectDesignSystem={setSelectedDesignSystemId}
+            customPrompts={customPrompts}
+            datasources={dsData?.items ?? []}
+            datasourcesLoading={dsLoading}
+            selectedDatasourceName={selectedDatasourceName}
+            onSelectDatasource={setSelectedDatasourceName}
           />
         }
         rightPanel={
@@ -703,13 +763,16 @@ function buildCurrentModelDisplayName({
   apiModel,
   agentId,
 }: {
-  providerMode: "daemon" | "api"
+  providerMode: string
   protocol: string
   apiModel: string
   agentId: string
 }): string {
   if (providerMode === "api") {
     return `${apiProviderLabel(protocol)}-${apiModel || "default"}`
+  }
+  if (providerMode === "embedding") {
+    return `CLI-${cliAgentLabel(agentId)}`
   }
   return `CLI-${cliAgentLabel(agentId)}`
 }

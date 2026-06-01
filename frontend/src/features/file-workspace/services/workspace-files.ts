@@ -9,6 +9,33 @@ export function workspaceRawUrl(workspaceId: string, filePath: string): string {
   return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/raw/${safePath}`
 }
 
+export function workspacePreviewPdfUrl(workspaceId: string, filePath: string): string {
+  const safePath = filePath
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/")
+  return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/files/${safePath}/preview/pdf`
+}
+
+export async function fetchWorkspaceFilePreviewInfo(
+  workspaceId: string,
+  filePath: string,
+): Promise<{ previewAvailable: boolean } | null> {
+  const safePath = filePath
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/")
+  try {
+    const resp = await fetch(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/files/${safePath}/preview`)
+    if (!resp.ok) return null
+    return (await resp.json()) as { previewAvailable: boolean }
+  } catch {
+    return null
+  }
+}
+
 export function workspaceFileUrl(workspaceId: string, filePath: string): string {
   return workspaceRawUrl(workspaceId, filePath)
 }

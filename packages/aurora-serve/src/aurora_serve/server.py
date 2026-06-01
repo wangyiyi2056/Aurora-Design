@@ -28,6 +28,7 @@ def create_app() -> FastAPI:
         from aurora_serve.datasource.schema import DBConfig
         from aurora_serve.datasource.service import DatasourceService
         from aurora_serve.design_skills.service import DesignSkillService
+        from aurora_serve.design_systems.service import DesignSystemService
         from aurora_serve.files.service import FileService
         from aurora_serve.knowledge.service import KnowledgeService
         from aurora_serve.metadata import MetadataStore, storage_dir
@@ -83,12 +84,40 @@ def create_app() -> FastAPI:
                 llm_config = LLMConfig(**cfg)
                 registry.register_llm(cfg["model_name"], AnthropicLLM(llm_config))
         app.state.model_registry = registry
+
+        # Log summary of registered models
+        llm_count = len(registry._llms) if hasattr(registry, "_llms") else 0
+        emb_count = len(registry._embeddings) if hasattr(registry, "_embeddings") else 0
+        if llm_count == 0:
+            logger.error(
+                "❌ No LLM models registered! Knowledge base ingestion and querying will fail. "
+                "Please set OPENAI_API_KEY environment variable."
+            )
+        else:
+            logger.info("✅ Registered %d LLM(s) and %d embedding provider(s)", llm_count, emb_count)
+
         model_config_service = ModelConfigService(metadata_store, registry)
+        model_config_service.on_init()  # Load saved models into registry immediately
         system_app.register_instance(model_config_service)
 
         datasource_service = DatasourceService(metadata_store)
         for ds_cfg in settings.datasource_configs:
-            datasource_service.add_connection(DBConfig(**ds_cfg))
+            try:
+                datasource_service.add_connection(DBConfig(**ds_cfg))
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Failed to load datasource %s: %s",
+                    ds_cfg.get("name", "unknown"),
+                    exc,
+                )
+
+        # Seed datasources with mock data
+        from aurora_serve.datasource.seed import seed_default_datasource, _SEED_REGISTRY
+
+        for ds_name in _SEED_REGISTRY:
+            seed_default_datasource(datasource_service, ds_name)
+
         system_app.register_instance(datasource_service)
         app.state.datasource_service = datasource_service
 
@@ -103,9 +132,34 @@ def create_app() -> FastAPI:
         system_app.register_instance(design_skill_service)
         app.state.design_skill_service = design_skill_service
 
+        design_system_service = DesignSystemService()
+        system_app.register_instance(design_system_service)
+        app.state.design_system_service = design_system_service
+
         knowledge_service = KnowledgeService(metadata_store, registry)
         system_app.register_instance(knowledge_service)
         app.state.knowledge_service = knowledge_service
+
+        # V2 Knowledge Service (RAG + Knowledge Graph)
+        from aurora_serve.knowledge.v2.service import KnowledgeV2Service
+        from aurora_ext.rag.storage.json_kv import JsonKVStorage
+        from aurora_ext.rag.storage.chroma_vector import ChromaVectorStorage
+        from aurora_ext.rag.storage.networkx_graph import NetworkXGraphStorage
+        from aurora_ext.rag.storage.json_doc_status import JsonDocStatusStorage
+
+        _rag_dir = str(storage_dir() / "rag")
+        _rag_config = {"working_dir": _rag_dir}
+        knowledge_v2_service = KnowledgeV2Service.from_registry(
+            registry,
+            kv_storage=JsonKVStorage("rag_kv", _rag_config),
+            vector_storage=ChromaVectorStorage("rag_vectors", _rag_config),
+            graph_storage=NetworkXGraphStorage("rag_graph", _rag_config),
+            doc_status_storage=JsonDocStatusStorage("rag_doc_status", _rag_config),
+            working_dir=_rag_dir,
+            input_dir=str(storage_dir() / "uploads" / "knowledge"),
+        )
+        system_app.register_instance(knowledge_v2_service)
+        app.state.knowledge_v2_service = knowledge_v2_service
 
         app_service = AppService(metadata_store)
         system_app.register_instance(app_service)
@@ -152,6 +206,8 @@ def create_app() -> FastAPI:
             datasource_service=datasource_service,
             knowledge_service=knowledge_service,
             design_skill_service=design_skill_service,
+            design_system_service=design_system_service,
+            prompt_template_service=prompt_service,
         )
         system_app.register_instance(app.state.chat_service, name="chat_service")
 
@@ -172,6 +228,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(api_router, prefix="/api/v1")
+
+    # Ollama-compatible API — mounted at /api (not /api/v1) for Ollama client compatibility
+    from aurora_serve.knowledge.v2.ollama_routes import router as ollama_router
+    app.include_router(ollama_router)
     return app
 
 

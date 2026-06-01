@@ -60,6 +60,7 @@ class DatasourceEntity(TimestampMixin, Base):
     user: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password: Mapped[str | None] = mapped_column(String(4096), nullable=True)
     database: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    description: Mapped[str] = mapped_column(String(1024), default="")
     extra: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
@@ -209,6 +210,15 @@ class AppEntity(TimestampMixin, Base):
     knowledge_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     datasource_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     skill_names: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+
+class SavedQueryEntity(TimestampMixin, Base):
+    __tablename__ = "saved_queries"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    datasource_name: Mapped[str] = mapped_column(String(255), index=True)
+    sql: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(String(500), default="")
 
 
 class MetadataStore(BaseComponent):

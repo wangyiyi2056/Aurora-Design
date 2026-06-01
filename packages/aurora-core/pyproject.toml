@@ -12,6 +12,9 @@ dependencies = [
     "psycopg2-binary>=2.9",
     "pymysql>=1.1",
     "duckdb>=0.10",
+    "duckdb-engine>=0.9",
+    "tiktoken>=0.5",
+    "numpy>=1.24",
 ]
 
 [build-system]

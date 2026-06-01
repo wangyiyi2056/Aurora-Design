@@ -41,6 +41,7 @@ class LocalCliLLM(BaseLLM):
             model = None
         reasoning = kwargs.get("reasoning") or self.config.extra.get("reasoning")
         cwd = kwargs.get("cwd") or self.config.extra.get("cwd")
+        stderr_chunks: list[str] = []
         async for event in run_agent_stream(
             self.agent_id,
             prompt,
@@ -49,7 +50,9 @@ class LocalCliLLM(BaseLLM):
             reasoning=reasoning,
         ):
             event_type = event.get("type")
-            if event_type == "text_delta":
+            if event_type == "stderr":
+                stderr_chunks.append(str(event.get("chunk") or ""))
+            elif event_type == "text_delta":
                 yield ModelOutput(text=str(event.get("delta") or ""))
             elif event_type == "thinking_delta":
                 yield ModelOutput(text=str(event.get("delta") or ""), is_reasoning=True)
@@ -92,5 +95,10 @@ class LocalCliLLM(BaseLLM):
                     },
                 )
             elif event_type == "error":
-                raise RuntimeError(str(event.get("message") or "CLI agent failed"))
+                error_msg = str(event.get("message") or "CLI agent failed")
+                if stderr_chunks:
+                    stderr_text = "".join(stderr_chunks).strip()
+                    if stderr_text:
+                        error_msg = f"{error_msg}\nstderr: {stderr_text[:500]}"
+                raise RuntimeError(error_msg)
         yield ModelOutput(text="", finish_reason="stop")

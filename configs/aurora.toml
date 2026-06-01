@@ -8,13 +8,46 @@ default_llm = "gpt-4o-mini"
 model_name = "gpt-4o-mini"
 model_type = "openai"
 api_base = "https://api.openai.com/v1"
-# api_key = "sk-xxx"  # Prefer env var AURORA_API_KEY
+# api_key = "sk-xxx"  # Prefer env var OPENAI_API_KEY
 temperature = 0.7
 max_tokens = 2048
 
-# Example default datasource (SQLite in-memory)
-# default_datasource = "default-sqlite"
+# ── Default Datasource Configurations ──
+
+# SQLite in-memory database (always available)
+default_datasource = "aurora-sqlite"
+
+[[datasource_configs]]
+name = "aurora-sqlite"
+db_type = "sqlite"
+database = ":memory:"
+description = "Aurora default SQLite in-memory database"
+
+# DuckDB for analytics (file-based)
+[[datasource_configs]]
+name = "aurora-duckdb"
+db_type = "duckdb"
+database = "data/aurora.duckdb"
+description = "Aurora DuckDB analytical database"
+
+# Example PostgreSQL connection (requires actual server)
 # [[datasource_configs]]
-# name = "default-sqlite"
-# db_type = "sqlite"
-# database = ":memory:"
+# name = "aurora-postgres"
+# db_type = "postgresql"
+# host = "localhost"
+# port = 5432
+# user = "postgres"
+# password = ""
+# database = "aurora"
+# description = "Aurora PostgreSQL database"
+
+# Example MySQL connection (requires actual server)
+# [[datasource_configs]]
+# name = "aurora-mysql"
+# db_type = "mysql"
+# host = "localhost"
+# port = 3306
+# user = "root"
+# password = ""
+# database = "aurora"
+# description = "Aurora MySQL database"

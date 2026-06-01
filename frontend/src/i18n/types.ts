@@ -518,6 +518,8 @@ export interface Dict {
   'chat.importFolder': string;
   'chat.importSkills': string;
   'chat.importProject': string;
+  'chat.useDatabase': string;
+  'chat.selectDatabase': string;
   'chat.linkedFolderRemoveAria': string;
   'chat.linkedFolderNotFound': string;
   'chat.linkedFolderAlready': string;
@@ -800,6 +802,7 @@ export interface Dict {
   'tool.titlePython': string;
   'tool.titleDataProfile': string;
   'tool.titleSql': string;
+  'tool.titleDatasource': string;
   // Tool status text (running state)
   'tool.statusDelegating': string;
   'tool.statusPlanning': string;

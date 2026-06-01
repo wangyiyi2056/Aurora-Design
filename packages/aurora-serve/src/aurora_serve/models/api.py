@@ -6,8 +6,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
 from aurora_core.model.local_cli import detect_agents
+from aurora_serve.knowledge.v2.service import KnowledgeV2Service
 from aurora_serve.metadata import ModelConfigEntity
 from aurora_serve.models.service import ModelConfigService, mask_api_key
+
+
+def get_knowledge_v2_service(request: Request) -> KnowledgeV2Service:
+    return request.app.state.system_app.get_component(
+        "knowledge_v2_service", KnowledgeV2Service
+    )
 
 router = APIRouter(prefix="/models", tags=["models"])
 
@@ -243,3 +250,62 @@ async def test_saved_model_connection(
         raise
     service.set_test_status(model_id, response.success, response.message)
     return response
+
+
+# ── Embedding test + readiness ──────────────────────────────────────────
+
+
+class EmbeddingTestRequest(BaseModel):
+    host: str = Field(..., description="Ollama host, e.g. http://localhost:11434")
+    model: str = Field(..., description="Embedding model name, e.g. nomic-embed-text")
+
+
+@router.post("/test-embedding", response_model=ModelTestResponse)
+async def test_embedding_connection(req: EmbeddingTestRequest):
+    """Test embedding connection by calling the Ollama-compatible embeddings endpoint."""
+    host = req.host.rstrip("/")
+    # Ollama exposes an OpenAI-compatible endpoint at {host}/v1/embeddings
+    url = f"{host}/api/embed"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(
+                url,
+                json={"model": req.model, "input": ["test"]},
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            embeddings = data.get("embeddings", [])
+            dim = len(embeddings[0]) if embeddings else 0
+            return ModelTestResponse(
+                success=True,
+                message="Embedding connection successful",
+                model_info={
+                    "model": req.model,
+                    "dimension": dim,
+                    "provider": "ollama",
+                },
+            )
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"Embedding API error: {e.response.text[:200]}",
+        )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Cannot connect to Ollama at {host}. Make sure Ollama is running.",
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Connection failed: {str(e)}",
+        )
+
+
+@router.get("/readiness")
+async def get_model_readiness(
+    v2_service: KnowledgeV2Service = Depends(get_knowledge_v2_service),
+) -> dict:
+    """Return readiness status for chat model and embedding model."""
+    return v2_service.is_ready()

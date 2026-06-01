@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
@@ -337,6 +338,9 @@ def sanitize_custom_model(model: str | None) -> str | None:
     value = model.strip()
     if not value or value == "default":
         return None
+    # Strip internal Aurora model identifiers that are not real model names
+    if value.startswith("chat-cli-"):
+        return None
     if value.startswith("-") or len(value) > 200:
         raise ValueError("Invalid model name")
     if re.search(r"[\s\x00-\x1f\x7f]", value):
@@ -482,6 +486,15 @@ def spawn_env_for_agent(agent_id: str, env: dict[str, str] | None = None) -> dic
     child_env = dict(env or os.environ)
     if agent_id == "claude" and not child_env.get("ANTHROPIC_BASE_URL"):
         child_env.pop("ANTHROPIC_API_KEY", None)
+    # Propagate ANTHROPIC_AUTH_TOKEN as ANTHROPIC_API_KEY for pipe-mode auth.
+    # Some proxies (e.g. Alibaba Cloud MaaS) authenticate via AUTH_TOKEN
+    # but the CLI pipe mode only reads ANTHROPIC_API_KEY.
+    if (
+        agent_id == "claude"
+        and not child_env.get("ANTHROPIC_API_KEY")
+        and child_env.get("ANTHROPIC_AUTH_TOKEN")
+    ):
+        child_env["ANTHROPIC_API_KEY"] = child_env["ANTHROPIC_AUTH_TOKEN"]
     try:
         child_env.update(get_agent_def(agent_id).env)
     except KeyError:
@@ -696,11 +709,12 @@ async def run_agent_stream(
     binary = resolve_agent_bin(agent_id)
     workdir = cwd or os.getcwd()
     args = build_agent_args(agent_id, prompt=prompt, model=model, reasoning=reasoning, cwd=workdir)
+    child_env = spawn_env_for_agent(agent_id)
     proc = await asyncio.create_subprocess_exec(
         binary,
         *args,
         cwd=workdir,
-        env=spawn_env_for_agent(agent_id),
+        env=child_env,
         stdin=asyncio.subprocess.PIPE if agent.prompt_via_stdin else None,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -730,12 +744,16 @@ async def run_agent_stream(
         if parser:
             parser.flush()
 
+    stderr_parts: list[str] = []
+
     async def read_stderr() -> None:
         assert proc.stderr is not None
         while chunk := await proc.stderr.read(4096):
+            text = chunk.decode("utf-8", errors="replace")
+            stderr_parts.append(text)
             queue.put_nowait({
                 "type": "stderr",
-                "chunk": chunk.decode("utf-8", errors="replace"),
+                "chunk": text,
             })
 
     stdout_task = asyncio.create_task(read_stdout())
@@ -752,7 +770,13 @@ async def run_agent_stream(
 
     code = await wait_task
     if code != 0:
-        yield {"type": "error", "message": f"{agent.name} exited with code {code}"}
+        stderr_text = "".join(stderr_parts).strip()
+        _cli_logger = logging.getLogger(__name__)
+        _cli_logger.error("❌ CLI agent '%s' exited with code %d\nstderr: %s", agent.name, code, stderr_text[:1000])
+        msg = f"{agent.name} exited with code {code}"
+        if stderr_text:
+            msg += f"\nstderr: {stderr_text[:500]}"
+        yield {"type": "error", "message": msg}
 
 
 def collapse_messages_for_cli(messages: Iterable[Any]) -> str:

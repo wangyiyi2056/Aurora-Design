@@ -9,6 +9,9 @@ import {
 import { useT } from '../../../i18n';
 import type { Dict } from '../../../i18n/types';
 import type { DesignSkillSummary } from '../../../services/design-skills';
+import type { DesignSystemSummary } from '../../../services/design-systems';
+import type { PromptTemplate } from '../../../services/prompts';
+import type { DatasourceItem } from '../../../services/database';
 import { projectRawUrl, uploadProjectFiles, openFolderDialog } from "../providers/registry";
 import { patchProject } from "../state/projects";
 import type { AppConfig, ChatAttachment, ChatCommentAttachment, ProjectFile, ProjectMetadata } from "../types";
@@ -45,7 +48,12 @@ interface Props {
   onEnsureProject: () => Promise<string | null>;
   commentAttachments?: ChatCommentAttachment[];
   onRemoveCommentAttachment?: (id: string) => void;
-  onSend: (prompt: string, attachments: ChatAttachment[], commentAttachments: ChatCommentAttachment[]) => void;
+  onSend: (
+    prompt: string,
+    attachments: ChatAttachment[],
+    commentAttachments: ChatCommentAttachment[],
+    customPromptIds: string[],
+  ) => void;
   onStop: () => void;
   // Opens the global settings dialog (CLI / model / agent picker). The
   // composer's leading gear icon routes here so users can switch models
@@ -68,6 +76,16 @@ interface Props {
   designSkillsError?: string | null;
   selectedDesignSkillId?: string | null;
   onSelectDesignSkill?: (skillId: string | null) => void;
+  designSystems?: DesignSystemSummary[];
+  designSystemsLoading?: boolean;
+  designSystemsError?: string | null;
+  selectedDesignSystemId?: string | null;
+  onSelectDesignSystem?: (systemId: string | null) => void;
+  customPrompts?: PromptTemplate[];
+  datasources?: DatasourceItem[];
+  datasourcesLoading?: boolean;
+  selectedDatasourceName?: string | null;
+  onSelectDatasource?: (name: string | null) => void;
 }
 
 // Imperative handle so ancestors (e.g. example chips in ChatPane) can
@@ -112,6 +130,16 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       designSkillsError = null,
       selectedDesignSkillId = null,
       onSelectDesignSkill,
+      designSystems = [],
+      designSystemsLoading = false,
+      designSystemsError = null,
+      selectedDesignSystemId = null,
+      onSelectDesignSystem,
+      customPrompts = [],
+      datasources = [],
+      datasourcesLoading = false,
+      selectedDatasourceName = null,
+      onSelectDatasource,
     },
     ref
   ) {
@@ -137,6 +165,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     const [importOpen, setImportOpen] = useState(false);
     const [designSkillPickerOpen, setDesignSkillPickerOpen] = useState(false);
     const [designSkillQuery, setDesignSkillQuery] = useState("");
+    const [designSystemPickerOpen, setDesignSystemPickerOpen] = useState(false);
+    const [designSystemQuery, setDesignSystemQuery] = useState("");
+    const [datasourcePickerOpen, setDatasourcePickerOpen] = useState(false);
+    const [selectedCustomPromptIds, setSelectedCustomPromptIds] = useState<string[]>([]);
     const [petOpen, setPetOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -147,6 +179,11 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     const petEnabled = Boolean(onAdoptPet && onTogglePet);
     const linkedDirs = projectMetadata?.linkedDirs ?? [];
     const selectedDesignSkill = designSkills.find((skill) => skill.id === selectedDesignSkillId) ?? null;
+    const selectedDesignSystem = designSystems.find((system) => system.id === selectedDesignSystemId) ?? null;
+    const selectedDatasource = datasources.find((ds) => ds.name === selectedDatasourceName) ?? null;
+    const selectedCustomPrompts = selectedCustomPromptIds
+      .map((id) => customPrompts.find((prompt) => prompt.id === id))
+      .filter((prompt): prompt is PromptTemplate => Boolean(prompt));
     // initialDraft is only honored on the first non-empty value the parent
     // hands us. After we seed once, the composer is fully under user control
     // — re-renders that pass the same prompt back must not reseed. If the
@@ -265,6 +302,16 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       );
     }, [designSkillQuery, designSkills]);
 
+    const filteredDesignSystems = useMemo(() => {
+      const q = designSystemQuery.trim().toLowerCase();
+      if (!q) return designSystems;
+      return designSystems.filter((system) =>
+        [system.title, system.summary, system.category, system.surface, system.source]
+          .filter(Boolean)
+          .some((value) => value.toLowerCase().includes(q)),
+      );
+    }, [designSystemQuery, designSystems]);
+
     function useDesignSkillPrompt(skill: DesignSkillSummary) {
       if (!skill.examplePrompt) return;
       setDraft(skill.examplePrompt);
@@ -378,6 +425,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     function reset() {
       setDraft("");
       setStaged([]);
+      setSelectedCustomPromptIds([]);
       setUploadError(null);
       setMention(null);
       setSlash(null);
@@ -510,6 +558,31 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       });
     }
 
+    function insertCustomPromptMention(prompt: PromptTemplate) {
+      if (!mention) return;
+      const ta = textareaRef.current;
+      if (!ta) return;
+      const cursor = mention.cursor;
+      const before = draft.slice(0, cursor);
+      const after = draft.slice(cursor);
+      const replaced = before.replace(/@([^\s@]*)$/, `@${prompt.name} `);
+      const next = replaced + after;
+      setDraft(next);
+      setMention(null);
+      setSelectedCustomPromptIds((ids) =>
+        ids.includes(prompt.id) ? ids : [...ids, prompt.id],
+      );
+      requestAnimationFrame(() => {
+        ta.focus();
+        const pos = replaced.length;
+        ta.setSelectionRange(pos, pos);
+      });
+    }
+
+    function removeCustomPrompt(promptId: string) {
+      setSelectedCustomPromptIds((ids) => ids.filter((id) => id !== promptId));
+    }
+
     function removeStaged(p: string) {
       setStaged((s) => s.filter((a) => a.path !== p));
     }
@@ -526,12 +599,15 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       const hatched = expandHatchCommand(prompt);
       if (hatched) {
         if (streaming) return;
-        onSend(hatched, staged, commentAttachments);
+        onSend(hatched, staged, commentAttachments, selectedCustomPromptIds);
         reset();
         return;
       }
-      if ((!prompt && staged.length === 0 && commentAttachments.length === 0) || streaming) return;
-      onSend(prompt, staged, commentAttachments);
+      if (
+        (!prompt && staged.length === 0 && commentAttachments.length === 0 && selectedCustomPromptIds.length === 0) ||
+        streaming
+      ) return;
+      onSend(prompt, staged, commentAttachments, selectedCustomPromptIds);
       reset();
     }
 
@@ -547,6 +623,17 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             return key.toLowerCase().includes(mention.q.toLowerCase());
           })
           .slice(0, 12)
+      : [];
+    const filteredCustomPrompts = mention
+      ? customPrompts
+          .filter((prompt) => !selectedCustomPromptIds.includes(prompt.id))
+          .filter((prompt) => {
+            const q = mention.q.toLowerCase();
+            return [prompt.name, prompt.description, prompt.template]
+              .filter(Boolean)
+              .some((value) => value.toLowerCase().includes(q));
+          })
+          .slice(0, 8)
       : [];
 
     return (
@@ -597,6 +684,91 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             />
           ) : null}
           <div className="composer-input-wrap">
+            {selectedDesignSkill || selectedDesignSystem || selectedDatasource || selectedCustomPrompts.length > 0 ? (
+              <div className="composer-input-chips">
+                {selectedDesignSkill ? (
+                  <span
+                    className="staged-chip design-skill-chip"
+                    data-testid="composer-selected-design-skill"
+                    title={`Active design skill: ${selectedDesignSkill.name}`}
+                  >
+                    <span className="staged-icon" aria-hidden>
+                      <Icon name="sparkles" size={13} />
+                    </span>
+                    <span className="staged-name">{selectedDesignSkill.name}</span>
+                    <button
+                      type="button"
+                      className="staged-remove"
+                      aria-label={`Clear design skill ${selectedDesignSkill.name}`}
+                      onClick={() => onSelectDesignSkill?.(null)}
+                    >
+                      <Icon name="close" size={11} />
+                    </button>
+                  </span>
+                ) : null}
+                {selectedDesignSystem ? (
+                  <span
+                    className="staged-chip design-system-chip"
+                    data-testid="composer-selected-design-system"
+                    title={`Active design system: ${selectedDesignSystem.title}`}
+                  >
+                    <span className="staged-icon" aria-hidden>
+                      <Icon name="grid" size={13} />
+                    </span>
+                    <span className="staged-name">{selectedDesignSystem.title}</span>
+                    <button
+                      type="button"
+                      className="staged-remove"
+                      aria-label={`Clear design system ${selectedDesignSystem.title}`}
+                      onClick={() => onSelectDesignSystem?.(null)}
+                    >
+                      <Icon name="close" size={11} />
+                    </button>
+                  </span>
+                ) : null}
+                {selectedDatasource ? (
+                  <span
+                    className="staged-chip datasource-chip"
+                    data-testid="composer-selected-datasource"
+                    title={`Active datasource: ${selectedDatasource.name}`}
+                  >
+                    <span className="staged-icon" aria-hidden>
+                      <Icon name="link" size={13} />
+                    </span>
+                    <span className="staged-name">{selectedDatasource.name}</span>
+                    <button
+                      type="button"
+                      className="staged-remove"
+                      aria-label={`Clear datasource ${selectedDatasource.name}`}
+                      onClick={() => onSelectDatasource?.(null)}
+                    >
+                      <Icon name="close" size={11} />
+                    </button>
+                  </span>
+                ) : null}
+                {selectedCustomPrompts.map((prompt) => (
+                  <span
+                    key={prompt.id}
+                    className="staged-chip custom-prompt-chip"
+                    data-testid="composer-selected-custom-prompt"
+                    title={`Referenced prompt: ${prompt.name}`}
+                  >
+                    <span className="staged-icon" aria-hidden>
+                      <Icon name="file" size={13} />
+                    </span>
+                    <span className="staged-name">{prompt.name}</span>
+                    <button
+                      type="button"
+                      className="staged-remove"
+                      aria-label={`Remove prompt ${prompt.name}`}
+                      onClick={() => removeCustomPrompt(prompt.id)}
+                    >
+                      <Icon name="close" size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
             <textarea
               ref={textareaRef}
               data-testid="chat-composer-input"
@@ -640,8 +812,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 }
               }}
             />
-            {mention && filteredFiles.length > 0 ? (
-              <MentionPopover files={filteredFiles} onPick={insertMention} />
+            {mention && (filteredFiles.length > 0 || filteredCustomPrompts.length > 0) ? (
+              <MentionPopover
+                files={filteredFiles}
+                prompts={filteredCustomPrompts}
+                onPickFile={insertMention}
+                onPickPrompt={insertCustomPromptMention}
+              />
             ) : null}
             {slash && filteredSlash.length > 0 ? (
               <SlashPopover
@@ -727,10 +904,34 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                     enabled
                     onClick={() => {
                       setDesignSkillPickerOpen((v) => !v);
+                      setDesignSystemPickerOpen(false);
+                      setImportOpen(false);
+                    }}
+                  />
+                  <ImportItem
+                    icon="grid"
+                    label="Design system library"
+                    t={t}
+                    enabled
+                    onClick={() => {
+                      setDesignSystemPickerOpen((v) => !v);
+                      setDesignSkillPickerOpen(false);
                       setImportOpen(false);
                     }}
                   />
                   <ImportItem icon="file" label={t('chat.importProject')} t={t} />
+                  <ImportItem
+                    icon="link"
+                    label={t('chat.useDatabase')}
+                    t={t}
+                    enabled
+                    onClick={() => {
+                      setDatasourcePickerOpen((v) => !v);
+                      setDesignSkillPickerOpen(false);
+                      setDesignSystemPickerOpen(false);
+                      setImportOpen(false);
+                    }}
+                  />
                 </div>
               ) : null}
               {designSkillPickerOpen ? (
@@ -749,6 +950,37 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                   onClose={() => setDesignSkillPickerOpen(false)}
                 />
               ) : null}
+              {datasourcePickerOpen ? (
+                <DatasourcePicker
+                  datasources={datasources}
+                  loading={datasourcesLoading}
+                  selectedName={selectedDatasourceName}
+                  onSelect={(ds) => {
+                    onSelectDatasource?.(ds.name);
+                    setDatasourcePickerOpen(false);
+                  }}
+                  onClear={() => {
+                    onSelectDatasource?.(null);
+                    setDatasourcePickerOpen(false);
+                  }}
+                  onClose={() => setDatasourcePickerOpen(false)}
+                />
+              ) : null}
+              {designSystemPickerOpen ? (
+                <DesignSystemPicker
+                  systems={filteredDesignSystems}
+                  query={designSystemQuery}
+                  loading={designSystemsLoading}
+                  error={designSystemsError}
+                  onQueryChange={setDesignSystemQuery}
+                  selectedId={selectedDesignSystemId}
+                  onSelect={(system) => {
+                    onSelectDesignSystem?.(system.id);
+                    setDesignSystemPickerOpen(false);
+                  }}
+                  onClose={() => setDesignSystemPickerOpen(false)}
+                />
+              ) : null}
             </div>
             {modelDisplayName ? (
               <span
@@ -757,22 +989,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 aria-label={`Current model: ${modelDisplayName}`}
               >
                 {modelDisplayName}
-              </span>
-            ) : null}
-            {selectedDesignSkill ? (
-              <span
-                className="composer-design-skill-pill"
-                title={`Active design skill: ${selectedDesignSkill.name}`}
-              >
-                <Icon name="sparkles" size={12} />
-                <span>{selectedDesignSkill.name}</span>
-                <button
-                  type="button"
-                  aria-label={`Clear design skill ${selectedDesignSkill.name}`}
-                  onClick={() => onSelectDesignSkill?.(null)}
-                >
-                  <Icon name="close" size={10} />
-                </button>
               </span>
             ) : null}
             {petEnabled ? (
@@ -888,7 +1104,12 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 className="composer-send"
                 data-testid="chat-send"
                 onClick={() => void submit()}
-                disabled={!draft.trim() && staged.length === 0 && commentAttachments.length === 0}
+                disabled={
+                  !draft.trim() &&
+                  staged.length === 0 &&
+                  commentAttachments.length === 0 &&
+                  selectedCustomPromptIds.length === 0
+                }
               >
                 <Icon name="send" size={13} />
                 <span>{t('chat.send')}</span>
@@ -1066,6 +1287,85 @@ function DesignSkillPicker({
   );
 }
 
+function DesignSystemPicker({
+  systems,
+  query,
+  loading,
+  error,
+  selectedId,
+  onQueryChange,
+  onSelect,
+  onClose,
+}: {
+  systems: DesignSystemSummary[];
+  query: string;
+  loading: boolean;
+  error: string | null;
+  selectedId: string | null;
+  onQueryChange: (value: string) => void;
+  onSelect: (system: DesignSystemSummary) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="composer-design-skill-picker" role="dialog" aria-label="Design systems">
+      <div className="composer-design-skill-head">
+        <strong>Design systems</strong>
+        <button type="button" aria-label="Close design systems" onClick={onClose}>
+          <Icon name="close" size={12} />
+        </button>
+      </div>
+      <input
+        type="search"
+        value={query}
+        onChange={(event) => onQueryChange(event.currentTarget.value)}
+        placeholder="Filter systems"
+        aria-label="Filter design systems"
+      />
+      <div className="composer-design-skill-list">
+        {loading ? (
+          <div className="composer-design-skill-empty">Loading design systems...</div>
+        ) : error ? (
+          <div className="composer-design-skill-empty error">{error}</div>
+        ) : systems.length === 0 ? (
+          <div className="composer-design-skill-empty">No design systems found</div>
+        ) : (
+          systems.map((system) => (
+            <div
+              key={system.id}
+              className={`composer-design-skill-card${selectedId === system.id ? ' selected' : ''}`}
+            >
+              <div className="composer-design-skill-title">
+                <strong>{system.title}</strong>
+                <span>{system.source}</span>
+              </div>
+              {system.summary ? <p>{system.summary}</p> : null}
+              <div className="composer-design-skill-meta">
+                {[system.category, system.surface, system.status]
+                  .filter(Boolean)
+                  .map((item) => (
+                    <span key={item}>{item}</span>
+                  ))}
+              </div>
+              {system.swatches.length ? (
+                <div className="composer-design-system-swatches" aria-hidden>
+                  {system.swatches.slice(0, 6).map((color) => (
+                    <span key={color} style={{ background: color }} />
+                  ))}
+                </div>
+              ) : null}
+              <div className="composer-design-skill-actions">
+                <button type="button" onClick={() => onSelect(system)} aria-label={`Use ${system.title}`}>
+                  Use
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ImportItem({
   icon,
   label,
@@ -1161,24 +1461,38 @@ function SlashPopover({
 
 function MentionPopover({
   files,
-  onPick,
+  prompts,
+  onPickFile,
+  onPickPrompt,
 }: {
   files: ProjectFile[];
-  onPick: (path: string) => void;
+  prompts: PromptTemplate[];
+  onPickFile: (path: string) => void;
+  onPickPrompt: (prompt: PromptTemplate) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (ref.current) ref.current.scrollTop = 0;
-  }, [files]);
+  }, [files, prompts]);
   return (
     <div className="mention-popover" data-testid="mention-popover" ref={ref}>
+      {prompts.map((prompt) => (
+        <button
+          key={`prompt:${prompt.id}`}
+          className="mention-item mention-prompt-item"
+          onClick={() => onPickPrompt(prompt)}
+        >
+          <code>{prompt.name}</code>
+          <span className="mention-meta">提示词</span>
+        </button>
+      ))}
       {files.map((f) => {
         const key = f.path ?? f.name;
         return (
           <button
             key={key}
             className="mention-item"
-            onClick={() => onPick(key)}
+            onClick={() => onPickFile(key)}
           >
             <code>{key}</code>
             {f.size != null ? (
@@ -1199,4 +1513,63 @@ function prettySize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function DatasourcePicker({
+  datasources,
+  loading,
+  selectedName,
+  onSelect,
+  onClear,
+  onClose,
+}: {
+  datasources: DatasourceItem[];
+  loading: boolean;
+  selectedName: string | null;
+  onSelect: (ds: DatasourceItem) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="composer-design-skill-picker" role="dialog" aria-label="Datasources">
+      <div className="composer-design-skill-head">
+        <strong>Datasources</strong>
+        <button type="button" aria-label="Close datasources" onClick={onClose}>
+          <Icon name="close" size={12} />
+        </button>
+      </div>
+      <div className="composer-design-skill-list">
+        {loading ? (
+          <div className="composer-design-skill-empty">Loading datasources...</div>
+        ) : datasources.length === 0 ? (
+          <div className="composer-design-skill-empty">No datasources configured.</div>
+        ) : (
+          datasources.map((ds) => (
+            <div
+              key={ds.name}
+              className={`composer-design-skill-card${selectedName === ds.name ? ' selected' : ''}`}
+            >
+              <div className="composer-design-skill-title">
+                <strong>{ds.name}</strong>
+                <span>{ds.db_type}</span>
+              </div>
+              {ds.description ? <p>{ds.description}</p> : null}
+              <div className="composer-design-skill-actions">
+                <button type="button" onClick={() => onSelect(ds)} aria-label={`Use ${ds.name}`}>
+                  {selectedName === ds.name ? 'Selected' : 'Use'}
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      {selectedName ? (
+        <div className="composer-design-skill-actions">
+          <button type="button" onClick={onClear} aria-label="Clear datasource">
+            Clear selection
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }

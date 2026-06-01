@@ -31,6 +31,7 @@ export function Sidebar() {
     "/construct/database",
     "/construct/knowledge",
     "/construct/skills",
+    "/construct/design-systems",
     "/construct/models",
   ].some((p) => location.pathname.startsWith(p))
 

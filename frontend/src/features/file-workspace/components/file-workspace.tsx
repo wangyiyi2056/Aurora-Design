@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { FileText, X } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { ChevronLeft, ChevronRight, FileText, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -170,35 +170,15 @@ export function FileWorkspace({
         }}
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
-          <TabButton active={active === FILES_TAB} onClick={() => commit({ ...localState, active: null })}>
-            <FileText className="h-4 w-4" />
-            Files
-          </TabButton>
-          {visibleTabs.map((name) => {
-            const file = fileByName.get(name)
-            return (
-              <TabButton key={name} active={active === name} onClick={() => commit({ ...localState, active: name })}>
-                <span className="max-w-[180px] truncate">{basename(name)}</span>
-                <span className="text-[10px] text-muted-foreground">{file?.kind}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5"
-                  aria-label={`Close ${name}`}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    closeFile(name)
-                  }}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </TabButton>
-            )
-          })}
-          {loading ? <span className="ml-auto text-xs text-muted-foreground">Loading...</span> : null}
-        </div>
+        <TabBar
+          active={active}
+          visibleTabs={visibleTabs}
+          fileByName={fileByName}
+          loading={loading}
+          onFilesClick={() => commit({ ...localState, active: null })}
+          onTabClick={(name) => commit({ ...localState, active: name })}
+          onCloseTab={closeFile}
+        />
         <div className="min-h-0 flex-1">
           {activeFile ? <FileViewer workspaceId={workspaceId} file={activeFile} /> : null}
           {!activeFile && (
@@ -229,20 +209,127 @@ export function FileWorkspace({
   )
 }
 
+interface TabBarProps {
+  active: string | null
+  visibleTabs: string[]
+  fileByName: Map<string, WorkspaceFile>
+  loading: boolean
+  onFilesClick: () => void
+  onTabClick: (name: string) => void
+  onCloseTab: (name: string) => void
+}
+
+function TabBar({ active, visibleTabs, fileByName, loading, onFilesClick, onTabClick, onCloseTab }: TabBarProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    setCanScrollLeft(el.scrollLeft > 1)
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1)
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    updateScrollState()
+    el.addEventListener("scroll", updateScrollState, { passive: true })
+    const ro = new ResizeObserver(updateScrollState)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener("scroll", updateScrollState)
+      ro.disconnect()
+    }
+  }, [updateScrollState, visibleTabs.length])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !active) return
+    const tab = el.querySelector<HTMLElement>(`[data-tab-name="${CSS.escape(active)}"]`)
+    tab?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+  }, [active])
+
+  const scroll = (direction: "left" | "right") => {
+    const el = scrollRef.current
+    if (!el) return
+    const amount = el.clientWidth * 0.75
+    el.scrollBy({ left: direction === "left" ? -amount : amount, behavior: "smooth" })
+  }
+
+  return (
+    <div className="relative flex h-11 shrink-0 items-center border-b">
+      {canScrollLeft && (
+        <button
+          type="button"
+          className="absolute left-0.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-background text-muted-foreground shadow-sm hover:bg-muted/60 hover:text-foreground"
+          onClick={() => scroll("left")}
+          aria-label="Scroll tabs left"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+      )}
+      <div ref={scrollRef} className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2 scrollbar-none">
+        <TabButton active={active === FILES_TAB} onClick={onFilesClick}>
+          <FileText className="h-4 w-4" />
+          Files
+        </TabButton>
+        {visibleTabs.map((name) => {
+          const file = fileByName.get(name)
+          return (
+            <TabButton key={name} active={active === name} onClick={() => onTabClick(name)} data-tab-name={name}>
+              <span className="max-w-[180px] truncate">{basename(name)}</span>
+              <span className="text-[10px] text-muted-foreground">{file?.kind}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5"
+                aria-label={`Close ${name}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onCloseTab(name)
+                }}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </TabButton>
+          )
+        })}
+        {loading ? <span className="ml-auto text-xs text-muted-foreground">Loading...</span> : null}
+      </div>
+      {canScrollRight && (
+        <button
+          type="button"
+          className="absolute right-0.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-background text-muted-foreground shadow-sm hover:bg-muted/60 hover:text-foreground"
+          onClick={() => scroll("right")}
+          aria-label="Scroll tabs right"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  )
+}
+
 function TabButton({
   active,
   children,
   onClick,
+  "data-tab-name": dataTabName,
 }: {
   active: boolean
   children: React.ReactNode
   onClick: () => void
+  "data-tab-name"?: string
 }) {
   return (
     <button
       type="button"
       role="tab"
       aria-selected={active}
+      data-tab-name={dataTabName}
       className={cn(
         "inline-flex h-8 shrink-0 items-center gap-2 rounded-md px-3 text-sm transition-colors",
         active ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",

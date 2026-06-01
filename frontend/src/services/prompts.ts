@@ -1,5 +1,7 @@
 import { apiClient } from "@/lib/api-client"
 
+export type PromptType = "system" | "custom"
+
 export interface PromptTemplate {
   id: string
   name: string
@@ -9,6 +11,10 @@ export interface PromptTemplate {
   version: number
   enabled: boolean
   description: string
+  extra?: {
+    prompt_type?: PromptType
+    [key: string]: unknown
+  }
   created_at: number
   updated_at: number
 }
@@ -26,6 +32,21 @@ export interface PromptPayload {
 export async function listPrompts(category?: string): Promise<{ items: PromptTemplate[] }> {
   const query = category ? `?category=${encodeURIComponent(category)}` : ""
   const res = await apiClient.get(`/v1/prompts${query}`)
+  return res.data
+}
+
+export async function getSystemPrompt(): Promise<PromptTemplate> {
+  const res = await apiClient.get("/v1/prompts/system")
+  return res.data
+}
+
+export async function saveSystemPrompt(template: string): Promise<PromptTemplate> {
+  const res = await apiClient.put("/v1/prompts/system", { template })
+  return res.data
+}
+
+export async function listCustomPrompts(): Promise<{ items: PromptTemplate[] }> {
+  const res = await apiClient.get("/v1/prompts/custom")
   return res.data
 }
 

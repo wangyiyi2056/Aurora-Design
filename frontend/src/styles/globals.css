@@ -49,6 +49,55 @@ a {
   background: rgba(255,255,255,0.15);
 }
 
+/* Hide scrollbar but keep scroll behavior */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* PPTX viewer — visible scrollbar on both light and dark themes */
+[data-pptx-scroll]::-webkit-scrollbar {
+  width: 8px;
+}
+
+[data-pptx-scroll]::-webkit-scrollbar-track {
+  background: var(--muted);
+  border-radius: 4px;
+}
+
+[data-pptx-scroll]::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  opacity: 0.3;
+  border-radius: 4px;
+}
+
+[data-pptx-scroll]::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+/* PPTX viewer — remove borders from pptx-preview library (CSS + SVG stroke) */
+[data-pptx-content],
+[data-pptx-content] * {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+[data-pptx-content] svg path,
+[data-pptx-content] svg rect,
+[data-pptx-content] svg line,
+[data-pptx-content] svg polyline,
+[data-pptx-content] svg polygon,
+[data-pptx-content] svg ellipse,
+[data-pptx-content] svg circle {
+  stroke: none !important;
+  stroke-width: 0 !important;
+}
+
 /* ===== Chat UI Enhancements ===== */
 
 /* User avatar gradient */
@@ -1361,41 +1410,6 @@ a {
   white-space: nowrap;
 }
 
-.composer-design-skill-pill {
-  display: inline-flex;
-  min-width: 0;
-  max-width: 180px;
-  height: 32px;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--chat-soft-border);
-  border-radius: 8px;
-  color: color-mix(in srgb, var(--foreground) 82%, var(--muted-foreground));
-  background: transparent;
-  padding: 0 6px 0 9px;
-  font-size: 12px;
-  font-weight: 560;
-}
-
-.composer-design-skill-pill > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.composer-design-skill-pill button {
-  display: inline-flex;
-  width: 20px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
 .composer-row .icon-btn {
   width: 32px;
   padding: 0;
@@ -1441,6 +1455,26 @@ a {
   text-align: center;
   line-height: 1.35;
   color: color-mix(in srgb, var(--muted-foreground) 82%, transparent);
+}
+
+.composer-input-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 7px;
+}
+
+.design-skill-chip {
+  max-width: min(320px, 100%);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--muted) 68%);
+}
+
+.custom-prompt-chip {
+  max-width: min(320px, 100%);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 48%, var(--muted) 52%);
 }
 
 .staged-chip,
@@ -1627,6 +1661,19 @@ a {
   color: var(--muted-foreground);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.composer-design-system-swatches {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.composer-design-system-swatches span {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--chat-soft-border);
+  border-radius: 999px;
 }
 
 .composer-design-skill-empty.error {

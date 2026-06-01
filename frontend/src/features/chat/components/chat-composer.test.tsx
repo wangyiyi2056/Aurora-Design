@@ -123,6 +123,195 @@ describe("ChatComposer attachments", () => {
     expect(screen.getByTestId("chat-composer-input")).toHaveValue("Create a sales dashboard")
   })
 
+  it("renders the selected design skill inside the input area", () => {
+    render(
+      <ChatComposer
+        projectId="session-1"
+        projectFiles={[]}
+        streaming={false}
+        onEnsureProject={async () => "session-1"}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        designSkills={[
+          {
+            id: "dashboard",
+            name: "dashboard",
+            description: "Build dense operational dashboards.",
+            source: "builtin",
+            mode: "template",
+            surface: "web",
+            scenario: "dashboard",
+            previewType: "html",
+            examplePrompt: "",
+            hasAssets: false,
+            hasReferences: false,
+            triggers: [],
+            body: null,
+            hidden: false,
+            status: "ready",
+            adapterKind: "",
+            dependencyType: "",
+            requiredTools: [],
+          },
+        ]}
+        selectedDesignSkillId="dashboard"
+        onSelectDesignSkill={vi.fn()}
+      />,
+    )
+
+    const chip = screen.getByTestId("composer-selected-design-skill")
+
+    expect(chip).toHaveTextContent("dashboard")
+    expect(chip.closest(".composer-input-wrap")).not.toBeNull()
+  })
+
+  it("selects and clears a design system", () => {
+    const onSelectDesignSystem = vi.fn()
+    const designSystems = [
+      {
+        id: "vercel",
+        title: "Vercel",
+        category: "Developer Tools",
+        summary: "Black and white precision.",
+        swatches: ["#ffffff", "#171717"],
+        surface: "web",
+        source: "built-in",
+        status: "published",
+        isEditable: false,
+      },
+    ]
+
+    const { rerender } = render(
+      <ChatComposer
+        projectId="session-1"
+        projectFiles={[]}
+        streaming={false}
+        onEnsureProject={async () => "session-1"}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        designSystems={designSystems}
+        selectedDesignSystemId={null}
+        onSelectDesignSystem={onSelectDesignSystem}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /import/i }))
+    fireEvent.click(screen.getByRole("menuitem", { name: /design system library/i }))
+    fireEvent.click(screen.getByRole("button", { name: "Use Vercel" }))
+
+    expect(onSelectDesignSystem).toHaveBeenCalledWith("vercel")
+
+    rerender(
+      <ChatComposer
+        projectId="session-1"
+        projectFiles={[]}
+        streaming={false}
+        onEnsureProject={async () => "session-1"}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        designSystems={designSystems}
+        selectedDesignSystemId="vercel"
+        onSelectDesignSystem={onSelectDesignSystem}
+      />,
+    )
+
+    expect(screen.getByTestId("composer-selected-design-system")).toHaveTextContent("Vercel")
+    fireEvent.click(screen.getByRole("button", { name: "Clear design system Vercel" }))
+    expect(onSelectDesignSystem).toHaveBeenCalledWith(null)
+  })
+
+  it("selects a custom prompt from @ mentions and sends its id", () => {
+    const onSend = vi.fn()
+
+    render(
+      <ChatComposer
+        projectId="session-1"
+        projectFiles={[]}
+        streaming={false}
+        onEnsureProject={async () => "session-1"}
+        onSend={onSend}
+        onStop={vi.fn()}
+        customPrompts={[
+          {
+            id: "prompt-1",
+            name: "sales-dashboard",
+            category: "general",
+            template: "Use dense dashboard patterns.",
+            variables: [],
+            version: 1,
+            enabled: true,
+            description: "Dashboard guidance",
+            extra: { prompt_type: "custom" },
+            created_at: 1,
+            updated_at: 1,
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.change(screen.getByTestId("chat-composer-input"), {
+      target: { value: "@sales", selectionStart: 6 },
+    })
+    fireEvent.click(screen.getByRole("button", { name: /sales-dashboard/i }))
+
+    expect(screen.getByTestId("composer-selected-custom-prompt")).toHaveTextContent("sales-dashboard")
+
+    fireEvent.change(screen.getByTestId("chat-composer-input"), {
+      target: { value: "@sales-dashboard Build the page", selectionStart: 31 },
+    })
+    fireEvent.click(screen.getByTestId("chat-send"))
+
+    expect(onSend).toHaveBeenCalledWith(
+      "@sales-dashboard Build the page",
+      [],
+      [],
+      ["prompt-1"],
+    )
+  })
+
+  it("removes a selected custom prompt before sending", () => {
+    const onSend = vi.fn()
+
+    render(
+      <ChatComposer
+        projectId="session-1"
+        projectFiles={[]}
+        streaming={false}
+        onEnsureProject={async () => "session-1"}
+        onSend={onSend}
+        onStop={vi.fn()}
+        customPrompts={[
+          {
+            id: "prompt-1",
+            name: "sales-dashboard",
+            category: "general",
+            template: "Use dense dashboard patterns.",
+            variables: [],
+            version: 1,
+            enabled: true,
+            description: "Dashboard guidance",
+            extra: { prompt_type: "custom" },
+            created_at: 1,
+            updated_at: 1,
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.change(screen.getByTestId("chat-composer-input"), {
+      target: { value: "@sales", selectionStart: 6 },
+    })
+    fireEvent.click(screen.getByRole("button", { name: /sales-dashboard/i }))
+    fireEvent.click(screen.getByRole("button", { name: "Remove prompt sales-dashboard" }))
+    fireEvent.change(screen.getByTestId("chat-composer-input"), {
+      target: { value: "Build the page", selectionStart: 14 },
+    })
+    fireEvent.click(screen.getByTestId("chat-send"))
+
+    expect(screen.queryByTestId("composer-selected-custom-prompt")).not.toBeInTheDocument()
+    expect(onSend).toHaveBeenCalledWith("Build the page", [], [], [])
+  })
+
   it("shows design skill loading in the picker", () => {
     const { rerender } = render(
       <ChatComposer

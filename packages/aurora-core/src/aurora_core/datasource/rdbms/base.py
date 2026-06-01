@@ -147,6 +147,7 @@ class RDBMSConnector(BaseConnector):
                 if result.returns_rows:
                     rows = result.mappings().all()
                     data = [dict(row) for row in rows]
+                    conn.commit()  # Commit to persist DDL changes
                     return True, str(data)
                 conn.commit()
                 return True, f"Affected rows: {result.rowcount}"

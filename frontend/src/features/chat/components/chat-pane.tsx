@@ -2,6 +2,9 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { useT } from '../../../i18n';
 import type { Dict } from '../../../i18n/types';
 import type { DesignSkillSummary } from '../../../services/design-skills';
+import type { DesignSystemSummary } from '../../../services/design-systems';
+import type { PromptTemplate } from '../../../services/prompts';
+import type { DatasourceItem } from '../../../services/database';
 import { projectRawUrl } from '../providers/registry';
 import type { TodoItem } from '../runtime/todos';
 import type { AppConfig, ChatAttachment, ChatCommentAttachment, ChatMessage, Conversation, PreviewComment, ProjectFile, ProjectMetadata } from '../types';
@@ -60,7 +63,12 @@ interface Props {
   onAttachComment?: (comment: PreviewComment) => void;
   onDetachComment?: (commentId: string) => void;
   onDeleteComment?: (commentId: string) => void;
-  onSend: (prompt: string, attachments: ChatAttachment[], commentAttachments: ChatCommentAttachment[]) => void;
+  onSend: (
+    prompt: string,
+    attachments: ChatAttachment[],
+    commentAttachments: ChatCommentAttachment[],
+    customPromptIds: string[],
+  ) => void;
   onStop: () => void;
   // Click-to-open chain: passes a basename up to ProjectView, which sets
   // FileWorkspace's openRequest. Tool cards, attachment chips, and
@@ -96,8 +104,18 @@ interface Props {
   designSkillsError?: string | null;
   selectedDesignSkillId?: string | null;
   onSelectDesignSkill?: (skillId: string | null) => void;
+  designSystems?: DesignSystemSummary[];
+  designSystemsLoading?: boolean;
+  designSystemsError?: string | null;
+  selectedDesignSystemId?: string | null;
+  onSelectDesignSystem?: (systemId: string | null) => void;
+  customPrompts?: PromptTemplate[];
   projectMetadata?: ProjectMetadata;
   onProjectMetadataChange?: (metadata: ProjectMetadata) => void;
+  datasources?: DatasourceItem[];
+  datasourcesLoading?: boolean;
+  selectedDatasourceName?: string | null;
+  onSelectDatasource?: (name: string | null) => void;
 }
 
 type Tab = 'chat' | 'comments';
@@ -131,8 +149,18 @@ export function ChatPane({
   designSkillsError = null,
   selectedDesignSkillId = null,
   onSelectDesignSkill,
+  designSystems = [],
+  designSystemsLoading = false,
+  designSystemsError = null,
+  selectedDesignSystemId = null,
+  onSelectDesignSystem,
+  customPrompts = [],
   projectMetadata,
   onProjectMetadataChange,
+  datasources = [],
+  datasourcesLoading = false,
+  selectedDatasourceName = null,
+  onSelectDatasource,
 }: Props) {
   const t = useT();
   const logRef = useRef<HTMLDivElement | null>(null);
@@ -396,6 +424,16 @@ export function ChatPane({
             designSkillsError={designSkillsError}
             selectedDesignSkillId={selectedDesignSkillId}
             onSelectDesignSkill={onSelectDesignSkill}
+            designSystems={designSystems}
+            designSystemsLoading={designSystemsLoading}
+            designSystemsError={designSystemsError}
+            selectedDesignSystemId={selectedDesignSystemId}
+            onSelectDesignSystem={onSelectDesignSystem}
+            customPrompts={customPrompts}
+            datasources={datasources}
+            datasourcesLoading={datasourcesLoading}
+            selectedDatasourceName={selectedDatasourceName}
+            onSelectDatasource={onSelectDatasource}
           />
         </>
       ) : null}

@@ -10,15 +10,19 @@ from aurora_serve.chat.schema import ChatRequest, ChatMessage, ModelConfig
 from aurora_serve.chat.service import ChatService
 from aurora_serve.datasource.schema import DBConfig
 from aurora_serve.datasource.service import DatasourceService
+from aurora_serve.metadata import MetadataStore
+from aurora_serve.prompt.service import PromptTemplateService
 
 
 class FakeLLM(BaseLLM):
     def __init__(self, config: LLMConfig):
         super().__init__(config)
         self.calls = 0
+        self.last_messages = None
 
     async def achat(self, messages, **kwargs):
         self.calls += 1
+        self.last_messages = messages
         if self.calls == 1 and "column_analysis" in str(messages[0].content):
             return ModelOutput(
                 text=(
@@ -40,6 +44,7 @@ class FakeLLM(BaseLLM):
         return ModelOutput(text="fake response")
 
     async def achat_stream(self, messages, **kwargs):
+        self.last_messages = messages
         yield ModelOutput(text="fake")
         yield ModelOutput(text=" response")
 
@@ -51,6 +56,13 @@ def service():
     return ChatService(registry)
 
 
+@pytest.fixture
+def prompt_service(tmp_path, monkeypatch):
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
+    return PromptTemplateService(MetadataStore())
+
+
 @pytest.mark.asyncio
 async def test_chat_service_chat(service):
     req = ChatRequest(
@@ -60,6 +72,62 @@ async def test_chat_service_chat(service):
     resp = await service.chat(req)
     assert resp.choices[0].message.content == "fake response"
     assert resp.model == "fake"
+
+
+@pytest.mark.asyncio
+async def test_chat_service_injects_global_system_prompt(prompt_service):
+    registry = ModelRegistry()
+    fake_llm = FakeLLM(LLMConfig(model_name="fake", model_type="test"))
+    registry.register_llm("fake", fake_llm)
+    prompt_service.upsert_system_prompt("Always respond with Aurora house style.")
+    service = ChatService(registry, prompt_template_service=prompt_service)
+
+    await service.chat(
+        ChatRequest(
+            model="fake",
+            messages=[ChatMessage(role="user", content="hi")],
+        )
+    )
+
+    assert fake_llm.last_messages is not None
+    system_messages = [msg for msg in fake_llm.last_messages if msg.role == "system"]
+    assert any("## User Configured System Prompt" in msg.content for msg in system_messages)
+    assert any("Always respond with Aurora house style." in msg.content for msg in system_messages)
+
+
+@pytest.mark.asyncio
+async def test_chat_service_appends_custom_prompt_refs_to_runtime_user_message(prompt_service):
+    registry = ModelRegistry()
+    fake_llm = FakeLLM(LLMConfig(model_name="fake", model_type="test"))
+    registry.register_llm("fake", fake_llm)
+    enabled = prompt_service.create(
+        name="dense-dashboard",
+        template="Prefer dense operational dashboard UI.",
+        enabled=True,
+    )
+    disabled = prompt_service.create(
+        name="disabled-prompt",
+        template="This should not be injected.",
+        enabled=False,
+    )
+    service = ChatService(registry, prompt_template_service=prompt_service)
+
+    await service.chat(
+        ChatRequest(
+            model="fake",
+            messages=[ChatMessage(role="user", content="Build a dashboard")],
+            ext_info={"custom_prompt_ids": [enabled.id, disabled.id, "missing"]},
+        )
+    )
+
+    assert fake_llm.last_messages is not None
+    user_messages = [msg for msg in fake_llm.last_messages if msg.role == "user"]
+    latest_user = user_messages[-1]
+    assert latest_user.content.startswith("Build a dashboard")
+    assert "[Referenced custom prompts]" in latest_user.content
+    assert "### dense-dashboard" in latest_user.content
+    assert "Prefer dense operational dashboard UI." in latest_user.content
+    assert "This should not be injected." not in latest_user.content
 
 
 def test_chat_service_prefers_saved_runtime_when_model_config_has_no_plain_api_key(service):

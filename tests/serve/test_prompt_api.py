@@ -57,6 +57,44 @@ def test_prompt_template_crud_persists(tmp_path, monkeypatch):
         assert deleted.json()["success"] is True
 
 
+def test_system_prompt_upsert_and_custom_list_are_isolated(tmp_path, monkeypatch):
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
+
+    with TestClient(create_app()) as client:
+        empty_system = client.get("/api/v1/prompts/system")
+        assert empty_system.status_code == 200
+        assert empty_system.json()["template"] == ""
+
+        saved_system = client.put(
+            "/api/v1/prompts/system",
+            json={"template": "Always answer in concise Chinese."},
+        )
+        assert saved_system.status_code == 200
+        assert saved_system.json()["extra"]["prompt_type"] == "system"
+
+        custom = client.post(
+            "/api/v1/prompts",
+            json={
+                "name": "landing-page",
+                "category": "general",
+                "template": "Use a polished product page structure.",
+                "description": "Landing page guidance",
+            },
+        )
+        assert custom.status_code == 200
+        assert custom.json()["extra"]["prompt_type"] == "custom"
+
+        custom_list = client.get("/api/v1/prompts/custom")
+        assert custom_list.status_code == 200
+        items = custom_list.json()["items"]
+        assert [item["name"] for item in items] == ["landing-page"]
+
+        system = client.get("/api/v1/prompts/system")
+        assert system.status_code == 200
+        assert system.json()["template"] == "Always answer in concise Chinese."
+
+
 def test_html_report_prompt_uses_open_design_artifact_contract():
     content = get_html_report_section().content
 

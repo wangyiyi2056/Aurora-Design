@@ -19,7 +19,12 @@ class AnthropicLLM(BaseLLM):
 
     def __init__(self, config: LLMConfig):
         super().__init__(config)
-        self.api_key = config.api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.api_key = (
+            config.api_key
+            or os.getenv("ANTHROPIC_API_KEY")
+            or os.getenv("ANTHROPIC_AUTH_TOKEN")
+            or ""
+        )
         self.base_url = config.api_base or "https://api.anthropic.com"
         self.api_version = "2023-06-01"
 

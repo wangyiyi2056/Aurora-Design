@@ -37,3 +37,9 @@ class ModelRegistry:
         if name not in self._embeddings:
             raise KeyError(f"Embeddings '{name}' not found")
         return self._embeddings[name]
+
+    def has_llm(self) -> bool:
+        return bool(self._llms)
+
+    def has_embeddings(self) -> bool:
+        return bool(self._embeddings)

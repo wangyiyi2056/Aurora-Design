@@ -5,6 +5,20 @@ export async function listKnowledge() {
   return res.data as string[]
 }
 
+export interface CreateKnowledgeRequest {
+  name: string
+  chunk_strategy?: string
+  chunk_size?: number
+  chunk_overlap?: number
+}
+
+export async function createKnowledge(
+  data: CreateKnowledgeRequest
+): Promise<KnowledgeDetail> {
+  const res = await apiClient.post("/v1/knowledge", data)
+  return res.data as KnowledgeDetail
+}
+
 export interface KnowledgeDetail {
   name: string
   collection_name: string

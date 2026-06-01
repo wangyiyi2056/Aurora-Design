@@ -33,6 +33,10 @@ class PromptRenderRequest(BaseModel):
     variables: dict[str, object] = Field(default_factory=dict)
 
 
+class SystemPromptUpdate(BaseModel):
+    template: str = ""
+
+
 def get_prompt_service(request: Request) -> PromptTemplateService:
     return request.app.state.system_app.get_component(
         "prompt_template_service", PromptTemplateService
@@ -49,6 +53,7 @@ def prompt_to_dict(entity: PromptTemplateEntity) -> dict:
         "version": entity.version,
         "enabled": entity.enabled,
         "description": entity.description,
+        "extra": entity.extra or {},
         "created_at": entity.created_at,
         "updated_at": entity.updated_at,
     }
@@ -60,6 +65,43 @@ async def list_prompts(
     service: PromptTemplateService = Depends(get_prompt_service),
 ) -> dict:
     return {"items": [prompt_to_dict(item) for item in service.list(category=category)]}
+
+
+@router.get("/system")
+async def get_system_prompt(
+    service: PromptTemplateService = Depends(get_prompt_service),
+) -> dict:
+    entity = service.get_system_prompt()
+    if entity is not None:
+        return prompt_to_dict(entity)
+    return {
+        "id": "",
+        "name": PromptTemplateService.SYSTEM_PROMPT_NAME,
+        "category": "system",
+        "template": "",
+        "variables": [],
+        "version": 1,
+        "enabled": True,
+        "description": "Global system prompt",
+        "extra": {"prompt_type": "system"},
+        "created_at": 0,
+        "updated_at": 0,
+    }
+
+
+@router.put("/system")
+async def update_system_prompt(
+    req: SystemPromptUpdate,
+    service: PromptTemplateService = Depends(get_prompt_service),
+) -> dict:
+    return prompt_to_dict(service.upsert_system_prompt(req.template))
+
+
+@router.get("/custom")
+async def list_custom_prompts(
+    service: PromptTemplateService = Depends(get_prompt_service),
+) -> dict:
+    return {"items": [prompt_to_dict(item) for item in service.list_custom()]}
 
 
 @router.post("")

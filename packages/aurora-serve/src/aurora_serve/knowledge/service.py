@@ -43,6 +43,40 @@ class KnowledgeService(BaseService):
             rows = session.query(KnowledgeBaseEntity).order_by(KnowledgeBaseEntity.created_at).all()
             return [row.name for row in rows]
 
+    def create(
+        self,
+        name: str,
+        chunk_strategy: str = "fixed",
+        chunk_size: int = 1200,
+        chunk_overlap: int = 100,
+    ) -> dict[str, object]:
+        """Create an empty knowledge base. Raises ValueError if name already exists."""
+        with self.metadata_store.session() as session:
+            existing = session.get(KnowledgeBaseEntity, name)
+            if existing is not None:
+                raise ValueError(f"Knowledge base '{name}' already exists")
+            collection_name = self._collection_name(name)
+            entity = KnowledgeBaseEntity(
+                name=name,
+                collection_name=collection_name,
+                persist_directory=str(self.chroma_dir),
+                chunk_count=0,
+                chunk_strategy=chunk_strategy,
+                chunk_size=max(1, chunk_size),
+                chunk_overlap=max(0, min(chunk_overlap, max(1, chunk_size) - 1)),
+            )
+            session.add(entity)
+            session.commit()
+            return {
+                "name": entity.name,
+                "collection_name": entity.collection_name,
+                "persist_directory": entity.persist_directory,
+                "chunks": entity.chunk_count,
+                "chunk_strategy": entity.chunk_strategy,
+                "chunk_size": entity.chunk_size,
+                "chunk_overlap": entity.chunk_overlap,
+            }
+
     async def upload(
         self,
         name: str,

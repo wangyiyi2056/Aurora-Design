@@ -34,7 +34,9 @@ from aurora_serve.excel.pipeline import ExcelAnalysisPipeline
 from aurora_serve.agent.sql_agent import SQLAgent
 from aurora_serve.datasource.service import DatasourceService
 from aurora_serve.design_skills.service import DesignSkillService
+from aurora_serve.design_systems.service import DesignSystemService
 from aurora_serve.knowledge.service import KnowledgeService
+from aurora_serve.prompt.service import PromptTemplateService
 from aurora_serve.chat.schema import (
     ChatChoice,
     ChatMessage,
@@ -106,6 +108,8 @@ class EnhancedChatService:
         datasource_service: Optional[DatasourceService] = None,
         knowledge_service: Optional[KnowledgeService] = None,
         design_skill_service: Optional[DesignSkillService] = None,
+        design_system_service: Optional[DesignSystemService] = None,
+        prompt_template_service: Optional[PromptTemplateService] = None,
     ):
         self.registry = model_registry
         self.skill_registry = skill_registry
@@ -113,6 +117,8 @@ class EnhancedChatService:
         self.datasource_service = datasource_service
         self.knowledge_service = knowledge_service
         self.design_skill_service = design_skill_service
+        self.design_system_service = design_system_service
+        self.prompt_template_service = prompt_template_service
 
         # Initialize Claude Code architecture components
         self.session_manager = SessionManager(base_path=session_base_path)
@@ -876,11 +882,61 @@ class EnhancedChatService:
         design_skill_context = self._build_design_skill_context(req)
         if design_skill_context:
             messages.append(Message(role="system", content=design_skill_context))
+        design_system_context = self._build_design_system_context(req)
+        if design_system_context:
+            messages.append(Message(role="system", content=design_system_context))
         inline_local_images = self._effective_model_type(req) not in {"daemon", "cli"}
         for m in req.messages:
             resolved = self._resolve_content_parts(m.content, inline_local_images=inline_local_images)
             messages.append(Message(role=m.role, content=resolved))
+        self._append_custom_prompt_refs(req, messages)
         return messages
+
+    def _append_custom_prompt_refs(self, req: ChatRequest, messages: List[Message]) -> None:
+        if self.prompt_template_service is None:
+            return
+        ext_info = req.ext_info or {}
+        raw_ids = ext_info.get("custom_prompt_ids") or ext_info.get("customPromptIds")
+        if isinstance(raw_ids, str):
+            prompt_ids = [raw_ids]
+        elif isinstance(raw_ids, list):
+            prompt_ids = [str(item) for item in raw_ids if item]
+        else:
+            prompt_ids = []
+        prompts = self.prompt_template_service.get_custom_enabled(prompt_ids)
+        if not prompts:
+            return
+        block = "\n\n[Referenced custom prompts]\n" + "\n\n".join(
+            f"### {prompt.name}\n{prompt.template}" for prompt in prompts
+        )
+        for index in range(len(messages) - 1, -1, -1):
+            if messages[index].role != "user":
+                continue
+            content = messages[index].content
+            if isinstance(content, str):
+                messages[index] = Message(role="user", content=content + block)
+            elif isinstance(content, list):
+                messages[index] = Message(
+                    role="user",
+                    content=[*content, {"type": "text", "text": block.lstrip()}],
+                )
+            return
+
+    def _append_global_system_prompt(self, messages: List[Message]) -> None:
+        if self.prompt_template_service is None:
+            return
+        entity = self.prompt_template_service.get_system_prompt()
+        if entity is None or not entity.enabled or not entity.template.strip():
+            return
+        block = f"## User Configured System Prompt\n{entity.template.strip()}"
+        for index, message in enumerate(messages):
+            if message.role == "system":
+                messages[index] = Message(
+                    role="system",
+                    content=f"{message.content}\n\n{block}" if message.content else block,
+                )
+                return
+        messages.insert(0, Message(role="system", content=block))
 
     def _build_design_skill_context(self, req: ChatRequest) -> str | None:
         if self.design_skill_service is None:
@@ -890,6 +946,15 @@ class EnhancedChatService:
         if not isinstance(skill_id, str) or not skill_id.strip():
             return None
         return self.design_skill_service.active_prompt(skill_id.strip())
+
+    def _build_design_system_context(self, req: ChatRequest) -> str | None:
+        if self.design_system_service is None:
+            return None
+        ext_info = req.ext_info or {}
+        system_id = ext_info.get("design_system_id") or ext_info.get("designSystemId")
+        if not isinstance(system_id, str) or not system_id.strip():
+            return None
+        return self.design_system_service.active_prompt(system_id.strip())
 
     def _selected_tool_names(self, req: ChatRequest) -> set[str]:
         names: set[str] = set()
@@ -1129,6 +1194,7 @@ class EnhancedChatService:
                 0,
                 Message(role="system", content=system_prompt),
             )
+        self._append_global_system_prompt(messages)
 
         # Inject user context (CLAUDE.md + date) as <system-reminder> user message
         user_context = self.prompt_builder.get_user_context()
@@ -1376,6 +1442,7 @@ class EnhancedChatService:
                 0,
                 Message(role="system", content=system_prompt),
             )
+        self._append_global_system_prompt(messages)
 
         # Inject user context (CLAUDE.md + date)
         user_context = self.prompt_builder.get_user_context()

@@ -551,16 +551,15 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         const wrap = wrapperRef.current
         if (!el || !wrap) throw new Error("Container not mounted")
 
-        const width = Math.max(el.clientWidth - 50, 300)
-        const height = Math.max(el.clientHeight - 50, 300)
+        const width = Math.max(el.clientWidth - 60, 300)
 
-        viewer = initPptxPreview(wrap, { width, height })
+        viewer = initPptxPreview(wrap, { width })
         await viewer.preview(buf)
         
         if (!cancelled) {
-          // pptx-preview injects a wrapper div (usually .pptx-wrapper). 
+          // pptx-preview injects .pptx-preview-wrapper.
           // If the file is unreadable but doesn't throw, this wrapper will be completely empty.
-          const injectedWrapper = wrap.querySelector('.pptx-wrapper') || wrap.querySelector('.pptx-preview-wrapper') || wrap
+          const injectedWrapper = wrap.querySelector('.pptx-preview-wrapper') || wrap
           if (injectedWrapper.children.length === 0) {
             throw new Error("This presentation format is unsupported or contains incompatible elements. Please download the file to view it.")
           }
@@ -586,9 +585,13 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         right={<FileActions workspaceId={workspaceId} file={file} />}
       />
       {/* containerRef: fixed minHeight gives reliable dimensions for pptx-preview */}
-      <div ref={containerRef} className="relative flex-1 overflow-auto bg-background [&_.pptx-wrapper]:!bg-background [&_section]:!bg-background" style={{ minHeight: 600 }}>
-        
-        {status === "loading" && <ViewerOverlay loading error={null} />}
+      <div ref={containerRef} data-pptx-scroll className="relative flex flex-1 items-start justify-center overflow-auto bg-background [&_.pptx-preview-wrapper]:!h-auto [&_.pptx-preview-wrapper]:!w-full [&_.pptx-preview-wrapper]:!overflow-visible [&_.pptx-preview-wrapper]:!bg-transparent [&_.slide-background]:!bg-transparent [&_section]:!bg-transparent" style={{ minHeight: 600 }}>
+
+        {status === "loading" && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background">
+            <span className="animate-pulse text-sm text-muted-foreground">Loading preview…</span>
+          </div>
+        )}
         {status === "error" && (
           <div className="flex h-full items-center justify-center p-8">
             <div className="max-w-sm rounded-xl border border-dashed p-6 text-center">
@@ -603,12 +606,8 @@ function PptxViewer({ workspaceId, file }: FileViewerProps) {
         {status === "pdf" && (
           <iframe title={file.name} src={pdfSrc} className="absolute inset-0 h-full w-full border-0" />
         )}
-        {/* wrapperRef: render target for pptx-preview; always in layout so library can compute size */}
-        <div className="overflow-auto p-2">
-          <div className="flex flex-col gap-4">
-            <div ref={wrapperRef} />
-          </div>
-        </div>
+        {/* wrapperRef: my-auto centers short content, flex-start scrolls tall content from top */}
+        <div ref={wrapperRef} data-pptx-content className="my-auto w-full" />
       </div>
     </div>
   )

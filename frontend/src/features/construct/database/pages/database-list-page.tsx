@@ -1,143 +1,172 @@
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Textarea } from "@/components/ui/textarea"
 import { ConstructShell } from "@/features/construct/components/construct-shell"
+import type { DatasourceConfig, DatasourceItem } from "@/services/database"
+import { getDatasource } from "@/services/database"
+import { DatasourceCard } from "../components/datasource-card"
+import { DatasourceDetailSheet } from "../components/datasource-detail-sheet"
+import { DatasourceFormDialog } from "../components/datasource-form-dialog"
 import {
   useDatasources,
+  useDatasourceTypes,
   useCreateDatasource,
-  useRunQuery,
+  useUpdateDatasource,
+  useDeleteDatasource,
+  useRefreshDatasource,
+  useTestConnection,
 } from "@/features/construct/database/hooks/use-datasources"
 
 export default function DatabaseListPage() {
   const { t } = useTranslation("construct")
-  const [name, setName] = useState("")
-  const [dbType, setDbType] = useState("sqlite")
-  const [database, setDatabase] = useState(":memory:")
-  const [selected, setSelected] = useState("")
-  const [sql, setSql] = useState("SELECT 1+1 as result")
-  const [result, setResult] = useState<unknown>(null)
-
   const { data, isLoading } = useDatasources()
+  const { data: typesData } = useDatasourceTypes()
   const create = useCreateDatasource()
-  const runner = useRunQuery()
+  const update = useUpdateDatasource()
+  const remove = useDeleteDatasource()
+  const refresh = useRefreshDatasource()
+  const testConn = useTestConnection()
 
-  const items = data?.items || []
+  const [search, setSearch] = useState("")
+  const [formOpen, setFormOpen] = useState(false)
+  const [editItem, setEditItem] = useState<DatasourceItem | null>(null)
+  const [editConfig, setEditConfig] = useState<DatasourceConfig | null>(null)
+  const [detailItem, setDetailItem] = useState<DatasourceItem | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
 
-  const add = async () => {
-    await create.mutateAsync({ name, db_type: dbType, database })
-    setName("")
-    setDatabase(":memory:")
-  }
+  const items = data?.items ?? []
+  const types = typesData?.types ?? []
 
-  const run = async () => {
-    const data = await runner.mutateAsync({ name: selected, sql })
-    setResult(data)
-  }
+  const filtered = search.trim()
+    ? items.filter(
+        (i) =>
+          i.name.toLowerCase().includes(search.toLowerCase()) ||
+          i.db_type.toLowerCase().includes(search.toLowerCase()),
+      )
+    : items
+
+  const handleAdd = useCallback(() => {
+    setEditItem(null)
+    setEditConfig(null)
+    setFormOpen(true)
+  }, [])
+
+  const handleEdit = useCallback(async (item: DatasourceItem) => {
+    try {
+      const detail = await getDatasource(item.name)
+      setEditItem(item)
+      setEditConfig(detail.config)
+      setFormOpen(true)
+    } catch {
+      setEditItem(item)
+      setEditConfig({ name: item.name, db_type: item.db_type })
+      setFormOpen(true)
+    }
+  }, [])
+
+  const handleSubmit = useCallback(
+    (config: DatasourceConfig) => {
+      if (editItem) {
+        update.mutate(
+          { name: editItem.name, config },
+          { onSuccess: () => setFormOpen(false) },
+        )
+      } else {
+        create.mutate(config, { onSuccess: () => setFormOpen(false) })
+      }
+    },
+    [editItem, create, update],
+  )
+
+  const handleTestConnection = useCallback(
+    async (config: DatasourceConfig): Promise<boolean> => {
+      const result = await testConn.mutateAsync(config)
+      return result.connected
+    },
+    [testConn],
+  )
+
+  const handleDelete = useCallback(
+    (name: string) => {
+      if (window.confirm(`Delete datasource "${name}"?`)) {
+        remove.mutate(name)
+      }
+    },
+    [remove],
+  )
+
+  const handleRefresh = useCallback(
+    (name: string) => {
+      refresh.mutate(name)
+    },
+    [refresh],
+  )
+
+  const handleDetail = useCallback((item: DatasourceItem) => {
+    setDetailItem(item)
+    setDetailOpen(true)
+  }, [])
 
   return (
     <ConstructShell>
-      <div className="flex gap-3 mb-6 flex-wrap">
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 mb-6">
         <Input
-          placeholder={t("database.name")}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          placeholder="Search datasources..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-xs"
         />
-        <Select value={dbType} onValueChange={setDbType}>
-          <SelectTrigger className="w-[120px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="sqlite">SQLite</SelectItem>
-            <SelectItem value="postgresql">PostgreSQL</SelectItem>
-            <SelectItem value="mysql">MySQL</SelectItem>
-            <SelectItem value="duckdb">DuckDB</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input
-          placeholder="Database"
-          value={database}
-          onChange={(e) => setDatabase(e.target.value)}
-          className="flex-1 min-w-[150px]"
-        />
-        <Button onClick={add} disabled={create.isPending}>
-          {create.isPending ? "Adding..." : t("database.add")}
+        <div className="flex-1" />
+        <Button onClick={handleAdd}>
+          + {t("database.add")}
         </Button>
       </div>
 
-      <div className="rounded-lg border border-border mb-8">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("database.name")}</TableHead>
-              <TableHead>{t("database.type")}</TableHead>
-              <TableHead>{t("database.connected")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((it) => (
-              <TableRow key={it.name}>
-                <TableCell className="font-medium">{it.name}</TableCell>
-                <TableCell>{it.db_type}</TableCell>
-                <TableCell>{it.connected ? "Yes" : "No"}</TableCell>
-              </TableRow>
-            ))}
-            {items.length === 0 && !isLoading && (
-              <TableRow>
-                <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
-                  {t("database.empty") || "暂无数据源"}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <h3 className="text-lg font-medium mt-8 mb-4">{t("database.query")}</h3>
-      <div className="flex gap-3 mb-3">
-        <Select value={selected} onValueChange={setSelected}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder={t("database.selectDatasource")} />
-          </SelectTrigger>
-          <SelectContent>
-            {items.map((it) => (
-              <SelectItem key={it.name} value={it.name}>
-                {it.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <Textarea
-        value={sql}
-        onChange={(e) => setSql(e.target.value)}
-        rows={4}
-        className="mb-3"
-      />
-      <Button onClick={run} disabled={runner.isPending}>
-        {runner.isPending ? "Running..." : t("database.runSql")}
-      </Button>
-      {result !== null && (
-        <pre className="bg-card mt-4 p-3 rounded-lg text-xs overflow-auto max-h-96 border border-border">
-          {JSON.stringify(result, null, 2)}
-        </pre>
+      {/* Cards grid */}
+      {isLoading ? (
+        <p className="text-muted-foreground">Loading…</p>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground mb-4">{t("database.empty")}</p>
+          <Button variant="outline" onClick={handleAdd}>
+            Add your first datasource
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((item) => (
+            <DatasourceCard
+              key={item.name}
+              item={item}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onRefresh={handleRefresh}
+              onDetail={handleDetail}
+            />
+          ))}
+        </div>
       )}
+
+      {/* Form Dialog */}
+      <DatasourceFormDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        types={types}
+        editItem={editItem}
+        editConfig={editConfig}
+        onSubmit={handleSubmit}
+        onTestConnection={handleTestConnection}
+        submitting={create.isPending || update.isPending}
+      />
+
+      {/* Detail Sheet */}
+      <DatasourceDetailSheet
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        item={detailItem}
+      />
     </ConstructShell>
   )
 }

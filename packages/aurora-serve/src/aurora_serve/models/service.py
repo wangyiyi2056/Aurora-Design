@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import os
 from uuid import uuid4
 
 from aurora_core.component import BaseService
@@ -10,6 +12,8 @@ from aurora_core.model.adapter.openai_embeddings import OpenAIEmbeddings
 from aurora_core.model.registry import ModelRegistry
 from aurora_core.schema.model import LLMConfig
 from aurora_serve.metadata import MetadataStore, ModelConfigEntity
+
+logger = logging.getLogger(__name__)
 
 
 class ModelConfigService(BaseService):
@@ -108,6 +112,31 @@ class ModelConfigService(BaseService):
 
     def _register_runtime(self, entity: ModelConfigEntity) -> None:
         if entity.type in {"daemon", "cli"}:
+            # When ANTHROPIC_BASE_URL is set, use the Anthropic API adapter
+            # directly instead of spawning `claude -p` (pipe mode is often
+            # incompatible with third-party proxies).
+            proxy_base = os.getenv("ANTHROPIC_BASE_URL")
+            if proxy_base:
+                api_key = (
+                    entity.api_key
+                    or os.getenv("ANTHROPIC_API_KEY")
+                    or os.getenv("ANTHROPIC_AUTH_TOKEN")
+                    or ""
+                )
+                model_name = os.getenv("ANTHROPIC_MODEL") or entity.base_url or entity.name
+                config = LLMConfig(
+                    model_name=model_name,
+                    model_type="anthropic",
+                    api_base=proxy_base,
+                    api_key=api_key,
+                )
+                self.registry.register_llm(entity.name, AnthropicLLM(config))
+                logger.info(
+                    "Registered daemon model '%s' via AnthropicLLM adapter "
+                    "(proxy=%s, model=%s)",
+                    entity.name, proxy_base, model_name,
+                )
+                return
             config = LLMConfig(
                 model_name=entity.name,
                 model_type="daemon",
@@ -122,8 +151,15 @@ class ModelConfigService(BaseService):
         adapter_type = "anthropic" if model_type == "anthropic" else "openai"
         if self._is_kimi_coding_base_url(entity.base_url):
             adapter_type = "openai"
+
+        # For embedding models, strip the "ollama-" prefix from the model name
+        # since the entity name is "ollama-{model}" but the API expects just "{model}"
+        api_model_name = entity.name
+        if model_type == "embedding" and api_model_name.startswith("ollama-"):
+            api_model_name = api_model_name[7:]  # Remove "ollama-" prefix
+
         config = LLMConfig(
-            model_name=entity.name,
+            model_name=api_model_name,
             model_type=adapter_type,
             api_base=entity.base_url,
             api_key=entity.api_key,

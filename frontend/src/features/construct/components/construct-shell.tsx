@@ -19,6 +19,7 @@ export function ConstructShell({ children }: ConstructShellProps) {
     { key: "/construct/prompt", label: t("construct.prompt") },
     { key: "/construct/plugins", label: t("construct.plugins") },
     { key: "/construct/skills", label: t("construct.skills") },
+    { key: "/construct/design-systems", label: "设计系统" },
     { key: "/construct/models", label: "本机 CLI" },
   ]
 

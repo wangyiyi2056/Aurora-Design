@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from pydantic import BaseModel, Field
 
 from aurora_serve.knowledge.service import KnowledgeService
 
@@ -9,6 +10,29 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
 def get_knowledge_service(request: Request) -> KnowledgeService:
     return request.app.state.system_app.get_component("knowledge_service", KnowledgeService)
+
+
+class CreateKnowledgeRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    chunk_strategy: str = "fixed"
+    chunk_size: int = Field(default=1200, ge=1, le=8192)
+    chunk_overlap: int = Field(default=100, ge=0)
+
+
+@router.post("")
+async def create_knowledge(
+    body: CreateKnowledgeRequest,
+    service: KnowledgeService = Depends(get_knowledge_service),
+) -> Dict[str, Any]:
+    try:
+        return service.create(
+            name=body.name,
+            chunk_strategy=body.chunk_strategy,
+            chunk_size=body.chunk_size,
+            chunk_overlap=body.chunk_overlap,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @router.post("/upload")

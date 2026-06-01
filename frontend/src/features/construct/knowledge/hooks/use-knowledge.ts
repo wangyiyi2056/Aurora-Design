@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   listKnowledge,
+  createKnowledge,
   uploadKnowledge,
   queryKnowledge,
   deleteKnowledge,
@@ -8,6 +9,7 @@ import {
   getKnowledgeDetail,
   listKnowledgeDocuments,
   type KnowledgeChunkConfig,
+  type CreateKnowledgeRequest,
 } from "@/services/knowledge"
 
 const queryKey = ["knowledge", "list"]
@@ -16,6 +18,14 @@ export function useKnowledgeList() {
   return useQuery({
     queryKey,
     queryFn: listKnowledge,
+  })
+}
+
+export function useCreateKnowledge() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: CreateKnowledgeRequest) => createKnowledge(data),
+    onSuccess: () => qc.invalidateQueries({ queryKey }),
   })
 }
 

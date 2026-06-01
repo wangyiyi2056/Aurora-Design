@@ -3,10 +3,11 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 
-from aurora_serve.files.workspace_service import WorkspaceFileService, infer_mime
+from aurora_serve.files.preview_service import get_preview_service
+from aurora_serve.files.workspace_service import WorkspaceFileService, infer_mime, infer_kind
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -116,14 +117,103 @@ async def preview_workspace_file(
     file_path: str,
     service: WorkspaceFileService = Depends(get_workspace_file_service),
 ) -> dict:
+    """Return file metadata and preview availability."""
     meta = service.file_meta(workspace_id, file_path)
+    preview_svc = get_preview_service()
+    path = service.resolve_path(workspace_id, file_path)
+    kind = meta["kind"]
+
+    preview_available = {
+        "document": preview_svc.is_soffice_available(),
+        "presentation": preview_svc.is_soffice_available(),
+        "spreadsheet": True,  # Always available via ExcelReader
+    }
+
+    metadata: dict = {}
+    if kind == "spreadsheet":
+        try:
+            from aurora_serve.excel.reader import ExcelReader
+            with ExcelReader(str(path)) as reader:
+                col_names, col_data = reader.get_columns()
+                columns = [{"name": r[0], "type": r[1]} for r in col_data]
+                count_sql = f"SELECT COUNT(*) FROM {reader.temp_table}"
+                _, count_result = reader.run_sql(count_sql)
+                total_rows = count_result[0][0] if count_result else 0
+                metadata["columns"] = columns
+                metadata["totalRows"] = total_rows
+        except Exception:
+            pass
+
     return {
-        "kind": meta["kind"],
+        "kind": kind,
         "title": meta["name"],
+        "previewAvailable": preview_available.get(kind, False),
+        "metadata": metadata,
         "sections": [
             {
-                "title": "Preview unavailable",
-                "lines": ["Use Download or raw preview to inspect this file."],
+                "title": "File Info",
+                "lines": [f"Type: {kind}", f"Size: {meta['size']} bytes"],
             }
         ],
     }
+
+
+@router.get("/{workspace_id}/files/{file_path:path}/preview/pdf")
+async def preview_file_pdf(
+    workspace_id: str,
+    file_path: str,
+    service: WorkspaceFileService = Depends(get_workspace_file_service),
+) -> Response:
+    """Return PDF preview for Word/PowerPoint documents."""
+    meta = service.file_meta(workspace_id, file_path)
+    kind = meta["kind"]
+
+    if kind not in {"document", "presentation"}:
+        raise HTTPException(
+            status_code=400,
+            detail="PDF preview only available for documents and presentations",
+        )
+
+    preview_svc = get_preview_service()
+    path = service.resolve_path(workspace_id, file_path)
+
+    if kind == "document":
+        result = preview_svc.preview_document(path)
+    else:
+        result = preview_svc.preview_presentation(path)
+
+    if result.format != "pdf":
+        raise HTTPException(
+            status_code=503,
+            detail="LibreOffice not available for PDF conversion. Please download the file to view.",
+        )
+
+    filename = path.stem + ".pdf"
+    return Response(
+        content=result.content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.get("/{workspace_id}/files/{file_path:path}/preview/html")
+async def preview_file_html(
+    workspace_id: str,
+    file_path: str,
+    service: WorkspaceFileService = Depends(get_workspace_file_service),
+) -> HTMLResponse:
+    """Return HTML preview for Excel spreadsheets."""
+    meta = service.file_meta(workspace_id, file_path)
+    kind = meta["kind"]
+
+    if kind != "spreadsheet":
+        raise HTTPException(
+            status_code=400,
+            detail="HTML preview only available for spreadsheets",
+        )
+
+    preview_svc = get_preview_service()
+    path = service.resolve_path(workspace_id, file_path)
+    result = preview_svc.preview_excel(path)
+
+    return HTMLResponse(content=result.content)
