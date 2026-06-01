@@ -1,0 +1,10 @@
+Prefer the following relationship keyword types where applicable:
+
+- works_for: Employment or affiliation
+- located_in: Geographic containment
+- uses: Tool, technology, or resource consumption
+- develops: Creation or authorship
+- related_to: General association
+- part_of: Compositional or hierarchical membership
+- collaborates_with: Joint effort or partnership
+- competes_with: Market or domain rivalry

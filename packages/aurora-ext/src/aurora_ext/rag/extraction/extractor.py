@@ -109,7 +109,6 @@ class EntityRelationExtractor:
         file_path: str = "",
         **config: Any,
     ) -> ExtractionResult:
-        print(f"\n{'!'*80}\n[EXTRACTOR CALLED] chunk_id={chunk_id}, use_json={config.get('use_json', False)}\n{'!'*80}\n", flush=True)
         """Extract entities and relationships from *chunk_text*.
 
         Parameters
@@ -128,9 +127,16 @@ class EntityRelationExtractor:
             - ``max_entity_records`` (int): Entity row cap.  Default ``40``.
             - ``use_json`` (bool): Use JSON structured mode.  Default ``False``.
             - ``max_gleaning`` (int): Number of gleaning passes (0 = none).
-              Default ``1``.
+              Default ``1``.  Overridden by the per-type gleaning keys
+              below when both are provided.
+            - ``entity_extract_max_gleaning`` (int | None): Entity-specific
+              gleaning rounds.  Falls back to ``max_gleaning``.
+            - ``relation_extract_max_gleaning`` (int | None): Relation-specific
+              gleaning rounds.  Falls back to ``max_gleaning``.
             - ``entity_types_guidance`` (str | None): Override entity-type
               guidance.  ``None`` uses the built-in default.
+            - ``relation_types_guidance`` (str | None): Optional relationship
+              type guidance appended to the system prompt.
             - ``enable_cache`` (bool): Whether to use LLM response caching
               (cache backend supplied externally).  Default ``True``.
 
@@ -144,11 +150,29 @@ class EntityRelationExtractor:
         max_total_records: int = int(config.get("max_total_records", 100))
         max_entity_records: int = int(config.get("max_entity_records", 40))
         use_json: bool = bool(config.get("use_json", False))
+
+        # Gleaning: support separate entity/relation round counts.
         max_gleaning: int = int(config.get("max_gleaning", 1))
+        entity_max_gleaning: int = int(
+            config.get("entity_extract_max_gleaning", max_gleaning)
+        )
+        relation_max_gleaning: int = int(
+            config.get("relation_extract_max_gleaning", max_gleaning)
+        )
+        overall_gleaning = max(entity_max_gleaning, relation_max_gleaning)
+
         entity_types_guidance: str | None = config.get("entity_types_guidance")
+        relation_types_guidance: str | None = config.get("relation_types_guidance")
 
         if entity_types_guidance is None:
             entity_types_guidance = PROMPTS["default_entity_types_guidance"]
+
+        # Append relation types guidance when provided.
+        if relation_types_guidance:
+            entity_types_guidance = (
+                f"{entity_types_guidance}\n\n---Relationship Types---\n"
+                f"{relation_types_guidance}"
+            )
 
         # ── Build prompt context ──────────────────────────────────
         if use_json:
@@ -175,16 +199,19 @@ class EntityRelationExtractor:
             use_json=use_json,
         )
 
-        print(f"\n{'='*60}\n[DEBUG] LLM raw output for chunk {chunk_id}:\n{llm_output[:800]}\n{'='*60}\n", flush=True)
-
         entities, relationships = self._parse_response(
             llm_output, chunk_id, file_path, use_json=use_json
         )
 
-        print(f"[DEBUG] Parsed {len(entities)} entities and {len(relationships)} relationships from chunk {chunk_id}\n", flush=True)
+        # ── Gleaning passes (separate entity/relation budgets) ────
+        entity_exhausted = entity_max_gleaning <= 0
+        relation_exhausted = relation_max_gleaning <= 0
 
-        # ── Gleaning passes ──────────────────────────────────────
-        for gleaning_round in range(max_gleaning):
+        for gleaning_round in range(overall_gleaning):
+            # Both budgets spent → early exit.
+            if entity_exhausted and relation_exhausted:
+                break
+
             history_messages = self._build_history(
                 user_prompt, llm_output, system_prompt
             )
@@ -200,12 +227,19 @@ class EntityRelationExtractor:
                 glean_output, chunk_id, file_path, use_json=use_json
             )
 
-            # Merge: keep the version with the longer description when
-            # both rounds extract the same entity/relationship.
-            entities = self._merge_gleaning_entities(entities, glean_entities)
-            relationships = self._merge_gleaning_relationships(
-                relationships, glean_relationships
-            )
+            # Merge entities only while entity budget remains.
+            if not entity_exhausted:
+                entities = self._merge_gleaning_entities(entities, glean_entities)
+                if gleaning_round + 1 >= entity_max_gleaning:
+                    entity_exhausted = True
+
+            # Merge relationships only while relation budget remains.
+            if not relation_exhausted:
+                relationships = self._merge_gleaning_relationships(
+                    relationships, glean_relationships
+                )
+                if gleaning_round + 1 >= relation_max_gleaning:
+                    relation_exhausted = True
 
             # Early exit if the gleaning round returned nothing new.
             if not glean_entities and not glean_relationships:

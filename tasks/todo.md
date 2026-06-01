@@ -419,3 +419,48 @@ Per-module coverage:
   manager.py:          87%
   stats.py:            82%
 ```
+
+---
+
+## 阶段十（2026-06-01） / Phase 10: KG 提取参数增强 — 高级提取配置
+
+### 已完成
+
+- [x] **多轮迭代提取配置** — `ExtractionConfig` frozen dataclass，支持独立的 `entity_extract_max_gleaning` 和 `relation_extract_max_gleaning` 预算
+- [x] **实体类型自定义** — `EntityTypeConfig` frozen dataclass，支持 `custom_types`、`type_prompt_file` 外部 prompt 文件加载、`custom_relation_types`
+- [x] **输出语言配置** — `AddonParams` frozen dataclass，支持 `language`（English/Chinese/Japanese/Korean）、`entity_types_guidance` 和 `relation_types_guidance` 自由覆盖
+- [x] **复合配置** — `KGExtractionFullConfig` 聚合三个子配置，支持 `from_toml_dict()` 解析 `configs/aurora.toml` 的 `[kg_extraction]` 节
+- [x] **提取器增强** — `EntityRelationExtractor.extract()` 支持分离的实体/关系 gleaning 预算、`relation_types_guidance` 注入、自定义 `entity_types_guidance` 覆盖
+- [x] **并发批提取编排器** — `ExtractionOrchestrator` 使用 `asyncio.Semaphore` 控制并发、支持增量跳过（`processed_chunks` 集合）、错误隔离、进度回调
+- [x] **批提取结果类型** — `BatchExtractionResult` + `BatchExtractionStats`，统计成功/失败/跳过 chunks、实体/关系总数、耗时
+- [x] **Prompt 文件** — `prompts/entity_types.txt` 和 `prompts/relation_types.txt` 示例文件
+- [x] **TOML 配置** — `configs/aurora.toml` 添加 `[kg_extraction]` 完整配置节
+- [x] **API 路由** — `GET/POST /knowledge/{name}/extract/config` + `POST /knowledge/{name}/extract/batch`
+- [x] **Service 层** — `KnowledgeV2Service` 新增 `get_extraction_config`、`update_extraction_config`、`batch_extract` 方法
+- [x] **完整测试** — 48 个单元测试全部通过，314 个 aurora-ext 测试无回归
+
+### 变更文件
+
+| 文件 | 说明 |
+|------|------|
+| `extraction/config.py` | ExtractionConfig + EntityTypeConfig + AddonParams + KGExtractionFullConfig（新增） |
+| `extraction/orchestrator.py` | ExtractionOrchestrator + BatchExtractionResult + BatchExtractionStats（新增） |
+| `extraction/extractor.py` | 增强 extract() 支持分离 gleaning 预算和 relation guidance（更新） |
+| `extraction/__init__.py` | 导出新类型（更新） |
+| `extraction/prompts/entity_types.txt` | 示例实体类型 prompt（新增） |
+| `extraction/prompts/relation_types.txt` | 示例关系类型 prompt（新增） |
+| `configs/aurora.toml` | 添加 [kg_extraction] 配置节（更新） |
+| `knowledge/v2/extraction_routes.py` | 提取配置 CRUD + 批量提取 API（新增） |
+| `knowledge/v2/service.py` | get/update_extraction_config + batch_extract（更新） |
+| `knowledge/v2/__init__.py` | 导出新 schemas（更新） |
+| `router.py` | 注册 v2_extraction_router（更新） |
+| `tests/rag/extraction/test_config.py` | 配置 dataclass 测试 29 个（新增） |
+| `tests/rag/extraction/test_orchestrator.py` | 编排器测试 12 个（新增） |
+| `tests/rag/extraction/test_extractor_enhanced.py` | 增强提取器测试 7 个（新增） |
+
+### 测试结果
+
+```
+tests/rag/extraction/  — 48 passed
+tests/                 — 314 passed (0 regressions)
+```

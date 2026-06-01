@@ -152,6 +152,26 @@ description = "Aurora DuckDB analytical database"
 # ── Embedding Configuration ──
 # embedding_dim = 1536  # Override default embedding dimension
 
+# ── Workspace (Multi-Tenant) Configuration ──
+#
+# Enable workspace isolation to partition storage data across tenants.
+# Each workspace gets its own namespace prefix, file directory, or
+# database schema depending on the isolation mode.
+#
+# Isolation modes:
+#   prefix     — prepend workspace ID to keys/collections/labels (default)
+#   schema     — use a dedicated database schema per workspace (PostgreSQL)
+#   collection — use a dedicated collection per workspace (MongoDB, Chroma)
+#
+# When enabled, all storage backends respect the X-Workspace-Id header
+# (or workspace_id parameter) to isolate data per tenant.
+#
+# [workspace]
+# enabled = true
+# default_workspace = "default"
+# isolation_mode = "prefix"
+# allowed_workspaces = ["default", "tenant_a", "tenant_b"]
+
 # ── Knowledge Graph Extraction Configuration ──
 # Multi-round iterative extraction with concurrency control.
 # Env var overrides: AURORA_KG_EXTRACTION_<FIELD>

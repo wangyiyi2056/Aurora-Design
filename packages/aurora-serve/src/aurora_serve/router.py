@@ -28,6 +28,7 @@ from aurora_serve.providers.api import router as providers_router
 from aurora_serve.skills.api import router as skills_router
 from aurora_serve.traces.api import router as traces_router
 from aurora_serve.users.api import router as users_router
+from aurora_serve.workspace.api import router as tenants_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
@@ -70,3 +71,4 @@ api_router.include_router(evaluation_router)
 api_router.include_router(feedback_router)
 api_router.include_router(traces_router)
 api_router.include_router(users_router)
+api_router.include_router(tenants_router)

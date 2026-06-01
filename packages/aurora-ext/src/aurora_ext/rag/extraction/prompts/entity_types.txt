@@ -1,0 +1,10 @@
+Classify each entity using one of the following types. If no type fits, use `Other`.
+
+- Person: Individual people, real or fictional
+- Organization: Companies, institutions, government bodies, groups
+- Location: Geographic places — cities, countries, buildings, regions
+- Event: Occurrences, incidents, ceremonies, meetings
+- Technology: Software, tools, frameworks, hardware devices
+- API: Application programming interfaces, protocols, SDKs
+- Product: Commercial products, services, platforms
+- Concept: Abstract ideas, theories, principles, beliefs
