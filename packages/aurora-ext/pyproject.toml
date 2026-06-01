@@ -20,10 +20,35 @@ dependencies = [
 postgres = ["psycopg[binary,pool]>=3.1"]
 neo4j = ["neo4j>=5.0"]
 milvus = ["pymilvus>=2.3"]
+redis = ["redis[hiredis]>=5.0"]
+mongo = ["motor>=3.3", "pymongo>=4.6"]
+opensearch = ["opensearch-py[async]>=2.4"]
+qdrant = ["qdrant-client>=1.7"]
+faiss = ["faiss-cpu>=1.7"]
+memgraph = ["neo4j>=5.0"]
+mineru = ["magic-pdf>=0.9", "aiohttp>=3.9"]
+docling = ["docling>=2.0"]
+ragas = [
+    "ragas>=0.1.0,<0.3",
+    "datasets>=2.14",
+    "langchain-core>=0.1",
+]
 all = [
     "psycopg[binary,pool]>=3.1",
     "neo4j>=5.0",
     "pymilvus>=2.3",
+    "redis[hiredis]>=5.0",
+    "motor>=3.3",
+    "pymongo>=4.6",
+    "opensearch-py[async]>=2.4",
+    "qdrant-client>=1.7",
+    "faiss-cpu>=1.7",
+    "magic-pdf>=0.9",
+    "aiohttp>=3.9",
+    "docling>=2.0",
+    "ragas>=0.1.0,<0.3",
+    "datasets>=2.14",
+    "langchain-core>=0.1",
 ]
 
 [build-system]

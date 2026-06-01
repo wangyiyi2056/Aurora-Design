@@ -2,8 +2,9 @@
 
 Provides a registry-based factory pattern that auto-registers all
 built-in storage backends.  Optional dependencies (PostgreSQL, Neo4j,
-Milvus) are imported inside ``try/except`` blocks so that missing
-packages do not crash the application.
+Milvus, Redis, MongoDB, Qdrant, FAISS, OpenSearch, Memgraph) are
+imported inside ``try/except`` blocks so that missing packages do not
+crash the application.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ _STORAGE_TYPE_MAP: dict[str, dict[str, type]] = {
 
 def _register_builtins() -> None:
     """Auto-register all built-in storage backends."""
+
     # ── KV backends ──────────────────────────────────────────
     try:
         from aurora_ext.rag.storage.json_kv import JsonKVStorage
@@ -36,6 +38,27 @@ def _register_builtins() -> None:
         from aurora_ext.rag.storage.postgres_kv import PostgresKVStorage
 
         _STORAGE_TYPE_MAP["kv"]["postgres"] = PostgresKVStorage
+    except ImportError:
+        pass
+
+    try:
+        from aurora_ext.rag.storage.redis_kv import RedisKVStorage
+
+        _STORAGE_TYPE_MAP["kv"]["redis"] = RedisKVStorage
+    except ImportError:
+        pass
+
+    try:
+        from aurora_ext.rag.storage.mongo_kv import MongoKVStorage
+
+        _STORAGE_TYPE_MAP["kv"]["mongo"] = MongoKVStorage
+    except ImportError:
+        pass
+
+    try:
+        from aurora_ext.rag.storage.opensearch_kv import OpenSearchKVStorage
+
+        _STORAGE_TYPE_MAP["kv"]["opensearch"] = OpenSearchKVStorage
     except ImportError:
         pass
 
@@ -54,9 +77,48 @@ def _register_builtins() -> None:
     except ImportError:
         pass
 
+    try:
+        from aurora_ext.rag.storage.pgvector import PGVectorStorage
+
+        _STORAGE_TYPE_MAP["vector"]["pgvector"] = PGVectorStorage
+    except ImportError:
+        pass
+
+    try:
+        from aurora_ext.rag.storage.faiss_vector import FaissVectorDBStorage
+
+        _STORAGE_TYPE_MAP["vector"]["faiss"] = FaissVectorDBStorage
+    except ImportError:
+        pass
+
+    try:
+        from aurora_ext.rag.storage.qdrant_vector import QdrantVectorDBStorage
+
+        _STORAGE_TYPE_MAP["vector"]["qdrant"] = QdrantVectorDBStorage
+    except ImportError:
+        pass
+
+    try:
+        from aurora_ext.rag.storage.mongo_vector import MongoVectorDBStorage
+
+        _STORAGE_TYPE_MAP["vector"]["mongo"] = MongoVectorDBStorage
+    except ImportError:
+        pass
+
+    try:
+        from aurora_ext.rag.storage.opensearch_vector import (
+            OpenSearchVectorDBStorage,
+        )
+
+        _STORAGE_TYPE_MAP["vector"]["opensearch"] = OpenSearchVectorDBStorage
+    except ImportError:
+        pass
+
     # ── Graph backends ───────────────────────────────────────
     try:
-        from aurora_ext.rag.storage.networkx_graph import NetworkXGraphStorage
+        from aurora_ext.rag.storage.networkx_graph import (
+            NetworkXGraphStorage,
+        )
 
         _STORAGE_TYPE_MAP["graph"]["networkx"] = NetworkXGraphStorage
     except ImportError:
@@ -66,6 +128,29 @@ def _register_builtins() -> None:
         from aurora_ext.rag.storage.neo4j_graph import Neo4jGraphStorage
 
         _STORAGE_TYPE_MAP["graph"]["neo4j"] = Neo4jGraphStorage
+    except ImportError:
+        pass
+
+    try:
+        from aurora_ext.rag.storage.pg_graph import PGGraphStorage
+
+        _STORAGE_TYPE_MAP["graph"]["postgres"] = PGGraphStorage
+    except ImportError:
+        pass
+
+    try:
+        from aurora_ext.rag.storage.memgraph_graph import MemgraphStorage
+
+        _STORAGE_TYPE_MAP["graph"]["memgraph"] = MemgraphStorage
+    except ImportError:
+        pass
+
+    try:
+        from aurora_ext.rag.storage.opensearch_graph import (
+            OpenSearchGraphStorage,
+        )
+
+        _STORAGE_TYPE_MAP["graph"]["opensearch"] = OpenSearchGraphStorage
     except ImportError:
         pass
 
@@ -90,6 +175,26 @@ def _register_builtins() -> None:
     except ImportError:
         pass
 
+    try:
+        from aurora_ext.rag.storage.mongo_doc_status import (
+            MongoDocStatusStorage,
+        )
+
+        _STORAGE_TYPE_MAP["doc_status"]["mongo"] = MongoDocStatusStorage
+    except ImportError:
+        pass
+
+    try:
+        from aurora_ext.rag.storage.opensearch_doc_status import (
+            OpenSearchDocStatusStorage,
+        )
+
+        _STORAGE_TYPE_MAP["doc_status"]["opensearch"] = (
+            OpenSearchDocStatusStorage
+        )
+    except ImportError:
+        pass
+
 
 # Run registration at import time
 _register_builtins()
@@ -102,6 +207,13 @@ class StorageFactory:
 
         factory = StorageFactory()
         kv_store = factory.create("kv", "postgres", "my_namespace", config)
+
+    Available backend combinations:
+
+    * **KV**: json, postgres, redis, mongo, opensearch
+    * **Vector**: chroma, milvus, pgvector, faiss, qdrant, mongo, opensearch
+    * **Graph**: networkx, neo4j, postgres, memgraph, opensearch
+    * **DocStatus**: json, postgres, mongo, opensearch
     """
 
     _registry: dict[str, dict[str, type]] = _STORAGE_TYPE_MAP
@@ -138,7 +250,7 @@ class StorageFactory:
         storage_type:
             One of ``"kv"``, ``"vector"``, ``"graph"``, ``"doc_status"``.
         backend:
-            Backend name (e.g. ``"json"``, ``"postgres"``, ``"neo4j"``).
+            Backend name (e.g. ``"json"``, ``"postgres"``, ``"redis"``).
         namespace:
             Storage namespace (table/collection/file prefix).
         config:

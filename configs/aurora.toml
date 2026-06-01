@@ -84,3 +84,70 @@ description = "Aurora DuckDB analytical database"
 # model = "gpt-4-vision-preview"
 # model_type = "openai"
 # max_async = 2
+
+# ── RAG Storage Backend Configuration ──
+#
+# Each storage type can be backed by one of several engines.
+# Env var overrides: AURORA_<TYPE>_BACKEND, AURORA_<SERVICE>_URI
+#
+# Available backends per type:
+#   kv:         json, postgres, redis, mongo, opensearch
+#   vector:     chroma, milvus, pgvector, faiss, qdrant, mongo, opensearch
+#   graph:      networkx, neo4j, postgres, memgraph, opensearch
+#   doc_status: json, postgres, mongo, opensearch
+#
+# Active backends (defaults: json / chroma / networkx / json)
+# kv_backend = "json"
+# vector_backend = "chroma"
+# graph_backend = "networkx"
+# doc_status_backend = "json"
+
+# ── PostgreSQL (KV, DocStatus, Vector via pgvector, Graph via relational tables) ──
+# postgres_uri = "postgresql://user:pass@localhost:5432/aurora"
+# Env: AURORA_POSTGRES_URI
+
+# ── Neo4j (Graph) ──
+# neo4j_uri = "bolt://localhost:7687"
+# neo4j_user = "neo4j"
+# neo4j_password = "password"
+# Env: AURORA_NEO4J_URI, AURORA_NEO4J_USER, AURORA_NEO4J_PASSWORD
+
+# ── Milvus (Vector) ──
+# milvus_uri = "http://localhost:19530"
+# milvus_token = ""
+# Env: AURORA_MILVUS_URI, AURORA_MILVUS_TOKEN
+
+# ── Redis (KV) ──
+# redis_uri = "redis://localhost:6379"
+# Env: AURORA_REDIS_URI
+
+# ── MongoDB (KV, Vector via Atlas, DocStatus) ──
+# mongo_uri = "mongodb://localhost:27017"
+# mongo_db = "aurora_rag"
+# mongo_vector_index = "vector_index"  # Atlas Vector Search index name
+# Env: AURORA_MONGO_URI
+
+# ── Qdrant (Vector) ──
+# qdrant_uri = "http://localhost:6333"
+# qdrant_api_key = ""
+# Env: AURORA_QDRANT_URI, AURORA_QDRANT_API_KEY
+
+# ── FAISS (Vector, local file-based) ──
+# faiss_index_type = "hnsw"  # or "flat"
+# No external service required — persists to {working_dir}/faiss/
+
+# ── OpenSearch (KV, Vector, Graph, DocStatus) ──
+# opensearch_uri = "https://localhost:9200"
+# opensearch_user = "admin"
+# opensearch_password = "admin"
+# opensearch_verify_certs = false
+# Env: AURORA_OPENSEARCH_URI
+
+# ── Memgraph (Graph, Cypher-compatible) ──
+# memgraph_uri = "bolt://localhost:7688"
+# memgraph_user = ""
+# memgraph_password = ""
+# Env: AURORA_MEMGRAPH_URI, AURORA_MEMGRAPH_USER, AURORA_MEMGRAPH_PASSWORD
+
+# ── Embedding Configuration ──
+# embedding_dim = 1536  # Override default embedding dimension

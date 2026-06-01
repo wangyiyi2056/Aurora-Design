@@ -121,13 +121,18 @@
 - [ ] 3.3 注册到 ModelRegistry
 - [ ] 3.4 编写测试
 
-#### P1-4: Reranking 增强
-- [ ] 4.1 实现 AliyunReranker（DashScope gte-rerank-v2）
-- [ ] 4.2 添加长文分块重排 + RerankOptions
-- [ ] 4.3 实现分数聚合策略（max/mean/first）
-- [ ] 4.4 实现指数退避重试
-- [ ] 4.5 集成到 query_engine
-- [ ] 4.6 配置 + 测试
+#### P1-4: Reranking 增强 ✅ COMPLETED
+- [x] 4.1 实现 AliyunReranker（DashScope gte-rerank-v2）
+- [x] 4.2 添加长文分块重排 + RerankOptions
+- [x] 4.3 实现分数聚合策略（max/mean/first）
+- [x] 4.4 实现指数退避重试
+- [x] 4.5 集成到 query_engine（mix 模式默认启用）
+- [x] 4.6 配置 + 测试（32 个测试全部通过）
+- [x] 4.7 实现 vLLM Reranker（Cohere API 兼容）
+- [x] 4.8 实现 RerankerConfig 和工厂模式
+- [x] 4.9 实现 RobustReranker（错误处理、降级、熔断器）
+- [x] 4.10 添加 TOML 配置和环境变量支持
+- [x] 4.11 编写完整文档（RERANKER.md）
 
 #### P1-5: 实体抽取调优参数
 - [ ] 5.1 添加缺失参数（force_llm_summary, source_ids_limit 等）
@@ -156,17 +161,17 @@
 
 ### P2 — 解析质量 + 高级特性
 
-#### P2-1: MinerU 解析引擎
-- [ ] 1.1 安装 magic-pdf SDK
-- [ ] 1.2 实现 MinerUParser
-- [ ] 1.3 路由集成 + 并发控制
-- [ ] 1.4 编写测试
+#### P2-1: MinerU 解析引擎 ✅
+- [x] 1.1 添加 magic-pdf 可选依赖到 pyproject.toml
+- [x] 1.2 实现 MinerUParser（SDK + HTTP API 双模式，asyncio.Semaphore 并发控制）
+- [x] 1.3 路由集成（hint > env > default，graceful fallback）
+- [x] 1.4 编写测试（34 tests passing）
 
-#### P2-2: Docling 解析引擎
-- [ ] 2.1 安装 docling
-- [ ] 2.2 实现 DoclingParser
-- [ ] 2.3 路由集成
-- [ ] 2.4 编写测试
+#### P2-2: Docling 解析引擎 ✅
+- [x] 2.1 添加 docling 可选依赖到 pyproject.toml
+- [x] 2.2 实现 DoclingParser（DocumentConverter API，线程池异步）
+- [x] 2.3 路由集成（hint/env/native 三级路由 + fallback）
+- [x] 2.4 编写测试（34 tests passing）
 
 #### P2-3: 多模态 VLM 分析层
 - [ ] 3.1 实现 MultimodalAnalyzer（图像/表格/公式）
@@ -182,19 +187,127 @@
 - [ ] 4.4 编写测试
 
 #### P2-5: RAGAS 评估框架
-- [ ] 5.1 安装 ragas + datasets
-- [ ] 5.2 实现 RAGQualityEvaluator
-- [ ] 5.3 实现 OfflineRetrievalChecker
-- [ ] 5.4 添加 API 端点
+- [x] 5.1 添加 ragas + datasets + langchain-core 可选依赖
+- [x] 5.2 实现 RAGASEvaluator（faithfulness/answer_relevancy/context_precision/context_recall）
+- [x] 5.3 实现 LangChain 适配器（wrap_llm / wrap_embeddings）
+- [x] 5.4 添加 API 端点（POST /knowledge/{name}/evaluate + /evaluate/html）
 
 #### P2-6: Docker 部署方案
-- [ ] 6.1 Dockerfile（标准版）
-- [ ] 6.2 Dockerfile.lite（精简版）
-- [ ] 6.3 docker-compose.yml（基础版）
-- [ ] 6.4 docker-compose-full.yml（含 PG + Neo4j + Milvus）
-- [ ] 6.5 部署文档
+- [x] 6.1 Dockerfile（标准版 — 多阶段构建: deps + frontend + runtime）
+- [x] 6.2 Dockerfile.lite（精简版 — 仅后端，无可选依赖和前端）
+- [x] 6.3 docker-compose.yml（基础版 — Aurora + Redis）
+- [x] 6.4 docker-compose.full.yml（含 PG + Neo4j + Milvus + Redis + etcd + MinIO）
+- [x] 6.5 部署文档（docs/deployment/docker.md + README 更新）
 
-#### P2-7: 可观测性增强
-- [ ] 7.1 增强健康检查端点（存储后端 + 管线 + LLM 角色状态）
-- [ ] 7.2 管线追踪 API + 阶段计时
-- [ ] 7.3 （可选）Langfuse 集成
+#### P2-7: 可观测性增强 ✅
+- [x] 7.1 增强健康检查端点（存储后端 + 管线 + LLM 角色状态）
+- [x] 7.2 管线追踪 API + 阶段计时
+- [x] 7.3 Prometheus 指标导出（/metrics 端点）
+- [x] 7.4 内存指标收集器（pipeline 性能、LLM 调用、缓存命中率）
+- [x] 7.5 Readiness/Liveness 探针（K8s 兼容）
+
+---
+
+## 阶段六（2026-06-01） / Phase 6: Storage Backend Expansion (13 new backends)
+
+> 从 ~8 种存储扩展到完整支持 21 种后端
+
+### KV Storage (3 new)
+- [ ] RedisKVStorage → `redis_kv.py`
+- [ ] MongoKVStorage → `mongo_kv.py`
+- [ ] OpenSearchKVStorage → `opensearch_kv.py`
+
+### Vector Storage (5 new)
+- [ ] PGVectorStorage → `pgvector.py`
+- [ ] FaissVectorDBStorage → `faiss_vector.py`
+- [ ] QdrantVectorDBStorage → `qdrant_vector.py`
+- [ ] MongoVectorDBStorage → `mongo_vector.py`
+- [ ] OpenSearchVectorDBStorage → `opensearch_vector.py`
+
+### Graph Storage (3 new)
+- [ ] PGGraphStorage → `pg_graph.py`
+- [ ] MemgraphStorage → `memgraph_graph.py`
+- [ ] OpenSearchGraphStorage → `opensearch_graph.py`
+
+### Doc Status Storage (2 new)
+- [ ] MongoDocStatusStorage → `mongo_doc_status.py`
+- [ ] OpenSearchDocStatusStorage → `opensearch_doc_status.py`
+
+### Integration
+- [ ] Update `storage/__init__.py` — register all new backends
+- [ ] Update `storage/factory.py` — add factory mappings
+- [ ] Update `pyproject.toml` — add optional dependency groups
+- [ ] Update `configs/aurora.toml` — add configuration examples
+- [ ] Verify all imports work correctly
+
+---
+
+## 阶段六（2026-06-01） / Phase 6: 完整实现 6 种 RAG 查询模式
+
+### 已完成
+
+- [x] **增强 Local 模式** — 双路径实体发现（向量搜索 + 图标签模糊搜索）+ BFS 深度-1 邻居扩展
+- [x] **增强 Global 模式** — 关系中心检索 + 权重排序 + 端点实体 chunk 收集
+- [x] **增强 Hybrid 模式** — `asyncio.gather` 并行执行 local+global，延迟减半
+- [x] **增强 Mix 模式** — `asyncio.gather` 并行执行 hybrid+naive，KG 与向量结果合并去重
+- [x] **完善 Bypass 模式** — 直接 LLM 透传 + 完整对话历史支持
+- [x] **Naive 模式** — 纯向量相似度搜索（保持不变）
+- [x] **导出 QueryMode** — 添加到 `retrieval/__init__.py` 的 `__all__`
+- [x] **编写 42 个单元测试** — 覆盖所有模式、关键词提取、重排、去重、流式、对话历史、端到端流水线
+
+### 变更文件
+
+| 文件 | 说明 |
+|------|------|
+| `packages/aurora-ext/src/aurora_ext/rag/retrieval/query_engine.py` | 增强 6 种查询模式实现 |
+| `packages/aurora-ext/src/aurora_ext/rag/retrieval/__init__.py` | 导出 QueryMode |
+| `tests/ext/test_query_engine.py` | 42 个单元测试（全部通过） |
+
+### 测试结果
+
+```
+tests/ext/test_query_engine.py  — 42 passed
+tests/ext/                      — 132 passed (no regressions)
+```
+
+---
+
+## 阶段七（2026-06-01） / Phase 7: Citation 引用溯源功能
+
+### 已完成
+
+- [x] **Citation 数据结构** — `Citation`（frozen dataclass）+ `QueryResultWithCitations`
+- [x] **CitationTracker** — build / sort / deduplicate / filter_by_source / filter_by_min_score
+- [x] **Chunk ID 生成** — 基于 SHA-256 的确定性 ID（`generate_chunk_id`）
+- [x] **Distance→Score 转换** — `distance_to_score()` 支持 L2 距离归一化到 [0,1]
+- [x] **ChunkManager 增强** — 注入 `chunk_id`, `file_path`, `start_pos`, `end_pos`, `page_number`
+- [x] **PDFParser 页码追踪** — 生成 `page_boundaries` 元数据用于 chunk→page 映射
+- [x] **ChromaVectorStore 元数据** — chunk_id 作为文档 ID，sanitize 复杂类型
+- [x] **EmbeddingRetriever.retrieve_raw()** — 返回含 score / chunk_id 的 enriched dict
+- [x] **KnowledgeService.query()** — 返回 citations + results（向后兼容）
+- [x] **API 端点增强** — `/knowledge/{name}/query` 支持 `source_filter`, `min_score`
+- [x] **QueryEngine.query_with_citations()** — KG 路径也能返回结构化 citations
+- [x] **KnowledgeFactory** — 使用 parser routing 支持 PDF/DOCX/XLSX
+- [x] **修复 ExportScope 导入错误** — `knowledge/__init__.py`
+- [x] **41 个测试全部通过** — 覆盖 citation 提取、多文档引用、PDF 页码追踪
+
+### 变更文件
+
+| 文件 | 说明 |
+|------|------|
+| `citation_tracker.py` | Citation / QueryResultWithCitations / CitationTracker |
+| `transformer/chunk.py` | ChunkManager 注入 citation 元数据 |
+| `parser/pdf_parser.py` | page_boundaries 页码边界追踪 |
+| `storage/chroma_store.py` | chunk_id 存储 + metadata sanitize |
+| `retriever/embedding_retriever.py` | retrieve_raw() + score 计算 |
+| `knowledge/factory.py` | parser routing 集成 |
+| `retrieval/query_engine.py` | query_with_citations() + _build_citations() |
+| `knowledge/api.py` | source_filter + min_score 参数 |
+| `knowledge/service.py` | CitationTracker 集成 |
+| `tests/test_citation_tracker.py` | 41 个单元测试 |
+
+### 测试结果
+
+```
+tests/test_citation_tracker.py  — 41 passed (0 regressions)
+```
