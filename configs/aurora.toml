@@ -151,3 +151,76 @@ description = "Aurora DuckDB analytical database"
 
 # ── Embedding Configuration ──
 # embedding_dim = 1536  # Override default embedding dimension
+
+# ── Knowledge Graph Extraction Configuration ──
+# Multi-round iterative extraction with concurrency control.
+# Env var overrides: AURORA_KG_EXTRACTION_<FIELD>
+
+[kg_extraction]
+entity_extract_max_gleaning = 2
+relation_extract_max_gleaning = 2
+max_parallel_extract = 5
+enable_incremental_extract = true
+max_total_records = 100
+max_entity_records = 40
+use_json = false
+enable_cache = true
+
+[kg_extraction.language]
+output_language = "English"  # English, Chinese, Japanese, Korean, etc.
+
+[kg_extraction.entity_types]
+custom_types = ["Person", "Organization", "Location", "Technology", "API"]
+# type_prompt_file = "prompts/entity_types.txt"
+
+[kg_extraction.relation_types]
+custom_types = ["works_for", "located_in", "uses", "develops"]
+
+# ── Cache Configuration ──
+# Multi-layer intelligent caching for LLM responses, entity extraction,
+# and embedding similarity. Reduces API costs and latency for repeated queries.
+#
+# [cache]
+# enabled = true  # Global cache toggle
+#
+# # LLM Response Cache — caches repeated prompt responses
+# # Env: AURORA_CACHE_LLM_ENABLED, AURORA_CACHE_LLM_TTL, AURORA_CACHE_LLM_MAX_SIZE
+# llm_cache_enabled = true
+# llm_cache_ttl = 86400  # 24 hours in seconds
+# llm_cache_max_size = 10000  # Maximum cached responses
+# llm_cache_persist = false  # Optional disk persistence
+#
+# # Entity Extraction Cache — caches document entity extraction results
+# # Env: AURORA_CACHE_ENTITY_ENABLED, AURORA_CACHE_ENTITY_TTL
+# entity_cache_enabled = true
+# entity_cache_ttl = 604800  # 7 days in seconds
+# entity_cache_max_size = 5000
+#
+# # Embedding Similarity Cache — caches embedding vectors with similarity matching
+# # Env: AURORA_CACHE_EMBEDDING_ENABLED, AURORA_CACHE_EMBEDDING_THRESHOLD
+# embedding_cache_enabled = true
+# embedding_cache_threshold = 0.95  # Cosine similarity threshold for cache hits
+# embedding_cache_use_llm_verify = false  # Optional LLM verification for similar queries
+# embedding_cache_max_size = 10000
+
+# ── Ollama-Compatible API ──
+# Exposes an Ollama-style REST API so that tools like Open WebUI,
+# Continue, and other Ollama-aware clients can connect directly to
+# Aurora's RAG knowledge base.
+#
+# Mounted at /api (not /api/v1) for Ollama client compatibility.
+# Env overrides: OLLAMA_EMULATING_MODEL_NAME, OLLAMA_EMULATING_MODEL_TAG,
+#                OLLAMA_DEFAULT_KB
+
+[ollama_compat]
+enabled = true
+default_model = "aurora"
+default_tag = "latest"
+default_kb = "default"
+
+# Map Ollama model names to Aurora knowledge base names.
+# Unmapped models fall back to ``default_kb``.
+[ollama_compat.model_mapping]
+"aurora" = "default"
+# "aurora-code" = "code_kb"
+# "aurora-docs" = "docs_kb"

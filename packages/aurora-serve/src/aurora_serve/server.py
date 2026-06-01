@@ -284,8 +284,31 @@ def create_app() -> FastAPI:
     app.include_router(prometheus_router)
 
     # Ollama-compatible API — mounted at /api (not /api/v1) for Ollama client compatibility
-    from aurora_serve.knowledge.v2.ollama_routes import router as ollama_router
-    app.include_router(ollama_router)
+    from pathlib import Path as _Path
+
+    from aurora_serve.ollama_compat import (
+        router as ollama_router,
+        load_ollama_config,
+        set_config,
+    )
+
+    _ollama_config_path = _Path("configs/aurora.toml")
+    if not _ollama_config_path.exists():
+        _ollama_config_path = _Path("../configs/aurora.toml")
+    ollama_cfg = load_ollama_config(
+        _ollama_config_path if _ollama_config_path.exists() else None
+    )
+    set_config(ollama_cfg)
+    if ollama_cfg.enabled:
+        app.include_router(ollama_router)
+        logger.info(
+            "Ollama compat: enabled — default model=%s, kb=%s, mapping=%s",
+            ollama_cfg.full_model_name,
+            ollama_cfg.default_kb,
+            ollama_cfg.model_mapping,
+        )
+    else:
+        logger.info("Ollama compat: disabled via config")
     return app
 
 
