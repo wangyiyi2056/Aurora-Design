@@ -15,6 +15,24 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         from pathlib import Path
 
+        # Configure application-level logging so RAG diagnostics are visible
+        import logging as _logging_mod
+        import sys as _sys
+        _log_level_str = os.getenv("AURORA_LOG_LEVEL", "INFO").upper()
+        _level = getattr(_logging_mod, _log_level_str, _logging_mod.INFO)
+        _handler = _logging_mod.StreamHandler(_sys.stderr)
+        _handler.setFormatter(_logging_mod.Formatter(
+            "%(levelname)s %(name)s: %(message)s"))
+        for _pkg in ("aurora_serve", "aurora_ext", "aurora_core"):
+            _pkg_logger = _logging_mod.getLogger(_pkg)
+            _pkg_logger.setLevel(_level)
+            _pkg_logger.addHandler(_handler)
+            _pkg_logger.propagate = False
+        _logging_mod.getLogger("aurora_ext").info(
+            "DIAG: aurora_ext logger initialised OK")
+        _logging_mod.getLogger("aurora_serve").info(
+            "DIAG: logging setup complete, level=%s", _level)
+
         from aurora_core.component import SystemApp
         from aurora_core.config.settings import Settings
         from aurora_core.model.adapter.anthropic_adapter import AnthropicLLM
@@ -81,7 +99,8 @@ def create_app() -> FastAPI:
                     api_key=api_key,
                     api_base=cfg.get("api_base"),
                 )
-                registry.register_embeddings("openai", OpenAIEmbeddings(emb_config))
+                registry.register_embeddings(
+                    "openai", OpenAIEmbeddings(emb_config))
             elif model_type == "anthropic":
                 api_key = cfg.get("api_key") or os.getenv("ANTHROPIC_API_KEY")
                 if not api_key:
@@ -91,9 +110,11 @@ def create_app() -> FastAPI:
                     )
                     continue
                 llm_config = LLMConfig(**cfg)
-                registry.register_llm(cfg["model_name"], AnthropicLLM(llm_config))
+                registry.register_llm(
+                    cfg["model_name"], AnthropicLLM(llm_config))
             elif model_type == "azure_openai":
-                api_key = cfg.get("api_key") or os.getenv("AZURE_OPENAI_API_KEY")
+                api_key = cfg.get("api_key") or os.getenv(
+                    "AZURE_OPENAI_API_KEY")
                 if not api_key:
                     logger.warning(
                         "Skipping LLM '%s': AZURE_OPENAI_API_KEY not set",
@@ -101,12 +122,15 @@ def create_app() -> FastAPI:
                     )
                     continue
                 llm_config = LLMConfig(**cfg)
-                registry.register_llm(cfg["model_name"], AzureOpenAILLM(llm_config))
+                registry.register_llm(
+                    cfg["model_name"], AzureOpenAILLM(llm_config))
                 emb_config = LLMConfig(
-                    model_name=cfg.get("embedding_model", "text-embedding-3-small"),
+                    model_name=cfg.get("embedding_model",
+                                       "text-embedding-3-small"),
                     model_type="azure_openai",
                     api_key=api_key,
-                    api_base=cfg.get("api_base") or os.getenv("AZURE_OPENAI_ENDPOINT"),
+                    api_base=cfg.get("api_base") or os.getenv(
+                        "AZURE_OPENAI_ENDPOINT"),
                     extra=cfg.get("extra", {}),
                 )
                 registry.register_embeddings(
@@ -119,21 +143,25 @@ def create_app() -> FastAPI:
                 emb_config = LLMConfig(
                     model_name=emb_model,
                     model_type="ollama",
-                    api_base=cfg.get("api_base") or os.getenv("OLLAMA_BASE_URL"),
+                    api_base=cfg.get("api_base") or os.getenv(
+                        "OLLAMA_BASE_URL"),
                 )
-                registry.register_embeddings("ollama", OllamaEmbeddings(emb_config))
+                registry.register_embeddings(
+                    "ollama", OllamaEmbeddings(emb_config))
         app.state.model_registry = registry
 
         # Log summary of registered models
         llm_count = len(registry._llms) if hasattr(registry, "_llms") else 0
-        emb_count = len(registry._embeddings) if hasattr(registry, "_embeddings") else 0
+        emb_count = len(registry._embeddings) if hasattr(
+            registry, "_embeddings") else 0
         if llm_count == 0:
             logger.error(
                 "❌ No LLM models registered! Knowledge base ingestion and querying will fail. "
                 "Please set OPENAI_API_KEY environment variable."
             )
         else:
-            logger.info("✅ Registered %d LLM(s) and %d embedding provider(s)", llm_count, emb_count)
+            logger.info(
+                "✅ Registered %d LLM(s) and %d embedding provider(s)", llm_count, emb_count)
 
         model_config_service = ModelConfigService(metadata_store, registry)
         model_config_service.on_init()  # Load saved models into registry immediately
@@ -160,7 +188,8 @@ def create_app() -> FastAPI:
         system_app.register_instance(datasource_service)
         app.state.datasource_service = datasource_service
 
-        default_ds = settings.default_datasource if hasattr(settings, "default_datasource") else ""
+        default_ds = settings.default_datasource if hasattr(
+            settings, "default_datasource") else ""
 
         skill_service = SkillService(datasource_service, registry, default_ds)
         system_app.register_instance(skill_service)
@@ -193,7 +222,8 @@ def create_app() -> FastAPI:
             kv_storage=JsonKVStorage("rag_kv", _rag_config),
             vector_storage=ChromaVectorStorage("rag_vectors", _rag_config),
             graph_storage=NetworkXGraphStorage("rag_graph", _rag_config),
-            doc_status_storage=JsonDocStatusStorage("rag_doc_status", _rag_config),
+            doc_status_storage=JsonDocStatusStorage(
+                "rag_doc_status", _rag_config),
             working_dir=_rag_dir,
             input_dir=str(storage_dir() / "uploads" / "knowledge"),
             role_configs=settings.llm_roles,
@@ -245,11 +275,13 @@ def create_app() -> FastAPI:
             session_base_path=str(storage_dir() / "sessions"),
             datasource_service=datasource_service,
             knowledge_service=knowledge_service,
+            knowledge_v2_service=knowledge_v2_service,
             design_skill_service=design_skill_service,
             design_system_service=design_system_service,
             prompt_template_service=prompt_service,
         )
-        system_app.register_instance(app.state.chat_service, name="chat_service")
+        system_app.register_instance(
+            app.state.chat_service, name="chat_service")
 
         system_app.on_init()
         system_app.after_init()

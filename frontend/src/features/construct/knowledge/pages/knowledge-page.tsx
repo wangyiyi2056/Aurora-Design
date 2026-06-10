@@ -87,7 +87,7 @@ export default function KnowledgePage() {
               />
               <input type="file" ref={fileRef} className="text-sm" />
               <Button onClick={handleUpload} disabled={upload.isPending}>
-                {upload.isPending ? "Uploading..." : t("knowledge.upload")}
+                {upload.isPending ? t("knowledge.v2.doc.uploading") : t("knowledge.upload")}
               </Button>
             </div>
 
@@ -100,7 +100,7 @@ export default function KnowledgePage() {
               ))}
               {items.length === 0 && !isLoading && (
                 <div className="text-muted-foreground text-sm text-center py-8">
-                  {t("agent.empty") || "暂无知识库"}
+                  {t("agent.empty") || t("knowledge.v2.list.noKbs")}
                 </div>
               )}
             </div>
@@ -129,7 +129,7 @@ export default function KnowledgePage() {
                 onChange={(e) => setQuery(e.target.value)}
               />
               <Button onClick={handleAsk} disabled={asker.isPending}>
-                {asker.isPending ? "Querying..." : t("knowledge.ask")}
+                {asker.isPending ? t("knowledge.ask") + "..." : t("knowledge.ask")}
               </Button>
             </div>
             {result !== null && (

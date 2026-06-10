@@ -210,6 +210,34 @@ npm run e2e     # Playwright E2E 测试
 uv run pytest tests/ -v
 ```
 
+## Docker 部署
+
+### 快速启动
+
+```bash
+cp .env.example .env
+# 在 .env 中添加你的 OPENAI_API_KEY
+
+docker compose up -d --build
+```
+
+应用访问地址：**http://localhost:8080**
+
+### 完整栈（PostgreSQL + Neo4j + Milvus + Redis）
+
+```bash
+docker compose -f docker-compose.full.yml up -d --build
+```
+
+### 健康检查
+
+```bash
+curl http://localhost:8080/api/v1/health
+# {"status":"ok"}
+```
+
+详见 [docs/deployment/docker.md](docs/deployment/docker.md) 获取完整的部署指南、镜像变体和生产环境配置。
+
 ## 实现阶段
 
 - [x] Phase 1：基础骨架 — 模型抽象 + 对话服务

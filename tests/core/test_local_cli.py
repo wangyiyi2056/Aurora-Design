@@ -17,6 +17,9 @@ def test_build_codex_args_uses_stdin_without_dash_sentinel():
     args = build_agent_args("codex", model="gpt-5-codex", reasoning="minimal", cwd="/tmp/work")
 
     assert args[:2] == ["exec", "--json"]
+    assert "--ignore-user-config" not in args
+    assert "--ignore-rules" in args
+    assert "--ephemeral" in args
     assert "-C" in args
     assert "/tmp/work" in args
     assert "--model" in args
@@ -51,12 +54,22 @@ def test_clamp_codex_reasoning_matches_late_gpt5_family():
 
 
 def test_collapse_messages_for_cli_appends_open_design_artifact_handoff():
-    prompt = collapse_messages_for_cli([Message(role="user", content="帮我生成一个登录页面")])
+    prompt = collapse_messages_for_cli(
+        [Message(role="user", content="帮我生成一个登录页面")],
+        include_artifact_handoff=True,
+    )
 
     assert "## user\n帮我生成一个登录页面" in prompt
     assert "## Artifact handoff" in prompt
     assert '<artifact identifier="kebab-slug" type="text/html" title="Human title">' in prompt
     assert "Do not use Write, Edit, MultiEdit, or Bash to create the fresh artifact file" in prompt
+
+
+def test_collapse_messages_for_cli_omits_artifact_handoff_by_default():
+    prompt = collapse_messages_for_cli([Message(role="user", content="配方模板是什么")])
+
+    assert "## user\n配方模板是什么" in prompt
+    assert "## Artifact handoff" not in prompt
 
 
 def test_claude_stream_parser_matches_open_design_tool_result_events():

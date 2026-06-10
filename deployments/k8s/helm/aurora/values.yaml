@@ -1,0 +1,222 @@
+# ──────────────────────────────────────────────────────────────────────
+# Aurora Helm Chart — Default Values
+#
+# Override per environment:
+#   helm install aurora ./helm/aurora -f helm/aurora/values-prod.yaml
+# ──────────────────────────────────────────────────────────────────────
+
+# ── Global ───────────────────────────────────────────────────────────
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: "standard"
+
+# ── Aurora Application ──────────────────────────────────────────────
+image:
+  repository: aurora
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 80
+  backendPort: 8888
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  hosts:
+    - host: aurora.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: aurora-tls
+  #    hosts:
+  #      - aurora.example.com
+
+# ── Autoscaling ──────────────────────────────────────────────────────
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# ── Resources ────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+# ── Application Configuration ────────────────────────────────────────
+app:
+  port: 8888
+  logLevel: info
+  environment: production
+
+# ── Environment Variables ────────────────────────────────────────────
+env: []
+  # - name: CUSTOM_VAR
+  #   value: "custom-value"
+
+# ── Secrets ──────────────────────────────────────────────────────────
+secrets:
+  openaiApiKey: ""
+  anthropicApiKey: ""
+  postgresPassword: "aurora_secret"
+  neo4jPassword: "aurora_neo4j"
+
+# ── External secrets (use existing Secret resource) ──────────────────
+externalSecrets:
+  enabled: false
+  name: ""
+
+# ── Persistence ──────────────────────────────────────────────────────
+persistence:
+  data:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+  uploads:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 20Gi
+
+# ── PostgreSQL ───────────────────────────────────────────────────────
+postgresql:
+  enabled: true
+  image: postgres:16-alpine
+  replicas: 1
+  storage:
+    size: 20Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  config:
+    maxConnections: 200
+    sharedBuffers: 256MB
+
+# ── Redis ────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  image: redis:7-alpine
+  replicas: 1
+  storage:
+    size: 5Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  maxmemory: 512mb
+  maxmemoryPolicy: allkeys-lru
+
+# ── Neo4j ────────────────────────────────────────────────────────────
+neo4j:
+  enabled: true
+  image: neo4j:5-community
+  replicas: 1
+  storage:
+    size: 20Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  heap:
+    initialSize: 256m
+    maxSize: 512m
+    pageCacheSize: 256m
+
+# ── Milvus ───────────────────────────────────────────────────────────
+milvus:
+  enabled: true
+  image: milvusdb/milvus:v2.4.17
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.16
+    storage:
+      size: 5Gi
+  minio:
+    image: minio/minio:RELEASE.2024-04-18T19-09-19Z
+    storage:
+      size: 20Gi
+  storage:
+    size: 30Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+# ── Health Checks ────────────────────────────────────────────────────
+probes:
+  liveness:
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  startup:
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    failureThreshold: 12
+
+# ── Pod Disruption Budget ────────────────────────────────────────────
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# ── Service Account ──────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# ── Pod Security ─────────────────────────────────────────────────────
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+
+securityContext:
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# ── Node Selection ───────────────────────────────────────────────────
+nodeSelector: {}
+tolerations: []
+affinity: {}

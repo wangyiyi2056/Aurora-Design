@@ -187,6 +187,7 @@ class MilvusVectorStorage(BaseVectorStorage):
         query_text: str,
         top_k: int,
         cosine_threshold: float = 0.0,
+        where: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         self._ensure_collection()
         assert self._collection is not None
@@ -239,6 +240,11 @@ class MilvusVectorStorage(BaseVectorStorage):
 
                 out.append(record)
 
+        if where:
+            out = [
+                r for r in out
+                if all(r.get(k) == v for k, v in where.items())
+            ]
         return out
 
     async def delete(self, ids: list[str]) -> None:

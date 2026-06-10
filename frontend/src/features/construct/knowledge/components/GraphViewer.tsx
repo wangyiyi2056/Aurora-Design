@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 // import { MiniMap } from '@react-sigma/minimap'
 import { SigmaContainer, useRegisterEvents, useSigma } from '@react-sigma/core'
 import { Settings as SigmaSettings } from 'sigma/settings'
@@ -20,6 +21,9 @@ import PropertiesView from '@/features/construct/knowledge/components/graph/Prop
 import SettingsDisplay from '@/features/construct/knowledge/components/graph/SettingsDisplay'
 import Legend from '@/features/construct/knowledge/components/graph/Legend'
 import LegendButton from '@/features/construct/knowledge/components/graph/LegendButton'
+import NodeExpansionControl from '@/features/construct/knowledge/components/graph/NodeExpansionControl'
+import PathFinder from '@/features/construct/knowledge/components/graph/PathFinder'
+import SubgraphFilter from '@/features/construct/knowledge/components/graph/SubgraphFilter'
 
 import { useSettingsStore } from '@/features/construct/knowledge/stores/settings'
 import { useGraphStore } from '@/features/construct/knowledge/stores/graph'
@@ -110,6 +114,7 @@ const GraphEvents = () => {
 }
 
 const GraphViewer = ({ knowledgeName }: { knowledgeName: string }) => {
+  const { t } = useTranslation()
   useLightragGraph(knowledgeName)
   const sigmaRef = useRef<any>(null)
   const prevTheme = useRef<string>('')
@@ -118,6 +123,7 @@ const GraphViewer = ({ knowledgeName }: { knowledgeName: string }) => {
   const focusedNode = useGraphStore.use.focusedNode()
   const moveToSelectedNode = useGraphStore.use.moveToSelectedNode()
   const isFetching = useGraphStore.use.isFetching()
+  const rawGraph = useGraphStore.use.rawGraph()
 
   const showPropertyPanel = useSettingsStore.use.showPropertyPanel()
   const showNodeSearchBar = useSettingsStore.use.showNodeSearchBar()
@@ -199,14 +205,12 @@ const GraphViewer = ({ knowledgeName }: { knowledgeName: string }) => {
     [selectedNode]
   )
 
+  const nodeCount = rawGraph?.nodes.length ?? 0
+  const edgeCount = rawGraph?.edges.length ?? 0
+
   // Always render SigmaContainer but control its visibility with CSS
-  const rawGraphNodeCount = useGraphStore.getState().rawGraph?.nodes?.length ?? 0;
-  const isGraphEmpty = useGraphStore.use.graphIsEmpty();
   return (
     <div className="relative h-full w-full overflow-hidden">
-      <div className="absolute top-2 left-1/2 transform -translate-x-1/2 bg-red-500 text-white z-50 p-2 rounded text-xs font-bold font-mono">
-        DEBUG: Nodes = {rawGraphNodeCount} | IsEmpty = {isGraphEmpty ? 'YES' : 'NO'} | Label = {useSettingsStore.getState().queryLabel}
-      </div>
       <SigmaContainer
         settings={memoizedSigmaSettings}
         className="!bg-background !size-full overflow-hidden"
@@ -218,8 +222,23 @@ const GraphViewer = ({ knowledgeName }: { knowledgeName: string }) => {
 
         <FocusOnNode node={autoFocusedNode} move={moveToSelectedNode} />
 
+        {/* Graph stats — bottom right */}
+        {nodeCount > 0 && (
+          <div className="absolute bottom-2 right-2 z-10 flex items-center gap-3 rounded-lg border bg-background/70 px-3 py-1.5 text-xs font-medium backdrop-blur-lg">
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2 w-2 rounded-full bg-blue-500" />
+              {nodeCount} {t('graphPanel.entities', '实体')}
+            </span>
+            <span className="text-muted-foreground">|</span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2 w-2 rounded-full bg-orange-500" />
+              {edgeCount} {t('graphPanel.edges', '边')}
+            </span>
+          </div>
+        )}
+
         <div className="absolute top-2 left-2 flex items-start gap-2">
-          <GraphLabels />
+          <GraphLabels knowledgeName={knowledgeName} />
           {showNodeSearchBar && !isThemeSwitching && (
             <GraphSearch
               value={searchInitSelectedNode}
@@ -229,23 +248,26 @@ const GraphViewer = ({ knowledgeName }: { knowledgeName: string }) => {
           )}
         </div>
 
-        <div className="bg-background/60 absolute bottom-2 left-2 flex flex-col rounded-xl border-2 backdrop-blur-lg">
+        <div className="bg-background/60 absolute bottom-2 left-2 flex w-10 flex-col items-center rounded-xl border-2 backdrop-blur-lg [&>button]:h-10 [&>button]:w-10 [&>button]:p-0 [&_svg]:h-4 [&_svg]:w-4">
           <LayoutsControl />
           <ZoomControl />
           <FullScreenControl />
+          <NodeExpansionControl />
+          <PathFinder />
+          <SubgraphFilter />
           <LegendButton />
           <Settings />
           {/* <ThemeToggle /> */}
         </div>
 
         {showPropertyPanel && (
-          <div className="absolute top-2 right-2 z-10">
+          <div className="absolute top-2 right-2 z-10 max-w-[300px]">
             <PropertiesView />
           </div>
         )}
 
         {showLegend && (
-          <div className="absolute bottom-10 right-2 z-0">
+          <div className="absolute bottom-10 right-2 z-10">
             <Legend className="bg-background/60 backdrop-blur-lg" />
           </div>
         )}
@@ -262,7 +284,7 @@ const GraphViewer = ({ knowledgeName }: { knowledgeName: string }) => {
         <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
           <div className="text-center">
             <div className="mb-2 h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto"></div>
-            <p>{isThemeSwitching ? 'Switching Theme...' : 'Loading Graph Data...'}</p>
+            <p>{isThemeSwitching ? t('graphPanel.switchingTheme', 'Switching Theme...') : t('graphPanel.loadingGraphData', 'Loading Graph Data...')}</p>
           </div>
         </div>
       )}

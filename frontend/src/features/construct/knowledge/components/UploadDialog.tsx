@@ -8,6 +8,7 @@ import {
   Loader2,
   CloudUpload,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -54,6 +55,7 @@ function extractErrorMessage(err: unknown): string {
 /* ── Component ───────────────────────────────────────────────────────────────── */
 
 export function UploadDialog({ open, onOpenChange, knowledgeName }: UploadDialogProps) {
+  const { t } = useTranslation("construct")
   const [isDragging, setIsDragging] = useState(false)
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -221,10 +223,10 @@ export function UploadDialog({ open, onOpenChange, knowledgeName }: UploadDialog
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CloudUpload className="h-5 w-5 text-primary" />
-            上传文件到知识库
+            {t("knowledge.v2.doc.uploadDoc")}
           </DialogTitle>
           <DialogDescription>
-            拖拽文件或点击选择，上传后台自动处理，无需等待。
+            {t("knowledge.v2.doc.uploadDesc")}
           </DialogDescription>
         </DialogHeader>
 
@@ -264,10 +266,10 @@ export function UploadDialog({ open, onOpenChange, knowledgeName }: UploadDialog
               </div>
               <div className="text-center">
                 <p className="text-sm font-medium text-foreground">
-                  {isDragging ? "松开以上传文件" : "拖拽文件到此处"}
+                  {isDragging ? t("knowledge.v2.doc.releaseToUpload") : t("knowledge.v2.doc.dragFilesHere")}
                 </p>
                 <p className="text-xs mt-0.5 text-muted-foreground">
-                  或点击选择文件 · 支持多文件 · 上传即处理
+                  {t("knowledge.v2.doc.clickOrDragHint")}
                 </p>
               </div>
             </div>
@@ -288,8 +290,8 @@ export function UploadDialog({ open, onOpenChange, knowledgeName }: UploadDialog
               {/* 继续添加提示 */}
               <p className="pt-1 text-center text-xs text-muted-foreground pointer-events-none">
                 {isUploading
-                  ? `上传中 ${successCount + errorCount}/${fileEntries.length}…`
-                  : "点击或拖拽继续添加文件"}
+                  ? `${t("knowledge.v2.doc.uploading")} ${successCount + errorCount}/${fileEntries.length}…`
+                  : t("knowledge.v2.doc.continueAdd")}
               </p>
             </div>
           )}
@@ -309,7 +311,7 @@ export function UploadDialog({ open, onOpenChange, knowledgeName }: UploadDialog
               <>
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
                 <span>
-                  {successCount} 个文件上传完成，后台正在分析处理，窗口即将关闭…
+                  {successCount} {t("knowledge.v2.doc.uploadSuccessClose")}
                 </span>
               </>
             ) : (
@@ -317,9 +319,9 @@ export function UploadDialog({ open, onOpenChange, knowledgeName }: UploadDialog
                 <AlertTriangle className="h-4 w-4 shrink-0" />
                 <div className="flex-1">
                   {successCount > 0 && (
-                    <span className="mr-2">{successCount} 个成功。</span>
+                    <span className="mr-2">{successCount} {t("knowledge.v2.doc.uploadSuccessText")}</span>
                   )}
-                  <span>{errorCount} 个上传失败，请重试或移除后关闭。</span>
+                  <span>{errorCount} {t("knowledge.v2.doc.uploadFailedRetry")}</span>
                 </div>
               </>
             )}
@@ -330,7 +332,7 @@ export function UploadDialog({ open, onOpenChange, knowledgeName }: UploadDialog
         {allDone && !allSuccess && (
           <div className="flex justify-end">
             <Button variant="outline" onClick={() => handleOpenChange(false)}>
-              关闭
+              {t("common.close")}
             </Button>
           </div>
         )}
@@ -350,6 +352,7 @@ function FileRow({
   onRemove: (id: string) => void
   onRetry: (id: string) => void
 }) {
+  const { t } = useTranslation("construct")
   const { id, file, status, error } = entry
 
   return (
@@ -385,11 +388,11 @@ function FileRow({
           </span>
         </div>
         {status === "uploading" && (
-          <p className="text-[11px] text-primary/60 mt-0.5">正在上传…</p>
+          <p className="text-[11px] text-primary/60 mt-0.5">{t("knowledge.v2.doc.uploading")}…</p>
         )}
         {status === "success" && (
           <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5">
-            已提交，后台处理中
+            {t("knowledge.v2.doc.submittedProcessing")}
           </p>
         )}
         {status === "error" && error && (
@@ -408,9 +411,9 @@ function FileRow({
               e.stopPropagation()
               onRetry(id)
             }}
-            title="重试"
+            title={t("knowledge.v2.doc.retry")}
           >
-            重试
+            {t("knowledge.v2.doc.retry")}
           </button>
           <button
             className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
@@ -418,7 +421,7 @@ function FileRow({
               e.stopPropagation()
               onRemove(id)
             }}
-            title="移除"
+            title={t("knowledge.v2.doc.remove")}
           >
             <X className="h-3.5 w-3.5" />
           </button>

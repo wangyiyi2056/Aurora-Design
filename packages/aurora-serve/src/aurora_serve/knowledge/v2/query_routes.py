@@ -88,13 +88,15 @@ async def query_stream(
         try:
             result = await service.query(**_build_query_kwargs(name, req, stream=True))
 
+            references = result.get("references")
             stream_iter = result.get("stream_iterator")
             if stream_iter is None:
-                yield json.dumps({"response": result.get("response", "")}) + "\n"
+                payload = {"response": result.get("response", "")}
+                if references:
+                    payload["references"] = references
+                yield json.dumps(payload) + "\n"
                 return
 
-            # First line: references (if available)
-            references = result.get("references")
             if references:
                 yield json.dumps({"references": references}) + "\n"
 
@@ -124,7 +126,10 @@ async def query_data(
 ) -> QueryDataResponse:
     """Execute a structured data retrieval query (entities, relationships, chunks)."""
     try:
-        result = await service.query(**_build_query_kwargs(name, req, stream=False))
+        kwargs = _build_query_kwargs(name, req, stream=False)
+        kwargs["only_need_context"] = True
+        kwargs["only_need_prompt"] = False
+        result = await service.query(**kwargs)
         return QueryDataResponse(
             status="success",
             message="Data retrieved",
@@ -158,6 +163,34 @@ async def get_token_stats(
     stats = service.get_token_stats(name)
     stats["kb_name"] = name
     return stats
+
+
+@router.post("/backfill-kind")
+async def backfill_kind(
+    name: str,
+    service: Any = Depends(get_knowledge_v2_service),
+) -> dict[str, Any]:
+    """Backfill ``kind`` metadata for vectors that were ingested without it."""
+    try:
+        result = await service.backfill_kind_metadata()
+        return {"kb_name": name, **result}
+    except Exception as exc:
+        logger.exception("Backfill failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/cleanup-orphans")
+async def cleanup_orphans(
+    name: str,
+    service: Any = Depends(get_knowledge_v2_service),
+) -> dict[str, Any]:
+    """Remove orphaned graph nodes/edges whose source chunks no longer exist."""
+    try:
+        result = await service.cleanup_orphan_graph_nodes(name)
+        return {"kb_name": name, **result}
+    except Exception as exc:
+        logger.exception("Cleanup orphans failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/token-stats/reset")

@@ -244,3 +244,28 @@ default_kb = "default"
 "aurora" = "default"
 # "aurora-code" = "code_kb"
 # "aurora-docs" = "docs_kb"
+
+# ── Langfuse Observability Configuration ──
+#
+# Automatic tracing of LLM calls, embeddings, KG extraction, RAG
+# queries, and reranker operations via the Langfuse platform.
+#
+# When enabled, install the optional dependency:
+#   pip install aurora-ext[langfuse]
+#
+# All settings can be overridden via environment variables:
+#   LANGFUSE_ENABLED, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY,
+#   LANGFUSE_HOST, LANGFUSE_DEBUG, LANGFUSE_PROJECT_NAME,
+#   LANGFUSE_RELEASE, LANGFUSE_FLUSH_INTERVAL, LANGFUSE_SAMPLE_RATE
+#
+# [langfuse]
+# enabled = false  # Master toggle — default disabled
+# public_key = "pk-lf-xxx"
+# secret_key = "sk-lf-xxx"
+# host = "https://cloud.langfuse.com"  # Or self-hosted URL
+# project_name = "Aurora RAG"
+# release = ""  # Git SHA or version tag
+# debug = false  # Enable Langfuse SDK debug logging
+# flush_interval = 1.0  # Async upload queue flush interval (seconds)
+# sample_rate = 1.0  # 0.0–1.0, fraction of traces to upload
+# default_tags = ["aurora", "rag"]  # Tags applied to every trace

@@ -147,6 +147,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
         query_text: str,
         top_k: int,
         cosine_threshold: float = 0.0,
+        where: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         if self._embedding_func is None:
             logger.warning("No embedding function; cannot perform vector query")
@@ -190,6 +191,11 @@ class FaissVectorDBStorage(BaseVectorStorage):
             record.update(entry.get("metadata", {}))
             out.append(record)
 
+        if where:
+            out = [
+                r for r in out
+                if all(r.get(k) == v for k, v in where.items())
+            ]
         return out
 
     async def delete(self, ids: list[str]) -> None:

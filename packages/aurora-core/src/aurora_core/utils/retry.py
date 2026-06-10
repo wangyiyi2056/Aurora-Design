@@ -22,8 +22,25 @@ def _is_transient(exc: Exception) -> bool:
     if isinstance(exc, TRANSIENT_EXCEPTIONS):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
-        return 500 <= exc.response.status_code < 600
+        status = exc.response.status_code
+        # 429 Too Many Requests should be retried with backoff
+        if status == 429:
+            return True
+        return 500 <= status < 600
     return False
+
+
+def _get_retry_after(exc: Exception) -> float | None:
+    """Extract Retry-After header value from a 429 response."""
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        retry_after = exc.response.headers.get(
+            "Retry-After") or exc.response.headers.get("retry-after")
+        if retry_after:
+            try:
+                return float(retry_after)
+            except (ValueError, TypeError):
+                pass
+    return None
 
 
 def retry_on_transient(
@@ -44,7 +61,12 @@ def retry_on_transient(
                     if not _is_transient(e) or attempt == max_retries:
                         raise
                     last_exc = e
-                    delay = min(base_delay * (2**attempt), max_delay)
+                    # For 429, prefer the server's Retry-After header
+                    retry_after = _get_retry_after(e)
+                    if retry_after is not None:
+                        delay = min(retry_after, max_delay)
+                    else:
+                        delay = min(base_delay * (2 ** attempt), max_delay)
                     logger.warning(
                         "Retry %d/%d for %s after %.1fs: %s",
                         attempt + 1,
@@ -68,7 +90,11 @@ def retry_on_transient(
                     if not _is_transient(e) or attempt == max_retries:
                         raise
                     last_exc = e
-                    delay = min(base_delay * (2**attempt), max_delay)
+                    retry_after = _get_retry_after(e)
+                    if retry_after is not None:
+                        delay = min(retry_after, max_delay)
+                    else:
+                        delay = min(base_delay * (2 ** attempt), max_delay)
                     logger.warning(
                         "Retry %d/%d for %s after %.1fs: %s",
                         attempt + 1,

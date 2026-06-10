@@ -139,6 +139,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
         query_text: str,
         top_k: int,
         cosine_threshold: float = 0.0,
+        where: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         await self._ensure_index()
 
@@ -182,6 +183,11 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                 record.update(metadata)
             out.append(record)
 
+        if where:
+            out = [
+                r for r in out
+                if all(r.get(k) == v for k, v in where.items())
+            ]
         return out
 
     async def delete(self, ids: list[str]) -> None:

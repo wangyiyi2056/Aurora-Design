@@ -57,14 +57,41 @@ class FakeLLM(BaseLLM):
 class FakeVectorStorage(BaseVectorStorage):
     """In-memory vector storage stub."""
 
-    def __init__(self, results: list[dict] | None = None) -> None:
+    def __init__(
+        self, results: list[dict] | None = None, *, supports_where_prefilter: bool = False
+    ) -> None:
         super().__init__(namespace="test", global_config={})
         self._results = results or []
+        self._supports_where_prefilter = supports_where_prefilter
+        self.queries: list[dict[str, Any]] = []
 
     async def query(
-        self, query: str, top_k: int, cosine_threshold: float = 0.0
+        self,
+        query: str,
+        top_k: int,
+        cosine_threshold: float = 0.0,
+        where: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
-        return self._results[:top_k]
+        self.queries.append({
+            "query": query,
+            "top_k": top_k,
+            "cosine_threshold": cosine_threshold,
+            "where": where,
+        })
+        results = self._results
+        if where and self._supports_where_prefilter:
+            results = [
+                r for r in results
+                if all(r.get(k) == v for k, v in where.items())
+            ]
+        results = [r for r in results if r.get(
+            "score", 1.0) >= cosine_threshold][:top_k]
+        if where and not self._supports_where_prefilter:
+            results = [
+                r for r in results
+                if all(r.get(k) == v for k, v in where.items())
+            ]
+        return results
 
     async def upsert(self, data: dict) -> None:
         pass
@@ -412,8 +439,10 @@ class TestNaiveMode:
     @pytest.mark.asyncio
     async def test_naive_uses_vector_only(self):
         vector_results = [
-            {"id": "chunk-1", "content": "Python is great", "file_path": "a.md", "score": 0.9},
-            {"id": "chunk-2", "content": "FastAPI is modern", "file_path": "b.md", "score": 0.8},
+            {"id": "chunk-1", "content": "Python is great",
+                "file_path": "a.md", "score": 0.9},
+            {"id": "chunk-2", "content": "FastAPI is modern",
+                "file_path": "b.md", "score": 0.8},
         ]
         engine = _build_engine(vector_results=vector_results)
         param = QueryParam(
@@ -434,7 +463,8 @@ class TestNaiveMode:
     async def test_naive_no_keyword_extraction(self):
         engine = _build_engine(vector_results=[])
         engine._keyword_extractor = MagicMock()  # Should not be called
-        param = QueryParam(query="test", mode=QueryMode.NAIVE, only_need_context=True)
+        param = QueryParam(query="test", mode=QueryMode.NAIVE,
+                           only_need_context=True)
 
         await engine.query(param)
 
@@ -443,7 +473,8 @@ class TestNaiveMode:
     @pytest.mark.asyncio
     async def test_naive_empty_results(self):
         engine = _build_engine(vector_results=[])
-        param = QueryParam(query="nothing", mode=QueryMode.NAIVE, only_need_context=True)
+        param = QueryParam(
+            query="nothing", mode=QueryMode.NAIVE, only_need_context=True)
 
         result = await engine.query(param)
 
@@ -555,7 +586,8 @@ class TestLocalMode:
 
         result = await engine.query(param)
 
-        mock_extractor.extract.assert_awaited_once_with(param.query)
+        mock_extractor.extract.assert_awaited_once_with(
+            param.query, language="English")
         assert result.hl_keywords == ["Programming"]
         assert result.ll_keywords == ["Python"]
 
@@ -783,7 +815,8 @@ class TestKeywordExtraction:
         )
 
         await engine.query(param)
-        mock_extractor.extract.assert_awaited_once_with("Python programming")
+        mock_extractor.extract.assert_awaited_once_with(
+            "Python programming", language="English")
 
     @pytest.mark.asyncio
     async def test_keywords_not_extracted_for_naive(self):
@@ -908,7 +941,8 @@ class TestOutputModes:
     @pytest.mark.asyncio
     async def test_only_need_context(self):
         vector_results = [
-            {"id": "chunk-1", "content": "Hello", "file_path": "a.md", "score": 0.9},
+            {"id": "chunk-1", "content": "Hello",
+                "file_path": "a.md", "score": 0.9},
         ]
         engine = _build_engine(vector_results=vector_results)
         param = QueryParam(
@@ -925,7 +959,8 @@ class TestOutputModes:
     @pytest.mark.asyncio
     async def test_only_need_prompt(self):
         vector_results = [
-            {"id": "chunk-1", "content": "Hello", "file_path": "a.md", "score": 0.9},
+            {"id": "chunk-1", "content": "Hello",
+                "file_path": "a.md", "score": 0.9},
         ]
         engine = _build_engine(vector_results=vector_results)
         param = QueryParam(
@@ -947,7 +982,8 @@ class TestOutputModes:
 class TestDedupHelpers:
     def test_merge_dedup_entities(self):
         a = [{"entity_name": "Python", "desc": "lang"}]
-        b = [{"entity_name": "Python", "desc": "language"}, {"entity_name": "FastAPI"}]
+        b = [{"entity_name": "Python", "desc": "language"},
+             {"entity_name": "FastAPI"}]
         result = QueryEngine._merge_dedup_entities(a, b)
         names = [e["entity_name"] for e in result]
         assert names == ["Python", "FastAPI"]
@@ -963,7 +999,8 @@ class TestDedupHelpers:
 
     def test_merge_dedup_chunks(self):
         a = [{"chunk_id": "c1", "content": "hello"}]
-        b = [{"chunk_id": "c1", "content": "hello"}, {"chunk_id": "c2", "content": "world"}]
+        b = [{"chunk_id": "c1", "content": "hello"},
+             {"chunk_id": "c2", "content": "world"}]
         result = QueryEngine._merge_dedup_chunks(a, b)
         assert len(result) == 2
 
@@ -1045,9 +1082,11 @@ class TestStreaming:
     @pytest.mark.asyncio
     async def test_stream_returns_iterator(self):
         vector_results = [
-            {"id": "chunk-1", "content": "Hello", "file_path": "a.md", "score": 0.9},
+            {"id": "chunk-1", "content": "Hello",
+                "file_path": "a.md", "score": 0.9},
         ]
-        engine = _build_engine(vector_results=vector_results, llm_response="hello world")
+        engine = _build_engine(
+            vector_results=vector_results, llm_response="hello world")
         param = QueryParam(
             query="test",
             mode=QueryMode.NAIVE,
@@ -1140,3 +1179,384 @@ class TestFullPipeline:
 
             result = await engine.query(param)
             assert result.response, f"Mode {mode.value} returned empty response"
+
+
+class TestKnowledgeBaseScoping:
+    @pytest.mark.asyncio
+    async def test_naive_filters_vector_results_to_current_knowledge_base(self):
+        engine = _build_engine(
+            vector_results=[
+                {
+                    "id": "kb-other:chunk:doc:0",
+                    "content": "unrelated result from another KB",
+                    "file_path": "other.md",
+                    "score": 0.99,
+                },
+                {
+                    "id": "kb-current:chunk:doc:0",
+                    "content": "current KB result",
+                    "file_path": "current.md",
+                    "score": 0.8,
+                },
+            ]
+        )
+        param = QueryParam(
+            query="shared query",
+            mode=QueryMode.NAIVE,
+            kb_name="kb-current",
+            only_need_context=True,
+        )
+
+        result = await engine.query(param)
+
+        assert [c["chunk_id"]
+                for c in result.chunks] == ["kb-current:chunk:doc:0"]
+        assert result.chunks[0]["content"] == "current KB result"
+
+    @pytest.mark.asyncio
+    async def test_local_graph_label_search_is_scoped_to_current_knowledge_base(self):
+        nodes = {
+            "kb-current:FastAPI": {
+                "entity_name": "FastAPI",
+                "entity_type": "Artifact",
+                "description": "Current KB FastAPI",
+                "source_id": "kb-current:text_chunks:doc:0",
+            },
+            "kb-other:FastAPI": {
+                "entity_name": "FastAPI",
+                "entity_type": "Artifact",
+                "description": "Other KB FastAPI",
+                "source_id": "kb-other:text_chunks:doc:0",
+            },
+        }
+        chunks = {
+            "kb-current:text_chunks:doc:0": {
+                "content": "Current KB chunk",
+                "file_path": "current.md",
+                "id": "kb-current:text_chunks:doc:0",
+            },
+            "kb-other:text_chunks:doc:0": {
+                "content": "Other KB chunk",
+                "file_path": "other.md",
+                "id": "kb-other:text_chunks:doc:0",
+            },
+        }
+        engine = _build_engine(nodes=nodes, edges={},
+                               chunks=chunks, vector_results=[])
+        param = QueryParam(
+            query="FastAPI",
+            mode=QueryMode.LOCAL,
+            kb_name="kb-current",
+            ll_keywords=["FastAPI"],
+            only_need_context=True,
+        )
+
+        result = await engine.query(param)
+
+        assert [e["description"]
+                for e in result.entities] == ["Current KB FastAPI"]
+        assert [c["content"] for c in result.chunks] == ["Current KB chunk"]
+
+    @pytest.mark.asyncio
+    async def test_naive_overfetches_before_filtering_to_current_knowledge_base(self):
+        engine = _build_engine(
+            vector_results=[
+                {
+                    "id": "kb-other:chunk:doc:0",
+                    "content": "higher ranked other KB result",
+                    "file_path": "other.md",
+                    "score": 0.99,
+                },
+                {
+                    "id": "kb-current:chunk:doc:0",
+                    "content": "lower ranked current KB result",
+                    "file_path": "current.md",
+                    "score": 0.8,
+                },
+            ]
+        )
+        param = QueryParam(
+            query="shared query",
+            mode=QueryMode.NAIVE,
+            kb_name="kb-current",
+            chunk_top_k=1,
+            only_need_context=True,
+        )
+
+        result = await engine.query(param)
+
+        assert [c["chunk_id"]
+                for c in result.chunks] == ["kb-current:chunk:doc:0"]
+
+    @pytest.mark.asyncio
+    async def test_local_overfetches_labels_before_filtering_to_current_knowledge_base(self):
+        nodes = {
+            "kb-other:FastAPI": {
+                "entity_name": "FastAPI",
+                "entity_type": "Artifact",
+                "description": "Other KB FastAPI",
+                "source_id": "kb-other:text_chunks:doc:0",
+            },
+            "kb-current:FastAPI": {
+                "entity_name": "FastAPI",
+                "entity_type": "Artifact",
+                "description": "Current KB FastAPI",
+                "source_id": "kb-current:text_chunks:doc:0",
+            },
+        }
+        chunks = {
+            "kb-current:text_chunks:doc:0": {
+                "content": "Current KB chunk",
+                "file_path": "current.md",
+                "id": "kb-current:text_chunks:doc:0",
+            },
+            "kb-other:text_chunks:doc:0": {
+                "content": "Other KB chunk",
+                "file_path": "other.md",
+                "id": "kb-other:text_chunks:doc:0",
+            },
+        }
+        engine = _build_engine(nodes=nodes, edges={},
+                               chunks=chunks, vector_results=[])
+        param = QueryParam(
+            query="FastAPI",
+            mode=QueryMode.LOCAL,
+            kb_name="kb-current",
+            top_k=1,
+            ll_keywords=["FastAPI"],
+            only_need_context=True,
+        )
+
+        result = await engine.query(param)
+
+        assert [e["description"]
+                for e in result.entities] == ["Current KB FastAPI"]
+
+    @pytest.mark.asyncio
+    async def test_mix_does_not_treat_entity_vectors_as_naive_chunks(self):
+        nodes = {
+            "kb:配方模板功能": {
+                "entity_name": "配方模板功能",
+                "entity_type": "concept",
+                "description": "提供可复用的配方参数骨架",
+                "source_id": "kb:text_chunks:formula:0",
+            },
+            "kb:Workflow": {
+                "entity_name": "Workflow",
+                "entity_type": "concept",
+                "description": "企业业务流程编排",
+                "source_id": "kb:text_chunks:workflow:0",
+            },
+        }
+        chunks = {
+            "kb:text_chunks:formula:0": {
+                "content": "配方模板提供可复用的配方参数骨架。",
+                "file_path": "配方模板.txt",
+                "id": "kb:text_chunks:formula:0",
+            },
+            "kb:text_chunks:workflow:0": {
+                "content": "Workflow 用于复杂业务流程编排。",
+                "file_path": "workflow.txt",
+                "id": "kb:text_chunks:workflow:0",
+            },
+        }
+        vector_results = [
+            {
+                "id": "kb:配方模板功能",
+                "entity_name": "配方模板功能",
+                "entity_type": "concept",
+                "description": "提供可复用的配方参数骨架",
+                "kind": "entity",
+                "score": 0.95,
+            },
+            {
+                "id": "kb:Workflow",
+                "entity_name": "Workflow",
+                "entity_type": "concept",
+                "description": "企业业务流程编排",
+                "kind": "entity",
+                "score": 0.90,
+            },
+            {
+                "id": "kb:text_chunks:formula:0",
+                "content": "配方模板提供可复用的配方参数骨架。",
+                "file_path": "配方模板.txt",
+                "kind": "chunk",
+                "score": 0.80,
+            },
+            {
+                "id": "kb:text_chunks:workflow:0",
+                "content": "Workflow 用于复杂业务流程编排。",
+                "file_path": "workflow.txt",
+                "kind": "chunk",
+                "score": 0.70,
+            },
+        ]
+        engine = _build_engine(
+            nodes=nodes,
+            edges={},
+            chunks=chunks,
+            vector_results=vector_results,
+        )
+        param = QueryParam(
+            query="配方模板是什么",
+            mode=QueryMode.MIX,
+            kb_name="kb",
+            ll_keywords=["配方模板"],
+            chunk_top_k=10,
+            only_need_context=True,
+        )
+
+        result = await engine.query(param)
+
+        # KG path should only resolve 配方模板 entity's chunk
+        # Naive path may return both chunks (broad vector similarity).
+        # The key guarantee: no entity vectors leak into the chunk list.
+        file_paths = {c["file_path"] for c in result.chunks}
+        assert "配方模板.txt" in file_paths
+        # Entity vectors must NOT appear as chunks
+        for c in result.chunks:
+            assert "entity_name" not in c, f"Entity vector leaked into chunks: {c}"
+
+
+class TestVectorKindFiltering:
+    @pytest.mark.asyncio
+    async def test_naive_filters_vector_kind_before_top_k_is_applied(self):
+        vector_results = [
+            {
+                "id": f"kb:entity:{i}",
+                "entity_name": f"Entity {i}",
+                "description": "entity result",
+                "kind": "entity",
+                "score": 0.99,
+            }
+            for i in range(120)
+        ] + [
+            {
+                "id": "kb:chunk:doc:0",
+                "content": "Relevant chunk after many entity vectors",
+                "file_path": "relevant.md",
+                "kind": "chunk",
+                "score": 0.8,
+            }
+        ]
+        vector = FakeVectorStorage(
+            vector_results, supports_where_prefilter=True)
+        engine = _build_engine(vector_results=[])
+        engine._vector = vector
+        param = QueryParam(
+            query="Relevant",
+            mode=QueryMode.NAIVE,
+            kb_name="kb",
+            chunk_top_k=1,
+            only_need_context=True,
+        )
+
+        result = await engine.query(param)
+
+        assert [c["chunk_id"] for c in result.chunks] == ["kb:chunk:doc:0"]
+        assert any(q["where"] == {"kind": "chunk"} for q in vector.queries)
+
+    @pytest.mark.asyncio
+    async def test_local_filters_entity_kind_before_top_k_is_applied(self):
+        nodes = {
+            "kb:配方模板": {
+                "entity_name": "配方模板",
+                "entity_type": "concept",
+                "description": "模板",
+                "source_id": "kb:text_chunks:doc:0",
+            }
+        }
+        chunks = {
+            "kb:text_chunks:doc:0": {
+                "content": "配方模板内容",
+                "file_path": "配方模板.txt",
+                "id": "kb:text_chunks:doc:0",
+            }
+        }
+        vector_results = [
+            {
+                "id": f"kb:chunk:other:{i}",
+                "content": "chunk noise",
+                "file_path": "noise.md",
+                "kind": "chunk",
+                "score": 0.99,
+            }
+            for i in range(120)
+        ] + [
+            {
+                "id": "kb:配方模板",
+                "entity_name": "配方模板",
+                "description": "模板",
+                "kind": "entity",
+                "score": 0.8,
+            }
+        ]
+        vector = FakeVectorStorage(
+            vector_results, supports_where_prefilter=True)
+        engine = _build_engine(nodes=nodes, edges={},
+                               chunks=chunks, vector_results=[])
+        engine._vector = vector
+        param = QueryParam(
+            query="配方模板",
+            mode=QueryMode.LOCAL,
+            kb_name="kb",
+            top_k=1,
+            only_need_context=True,
+        )
+
+        result = await engine.query(param)
+
+        assert [e["entity_name"] for e in result.entities] == ["配方模板"]
+        assert any(q["where"] == {"kind": "entity"} for q in vector.queries)
+
+    @pytest.mark.asyncio
+    async def test_mix_deduplicates_vector_chunk_against_kg_text_chunk(self):
+        nodes = {
+            "kb:配方模板": {
+                "entity_name": "配方模板",
+                "entity_type": "concept",
+                "description": "模板",
+                "source_id": "kb:text_chunks:doc:0",
+            }
+        }
+        chunks = {
+            "kb:text_chunks:doc:0": {
+                "content": "配方模板内容",
+                "file_path": "配方模板.txt",
+                "id": "kb:text_chunks:doc:0",
+            }
+        }
+        vector_results = [
+            {
+                "id": "kb:chunk:doc:0",
+                "content": "配方模板内容",
+                "file_path": "配方模板.txt",
+                "kind": "chunk",
+                "score": 0.8,
+            },
+            {
+                "id": "kb:配方模板",
+                "entity_name": "配方模板",
+                "description": "模板",
+                "kind": "entity",
+                "score": 0.9,
+            },
+        ]
+        engine = _build_engine(
+            nodes=nodes, edges={}, chunks=chunks, vector_results=vector_results
+        )
+        param = QueryParam(
+            query="配方模板是什么",
+            mode=QueryMode.MIX,
+            kb_name="kb",
+            ll_keywords=["配方模板"],
+            chunk_top_k=10,
+            only_need_context=True,
+        )
+
+        result = await engine.query(param)
+
+        assert [c["chunk_id"]
+                for c in result.chunks] == ["kb:text_chunks:doc:0"]
+        assert [r["file_path"] for r in result.references] == ["配方模板.txt"]

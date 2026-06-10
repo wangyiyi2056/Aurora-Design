@@ -17,9 +17,9 @@ const Legend: React.FC<LegendProps> = ({ className }) => {
   }
 
   return (
-    <Card className={`absolute bottom-4 left-4 z-50 flex flex-col pointer-events-auto ${className}`}>
-      <div className="flex-1 overflow-y-auto w-32 p-1">
-        <h3 className="text-sm font-medium mb-2">{t('graphPanel.legend')}</h3>
+    <Card className={`p-2 max-w-xs ${className}`}>
+      <h3 className="text-sm font-medium mb-2">{t('graphPanel.legend')}</h3>
+      <div className="max-h-80 overflow-y-auto">
         <div className="flex flex-col gap-1">
           {Array.from(typeColorMap.entries()).map(([type, color]) => (
             <div key={type} className="flex items-center gap-2">

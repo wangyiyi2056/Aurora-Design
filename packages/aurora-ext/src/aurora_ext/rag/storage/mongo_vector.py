@@ -99,6 +99,7 @@ class MongoVectorDBStorage(BaseVectorStorage):
         query_text: str,
         top_k: int,
         cosine_threshold: float = 0.0,
+        where: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         if self._embedding_func is None:
             logger.warning("No embedding function; cannot perform vector query")
@@ -107,16 +108,18 @@ class MongoVectorDBStorage(BaseVectorStorage):
         vec = await self._embedding_func([query_text], is_query=True)
         query_vec = vec[0].tolist() if hasattr(vec[0], "tolist") else list(vec[0])
 
+        vector_search: dict[str, Any] = {
+            "index": self._vector_search_index,
+            "path": "embedding",
+            "queryVector": [float(x) for x in query_vec],
+            "numCandidates": top_k * 10,
+            "limit": top_k,
+        }
+        if where:
+            vector_search["filter"] = {f"metadata.{k}": v for k, v in where.items()}
+
         pipeline = [
-            {
-                "$vectorSearch": {
-                    "index": self._vector_search_index,
-                    "path": "embedding",
-                    "queryVector": [float(x) for x in query_vec],
-                    "numCandidates": top_k * 10,
-                    "limit": top_k,
-                }
-            },
+            {"$vectorSearch": vector_search},
             {
                 "$project": {
                     "_id": 1,
@@ -143,6 +146,11 @@ class MongoVectorDBStorage(BaseVectorStorage):
                 record.update(metadata)
             out.append(record)
 
+        if where:
+            out = [
+                r for r in out
+                if all(r.get(k) == v for k, v in where.items())
+            ]
         return out
 
     async def delete(self, ids: list[str]) -> None:

@@ -1,0 +1,86 @@
+# ──────────────────────────────────────────────
+# Version control
+# ──────────────────────────────────────────────
+.git
+.gitattributes
+
+# ──────────────────────────────────────────────
+# Python
+# ──────────────────────────────────────────────
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.venv
+.env
+*.egg-info
+.pytest_cache
+.ruff_cache
+.coverage
+.coverage.*
+htmlcov
+.mypy_cache
+
+# ──────────────────────────────────────────────
+# Node / Frontend
+# ──────────────────────────────────────────────
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/dist-electron
+frontend/test-results
+frontend/playwright-report
+.playwright-cli
+
+# ──────────────────────────────────────────────
+# IDEs and editor files
+# ──────────────────────────────────────────────
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+.claude
+.kiro
+.aurora
+.gstack
+
+# ──────────────────────────────────────────────
+# Data, uploads, and runtime artifacts
+# ──────────────────────────────────────────────
+data
+uploads
+scratch
+packages/aurora-serve/uploads
+
+# ──────────────────────────────────────────────
+# Documentation (not needed in image)
+# ──────────────────────────────────────────────
+design-skills
+design-systems
+specs
+
+# ──────────────────────────────────────────────
+# Test files
+# ──────────────────────────────────────────────
+tests
+test_*.py
+*.test.ts
+*.test.tsx
+e2e
+frontend/tests
+frontend/e2e
+
+# ──────────────────────────────────────────────
+# Docker
+# ──────────────────────────────────────────────
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# ──────────────────────────────────────────────
+# CI / misc
+# ──────────────────────────────────────────────
+tasks
+*.log

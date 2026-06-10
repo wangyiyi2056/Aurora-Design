@@ -52,7 +52,7 @@ const PropertiesView = () => {
     return <></>
   }
   return (
-    <div className="bg-background/80 max-w-xs rounded-lg border-2 p-2 text-xs backdrop-blur-lg">
+    <div className="bg-background/80 w-[300px] max-w-[300px] overflow-hidden rounded-lg border-2 p-2 text-xs backdrop-blur-lg">
       {currentType == 'node' ? (
         <NodePropertiesView node={currentElement as any} />
       ) : (
@@ -208,7 +208,7 @@ const PropertyRow = ({
 
   // If this is source_id field and truncate info exists, append it to the tooltip
   if (name === 'source_id' && truncate) {
-    formattedTooltip += `\n(Truncated: ${truncate})`
+    formattedTooltip += `\n(已截断: ${truncate})`
   }
 
   // Use EditablePropertyRow for editable fields (description, entity_id and entity_type)
@@ -233,19 +233,18 @@ const PropertyRow = ({
 
   // For non-editable fields, use the regular Text component
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-primary/60 tracking-wide whitespace-nowrap">
+    <div className="flex items-center gap-2 overflow-hidden">
+      <span className="text-primary/60 tracking-wide whitespace-nowrap shrink-0">
         {getPropertyNameTranslation(name)}
         {name === 'source_id' && truncate && <sup className="text-red-500">†</sup>}
-      </span>:
+      </span><span className="shrink-0">:</span>
       <span
-        className="hover:bg-primary/20 rounded p-1 overflow-hidden text-ellipsis"
-        tooltipClassName="max-w-96 -translate-x-13"
-        text={formattedValue}
-        
-        side="left"
+        className="hover:bg-primary/20 rounded p-1 truncate flex-1 min-w-0"
+        title={formattedTooltip}
         onClick={onClick}
-      />
+      >
+        {formattedValue}
+      </span>
     </div>
   )
 }
@@ -286,7 +285,7 @@ const NodePropertiesView = ({ node }: { node: NodeType }) => {
           </Button>
         </div>
       </div>
-      <div className="bg-primary/5 max-h-96 overflow-auto rounded p-1">
+      <div className="bg-primary/5 rounded p-1">
         <PropertyRow name={t('graphPanel.propertiesView.node.id')} value={String(node.id)} />
         <PropertyRow
           name={t('graphPanel.propertiesView.node.labels')}
@@ -298,7 +297,7 @@ const NodePropertiesView = ({ node }: { node: NodeType }) => {
         <PropertyRow name={t('graphPanel.propertiesView.node.degree')} value={node.degree} />
       </div>
       <h3 className="text-md pl-1 font-bold tracking-wide text-amber-700">{t('graphPanel.propertiesView.node.properties')}</h3>
-      <div className="bg-primary/5 max-h-96 overflow-auto rounded p-1">
+      <div className="bg-primary/5 rounded p-1">
         {Object.keys(node.properties)
           .sort()
           .map((name) => {
@@ -322,7 +321,7 @@ const NodePropertiesView = ({ node }: { node: NodeType }) => {
           <h3 className="text-md pl-1 font-bold tracking-wide text-emerald-700">
             {t('graphPanel.propertiesView.node.relationships')}
           </h3>
-          <div className="bg-primary/5 max-h-96 overflow-auto rounded p-1">
+          <div className="bg-primary/5 max-h-[220px] overflow-y-auto scrollbar-visible rounded p-1">
             {node.relationships.map(({ type, id, label }) => {
               return (
                 <PropertyRow
@@ -347,7 +346,7 @@ const EdgePropertiesView = ({ edge }: { edge: EdgeType }) => {
   return (
     <div className="flex flex-col gap-2">
       <h3 className="text-md pl-1 font-bold tracking-wide text-violet-700">{t('graphPanel.propertiesView.edge.title')}</h3>
-      <div className="bg-primary/5 max-h-96 overflow-auto rounded p-1">
+      <div className="bg-primary/5 rounded p-1">
         <PropertyRow name={t('graphPanel.propertiesView.edge.id')} value={edge.id} />
         {edge.type && <PropertyRow name={t('graphPanel.propertiesView.edge.type')} value={edge.type} />}
         <PropertyRow
@@ -366,7 +365,7 @@ const EdgePropertiesView = ({ edge }: { edge: EdgeType }) => {
         />
       </div>
       <h3 className="text-md pl-1 font-bold tracking-wide text-amber-700">{t('graphPanel.propertiesView.edge.properties')}</h3>
-      <div className="bg-primary/5 max-h-96 overflow-auto rounded p-1">
+      <div className="bg-primary/5 rounded p-1">
         {Object.keys(edge.properties)
           .sort()
           .map((name) => {

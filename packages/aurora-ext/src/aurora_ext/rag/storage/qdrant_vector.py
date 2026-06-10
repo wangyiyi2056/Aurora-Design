@@ -140,6 +140,7 @@ class QdrantVectorDBStorage(BaseVectorStorage):
         query_text: str,
         top_k: int,
         cosine_threshold: float = 0.0,
+        where: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         await self._ensure_collection()
 
@@ -150,11 +151,23 @@ class QdrantVectorDBStorage(BaseVectorStorage):
         vec = await self._embedding_func([query_text], is_query=True)
         query_vec = vec[0].tolist() if hasattr(vec[0], "tolist") else list(vec[0])
 
+        query_filter = None
+        if where:
+            from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+            query_filter = Filter(
+                must=[
+                    FieldCondition(key=k, match=MatchValue(value=v))
+                    for k, v in where.items()
+                ]
+            )
+
         results = await self._client.search(
             collection_name=self._collection_name,
             query_vector=query_vec,
             limit=top_k,
             with_payload=True,
+            query_filter=query_filter,
         )
 
         out: list[dict[str, Any]] = []
@@ -174,6 +187,11 @@ class QdrantVectorDBStorage(BaseVectorStorage):
             record.update(payload)
             out.append(record)
 
+        if where:
+            out = [
+                r for r in out
+                if all(r.get(k) == v for k, v in where.items())
+            ]
         return out
 
     async def delete(self, ids: list[str]) -> None:

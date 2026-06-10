@@ -75,6 +75,7 @@ class QueryParam:
     """
 
     query: str
+    kb_name: Optional[str] = None
     mode: QueryMode = QueryMode.MIX
     only_need_context: bool = False
     only_need_prompt: bool = False
@@ -96,6 +97,7 @@ class QueryParam:
     stream: bool = False
     related_chunk_number: int = 5
     kg_chunk_pick_method: str = "VECTOR"
+    cosine_better_than_threshold: float = 0.2
     max_graph_nodes: int = 1000
 
 
@@ -149,7 +151,25 @@ class QueryEngine:
         # Extract keywords if not provided
         hl_kw, ll_kw = param.hl_keywords, param.ll_keywords
         if not hl_kw and not ll_kw and mode != QueryMode.NAIVE:
-            hl_kw, ll_kw = await self._keyword_extractor.extract(param.query)
+            hl_kw, ll_kw = await self._keyword_extractor.extract(
+                param.query, language=self._detect_language(param.query)
+            )
+            # Fallback: if extraction returned empty, use the raw query as
+            # low-level keyword (same strategy as LightRAG for short queries).
+            if not hl_kw and not ll_kw:
+                logger.warning(
+                    "Keyword extraction returned empty for query=%r, "
+                    "falling back to raw query as low-level keyword",
+                    param.query,
+                )
+                if len(param.query) < 100:
+                    ll_kw = [param.query]
+                # else: leave empty — naive path in MIX will still run
+
+        logger.info(
+            "[RAG query] mode=%s kb=%s hl_kw=%s ll_kw=%s",
+            mode.value, param.kb_name, hl_kw, ll_kw,
+        )
 
         # Route to appropriate retriever
         if mode == QueryMode.NAIVE:
@@ -166,7 +186,8 @@ class QueryEngine:
             ctx = await self._naive_retrieve(param)
 
         # Apply reranking if enabled (mix mode enables by default when reranker available)
-        should_rerank = param.enable_rerank or (mode == QueryMode.MIX and self._reranker)
+        should_rerank = param.enable_rerank or (
+            mode == QueryMode.MIX and self._reranker)
         if should_rerank and self._reranker and ctx.chunks:
             ctx = await self._apply_rerank(param, ctx)
 
@@ -253,6 +274,235 @@ class QueryEngine:
             })
         return CitationTracker.build(raw)
 
+    # ── Knowledge-base scoping helpers ─────────────────────────
+
+    @staticmethod
+    def _record_id(record: dict[str, Any]) -> str:
+        """Return the storage key-like identifier for a retrieved record."""
+        return str(record.get("id") or record.get("entity_name") or "")
+
+    @staticmethod
+    def _is_in_kb(record_id: str, kb_name: Optional[str]) -> bool:
+        """Return whether a storage key belongs to the active knowledge base.
+
+        V2 ingestion namespaces graph, KV, and vector keys as ``{kb_name}:...``.
+        QueryEngine is shared across all KBs, so retrieval must discard records
+        whose storage keys belong to a different KB.  When no KB is provided we
+        keep legacy behaviour and do not filter.
+        """
+        if not kb_name:
+            return True
+        return record_id.startswith(f"{kb_name}:")
+
+    def _filter_records_to_kb(
+        self, records: list[dict[str, Any]], kb_name: Optional[str]
+    ) -> list[dict[str, Any]]:
+        """Filter vector/graph search results to the active KB namespace."""
+        if not kb_name:
+            return records
+        return [r for r in records if self._is_in_kb(self._record_id(r), kb_name)]
+
+    @staticmethod
+    def _chunk_vector_to_text_chunk_id(record_id: str) -> str:
+        """Map vector chunk IDs to KV text chunk IDs for deduplication.
+
+        Aurora historically stored vector chunk IDs as ``kb:chunk:doc:i``
+        and KG/KV text chunk IDs as ``kb:text_chunks:doc:i``. LightRAG uses
+        a single chunk ID across both paths; normalize to that behavior.
+        """
+        return record_id.replace(":chunk:", ":text_chunks:", 1)
+
+    @staticmethod
+    def _canonical_chunk_id(chunk_id: str) -> str:
+        return QueryEngine._chunk_vector_to_text_chunk_id(str(chunk_id or ""))
+
+    async def _vector_query(
+        self,
+        query: str,
+        *,
+        top_k: int,
+        param: QueryParam,
+        kind: str,
+    ) -> list[dict[str, Any]]:
+        """Query vector storage with LightRAG-style namespace separation.
+
+        LightRAG uses separate VDBs for chunks/entities/relationships. Aurora
+        keeps one physical vector storage, so ``kind`` is a metadata partition
+        that must be applied by storage before top-k selection when supported.
+        """
+        try:
+            results = await self._vector.query(
+                query,
+                top_k=top_k,
+                cosine_threshold=param.cosine_better_than_threshold,
+                where={"kind": kind},
+            )
+            if results:
+                logger.debug(
+                    "[vector_query] kind=%s query=%r top_k=%d threshold=%.2f "
+                    "filtered_results=%d",
+                    kind, query[:60], top_k, param.cosine_better_than_threshold,
+                    len(results),
+                )
+                return results
+
+            # Filtered query returned empty — check if data was ingested
+            # WITHOUT the `kind` metadata field (pre-migration data).
+            # If so, fall back to unfiltered query + post-filtering by shape.
+            legacy_results = await self._vector.query(
+                query,
+                top_k=max(top_k * 3, 50),
+                cosine_threshold=param.cosine_better_than_threshold,
+            )
+            if not legacy_results:
+                return []
+
+            # Count how many legacy records actually have `kind` metadata
+            with_kind = sum(1 for r in legacy_results if "kind" in r)
+            without_kind = len(legacy_results) - with_kind
+
+            if without_kind == 0:
+                # All records have kind — filtered empty is genuine
+                logger.debug(
+                    "[vector_query] kind=%s filtered empty but all %d legacy "
+                    "records have kind metadata — genuinely no match",
+                    kind, len(legacy_results),
+                )
+                return []
+
+            # Some or all records lack `kind` — apply post-filtering by shape
+            logger.info(
+                "[vector_query] kind=%s LEGACY FALLBACK: %d/%d records lack "
+                "'kind' metadata. Applying shape-based post-filter.",
+                kind, without_kind, len(legacy_results),
+            )
+
+            if kind == "entity":
+                return [
+                    r for r in legacy_results
+                    if self._is_entity_vector_record(r)
+                ][:top_k]
+            elif kind == "relation":
+                return [
+                    r for r in legacy_results
+                    if self._is_relation_vector_record(r)
+                ][:top_k]
+            elif kind == "chunk":
+                return [
+                    r for r in legacy_results
+                    if self._is_chunk_vector_record(r)
+                ][:top_k]
+            else:
+                return legacy_results[:top_k]
+
+        except TypeError:
+            # Backward-compatible tests/custom storages that have not adopted
+            # the optional metadata filter yet.
+            return await self._vector.query(
+                query,
+                top_k=top_k,
+                cosine_threshold=param.cosine_better_than_threshold,
+            )
+        except Exception as exc:
+            error_msg = str(exc).lower()
+            if "dimension" in error_msg or "embedding" in error_msg:
+                logger.error(
+                    "[vector_query] EMBEDDING MISMATCH for kind=%s: %s. "
+                    "Check that the embedding provider (e.g. Ollama) is "
+                    "running and the same model is active.",
+                    kind, exc,
+                )
+            else:
+                logger.warning(
+                    "[vector_query] Storage error for kind=%s: %s",
+                    kind, exc,
+                )
+            return []
+
+    @staticmethod
+    def _is_chunk_vector_record(record: dict[str, Any]) -> bool:
+        """Return whether a shared vector hit represents a source text chunk."""
+        record_id = str(record.get("id") or "")
+        if ":text_chunks:" in record_id or ":chunk:" in record_id:
+            return True
+        if record_id.startswith("chunk-"):
+            return True
+        return (
+            ("full_doc_id" in record or "chunk_order_index" in record)
+            and "entity_name" not in record
+            and "source_entity" not in record
+            and "src_id" not in record
+        )
+
+    @staticmethod
+    def _is_entity_vector_record(record: dict[str, Any]) -> bool:
+        """Return whether a shared vector hit represents an entity embedding."""
+        if QueryEngine._is_chunk_vector_record(record):
+            return False
+        if record.get("source_entity") or record.get("src_id"):
+            return False
+        return bool(record.get("entity_name") or record.get("entity_type") or record.get("description"))
+
+    @staticmethod
+    def _is_relation_vector_record(record: dict[str, Any]) -> bool:
+        """Return whether a shared vector hit represents a relationship embedding."""
+        return bool(
+            (record.get("source_entity") or record.get("src_id"))
+            and (record.get("target_entity") or record.get("tgt_id"))
+        )
+
+    @staticmethod
+    def _clean_label_query(query: str) -> str:
+        """Strip common question wrappers before graph label lookup."""
+        cleaned = query.strip()
+        for token in ("是什么", "是啥", "什么意思", "什么是", "请问", "？", "?", "。"):
+            cleaned = cleaned.replace(token, "")
+        return cleaned.strip()
+
+    @staticmethod
+    def _detect_language(text: str) -> str:
+        """Detect the primary language of a query string.
+
+        Returns an English language name suitable for the keyword
+        extraction prompt. Falls back to ``"English"`` if uncertain.
+        """
+        # Count CJK characters vs Latin characters
+        cjk_count = 0
+        latin_count = 0
+        for ch in text:
+            cp = ord(ch)
+            if (
+                0x4E00 <= cp <= 0x9FFF        # CJK Unified Ideographs
+                or 0x3400 <= cp <= 0x4DBF      # CJK Extension A
+                or 0x3040 <= cp <= 0x309F      # Hiragana
+                or 0x30A0 <= cp <= 0x30FF      # Katakana
+                or 0xAC00 <= cp <= 0xD7AF      # Hangul
+            ):
+                cjk_count += 1
+            elif ch.isalpha():
+                latin_count += 1
+
+        if cjk_count > latin_count:
+            # Distinguish Chinese / Japanese / Korean
+            has_hiragana = any(0x3040 <= ord(c) <= 0x309F for c in text)
+            has_katakana = any(0x30A0 <= ord(c) <= 0x30FF for c in text)
+            has_hangul = any(0xAC00 <= ord(c) <= 0xD7AF for c in text)
+            if has_hangul:
+                return "Korean"
+            if has_hiragana or has_katakana:
+                return "Japanese"
+            return "Chinese"
+        if latin_count > 0:
+            return "English"
+        return "English"
+
+    @staticmethod
+    def _scoped_search_limit(requested: int, kb_name: Optional[str]) -> int:
+        """Over-fetch shared indexes before applying a KB namespace filter."""
+        if not kb_name:
+            return requested
+        return max(requested * 20, 100)
+
     # ── Bypass mode ──────────────────────────────────────────────
 
     async def _bypass_query(self, param: QueryParam) -> QueryResult:
@@ -275,10 +525,15 @@ class QueryEngine:
         self, param: QueryParam
     ) -> QueryContext:
         """Pure vector similarity search on chunks — no KG."""
-        results = await self._vector.query(
+        results = await self._vector_query(
             param.query,
-            top_k=param.chunk_top_k,
+            top_k=self._scoped_search_limit(param.chunk_top_k, param.kb_name),
+            param=param,
+            kind="chunk",
         )
+        results = [r for r in results if self._is_chunk_vector_record(r)]
+        results = self._filter_records_to_kb(results, param.kb_name)[
+            :param.chunk_top_k]
 
         chunks = [
             {
@@ -297,6 +552,11 @@ class QueryEngine:
             max_chunk_tokens=param.max_chunk_tokens,
         )
         chunks = budget.truncate_chunks(chunks)
+
+        logger.info(
+            "[naive_retrieve] chunk_hits=%d final_chunks=%d query=%r",
+            len(results), len(chunks), param.query[:60],
+        )
 
         return self._context_builder.build(
             entities=[],
@@ -326,50 +586,64 @@ class QueryEngine:
         entity_query = " ".join(ll_kw) if ll_kw else param.query
 
         # Path 1: Vector similarity search on entity embeddings
-        vector_results = await self._vector.query(
+        vector_results = await self._vector_query(
             entity_query,
-            top_k=param.top_k,
+            top_k=self._scoped_search_limit(param.top_k, param.kb_name),
+            param=param,
+            kind="entity",
         )
+        vector_results = [
+            r for r in vector_results if self._is_entity_vector_record(r)]
+        vector_results = self._filter_records_to_kb(
+            vector_results, param.kb_name)[:param.top_k]
 
         # Path 2: Graph label fuzzy search (fast, exact-ish match)
         label_matches: list[str] = []
+        label_query = self._clean_label_query(entity_query) or entity_query
         try:
             label_matches = await self._graph.search_labels(
-                entity_query, limit=param.top_k
+                label_query, limit=self._scoped_search_limit(
+                    param.top_k, param.kb_name)
             )
+            if param.kb_name:
+                label_matches = [
+                    label
+                    for label in label_matches
+                    if self._is_in_kb(str(label), param.kb_name)
+                ][:param.top_k]
         except Exception as exc:
             logger.debug("Graph label search unavailable: %s", exc)
 
-        # Merge entity names from both paths, preserving order
-        seen_names: set[str] = set()
-        merged_entity_ids: list[str] = []
-
-        for r in vector_results:
-            name = r.get("id", r.get("entity_name", ""))
-            if name and name not in seen_names:
-                seen_names.add(name)
-                merged_entity_ids.append(name)
-
-        for label in label_matches:
-            if label not in seen_names:
-                seen_names.add(label)
-                merged_entity_ids.append(label)
-
-        # Build synthetic result dicts for graph-label-only matches
+        # Build seed entities.  Exact/fuzzy graph-label hits are stronger
+        # anchors than broad semantic vector hits for concrete "what is X"
+        # questions, so prefer them when available.
         entity_results: list[dict[str, Any]] = []
-        for r in vector_results:
-            entity_results.append(r)
-
-        vector_ids = {
-            r.get("id", r.get("entity_name", "")) for r in vector_results
-        }
-        for label in label_matches:
-            if label not in vector_ids:
+        if label_matches:
+            label_set = set(label_matches)
+            for label in label_matches:
                 entity_results.append({"id": label, "entity_name": label})
+            for r in vector_results:
+                name = str(r.get("id") or r.get("entity_name") or "")
+                if name in label_set and not any(e.get("id") == name for e in entity_results):
+                    entity_results.append(r)
+        else:
+            seen_names: set[str] = set()
+            for r in vector_results:
+                name = r.get("id", r.get("entity_name", ""))
+                if name and name not in seen_names:
+                    seen_names.add(name)
+                    entity_results.append(r)
 
         # Expand from entities → edges → chunks (with neighbour BFS)
         entities, relationships, chunks = await self._expand_from_entities(
             entity_results, param
+        )
+
+        logger.info(
+            "[local_retrieve] vector_hits=%d label_hits=%d seed_entities=%d "
+            "expanded_entities=%d relations=%d chunks=%d query=%r",
+            len(vector_results), len(label_matches), len(entity_results),
+            len(entities), len(relationships), len(chunks), param.query[:60],
         )
 
         return self._finalize_context(param, entities, relationships, chunks, is_kg=True)
@@ -393,10 +667,16 @@ class QueryEngine:
         multiple entities connected by abstract relationships.
         """
         rel_query = " ".join(hl_kw) if hl_kw else param.query
-        rel_results = await self._vector.query(
+        rel_results = await self._vector_query(
             rel_query,
-            top_k=param.top_k,
+            top_k=self._scoped_search_limit(param.top_k, param.kb_name),
+            param=param,
+            kind="relation",
         )
+        rel_results = [
+            r for r in rel_results if self._is_relation_vector_record(r)]
+        rel_results = self._filter_records_to_kb(
+            rel_results, param.kb_name)[:param.top_k]
 
         # Sort by weight (descending) to prioritise significant relationships
         rel_results.sort(
@@ -406,6 +686,12 @@ class QueryEngine:
 
         entities, relationships, chunks = await self._expand_from_relations(
             rel_results, param
+        )
+
+        logger.info(
+            "[global_retrieve] rel_vector_hits=%d entities=%d relations=%d chunks=%d query=%r",
+            len(rel_results), len(entities), len(relationships), len(chunks),
+            param.query[:60],
         )
 
         return self._finalize_context(param, entities, relationships, chunks, is_kg=True)
@@ -429,7 +715,8 @@ class QueryEngine:
         )
 
         # Merge and deduplicate across both paths
-        entities = self._merge_dedup_entities(local_ctx.entities, global_ctx.entities)
+        entities = self._merge_dedup_entities(
+            local_ctx.entities, global_ctx.entities)
         relationships = self._merge_dedup_relations(
             local_ctx.relationships, global_ctx.relationships
         )
@@ -460,7 +747,16 @@ class QueryEngine:
 
         entities = hybrid_ctx.entities
         relationships = hybrid_ctx.relationships
-        chunks = self._merge_dedup_chunks(hybrid_ctx.chunks, naive_ctx.chunks)
+        chunks = self._merge_dedup_chunks_round_robin(
+            naive_ctx.chunks, hybrid_ctx.chunks)
+
+        logger.info(
+            "[mix_retrieve] hybrid_entities=%d hybrid_rels=%d hybrid_chunks=%d "
+            "naive_chunks=%d final_chunks=%d query=%r",
+            len(hybrid_ctx.entities), len(hybrid_ctx.relationships),
+            len(hybrid_ctx.chunks), len(naive_ctx.chunks), len(chunks),
+            param.query[:60],
+        )
 
         return self._finalize_context(param, entities, relationships, chunks, is_kg=True)
 
@@ -760,10 +1056,36 @@ class QueryEngine:
         seen: set[str] = set()
         result: list[dict] = []
         for c in a + b:
-            cid = c.get("chunk_id", c.get("id", ""))
+            cid = QueryEngine._canonical_chunk_id(
+                c.get("chunk_id", c.get("id", "")))
             if cid and cid not in seen:
                 seen.add(cid)
-                result.append(c)
+                normalized = dict(c)
+                normalized["chunk_id"] = cid
+                result.append(normalized)
+        return result
+
+    @staticmethod
+    def _merge_dedup_chunks_round_robin(*groups: list[dict]) -> list[dict]:
+        """Merge chunk groups like LightRAG's vector/entity/relation interleave."""
+        seen: set[str] = set()
+        result: list[dict] = []
+        max_len = max((len(group) for group in groups), default=0)
+
+        for i in range(max_len):
+            for group in groups:
+                if i >= len(group):
+                    continue
+                chunk = group[i]
+                cid = QueryEngine._canonical_chunk_id(
+                    chunk.get("chunk_id", chunk.get("id", ""))
+                )
+                if cid and cid not in seen:
+                    seen.add(cid)
+                    normalized = dict(chunk)
+                    normalized["chunk_id"] = cid
+                    result.append(normalized)
+
         return result
 
     # ── Reranking ────────────────────────────────────────────────
@@ -800,6 +1122,14 @@ class QueryEngine:
         self, param: QueryParam, ctx: QueryContext
     ) -> str:
         """Build the full response prompt with context."""
+        if not ctx.chunks and not ctx.entities:
+            logger.warning(
+                "[RAG] EMPTY CONTEXT for query=%r kb=%s mode=%s — "
+                "LLM will likely respond with 'not enough information'. "
+                "Check: (1) keyword extraction, (2) vector storage has data with "
+                "correct kind metadata, (3) graph nodes exist, (4) cosine threshold",
+                param.query, param.kb_name, param.mode.value,
+            )
         context_str = self._context_builder.format_context(ctx)
 
         if ctx.is_kg_mode:
@@ -834,7 +1164,8 @@ class QueryEngine:
 
     async def _generate(self, param: QueryParam, prompt: str) -> str:
         """Generate a complete response."""
-        messages = self._build_conversation_messages(param, system_prompt=prompt)
+        messages = self._build_conversation_messages(
+            param, system_prompt=prompt)
         output = await self._llm.achat(messages)
         return output.text
 
@@ -842,7 +1173,8 @@ class QueryEngine:
         self, param: QueryParam, prompt: str
     ) -> AsyncIterator[str]:
         """Stream a response chunk by chunk."""
-        messages = self._build_conversation_messages(param, system_prompt=prompt)
+        messages = self._build_conversation_messages(
+            param, system_prompt=prompt)
         async for chunk in self._llm.achat_stream(messages):
             if chunk.text:
                 yield chunk.text

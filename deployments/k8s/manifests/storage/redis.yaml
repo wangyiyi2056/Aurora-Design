@@ -1,0 +1,240 @@
+# ──────────────────────────────────────────────────────────────────────
+# Redis Deployment (Sentinel mode for HA)
+#
+# Architecture:
+#   - 3 Redis instances (1 primary + 2 replicas)
+#   - 3 Sentinel instances for automatic failover
+#
+# For production, consider using:
+#   - Cloud-managed Redis (ElastiCache, Memorystore, Azure Cache)
+#   - Redis Enterprise Operator
+# ──────────────────────────────────────────────────────────────────────
+
+# ── ConfigMap ────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aurora-redis-config
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora-redis
+    app.kubernetes.io/component: cache
+data:
+  redis.conf: |
+    appendonly yes
+    maxmemory 512mb
+    maxmemory-policy allkeys-lru
+    save 900 1
+    save 300 10
+    save 60 10000
+    tcp-keepalive 60
+    timeout 300
+
+  sentinel.conf: |
+    sentinel monitor aurora-redis-primary aurora-redis-0.aurora-redis-headless.aurora.svc.cluster.local 6379 2
+    sentinel down-after-milliseconds aurora-redis-primary 5000
+    sentinel failover-timeout aurora-redis-primary 60000
+    sentinel parallel-syncs aurora-redis-primary 1
+
+---
+# ── Headless Service (for StatefulSet DNS) ───────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: aurora-redis-headless
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora-redis
+    app.kubernetes.io/component: cache
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: aurora-redis
+    app.kubernetes.io/component: cache
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+---
+# ── Client-facing Service ────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: aurora-redis
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora-redis
+    app.kubernetes.io/component: cache
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: aurora-redis
+    app.kubernetes.io/component: cache
+    role: primary
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+---
+# ── Sentinel Service ─────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: aurora-redis-sentinel
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora-redis
+    app.kubernetes.io/component: cache
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: aurora-redis-sentinel
+    app.kubernetes.io/component: cache
+  ports:
+    - name: sentinel
+      port: 26379
+      targetPort: 26379
+
+---
+# ── Redis StatefulSet ────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: aurora-redis
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora-redis
+    app.kubernetes.io/component: cache
+spec:
+  serviceName: aurora-redis-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aurora-redis
+      app.kubernetes.io/component: cache
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aurora-redis
+        app.kubernetes.io/component: cache
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command:
+            - redis-server
+            - /etc/redis/redis.conf
+          ports:
+            - name: redis
+              containerPort: 6379
+
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+            - name: redis-config
+              mountPath: /etc/redis
+
+      volumes:
+        - name: redis-config
+          configMap:
+            name: aurora-redis-config
+
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 5Gi
+
+---
+# ── Sentinel Deployment ──────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aurora-redis-sentinel
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora-redis-sentinel
+    app.kubernetes.io/component: cache
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aurora-redis-sentinel
+      app.kubernetes.io/component: cache
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aurora-redis-sentinel
+        app.kubernetes.io/component: cache
+    spec:
+      containers:
+        - name: sentinel
+          image: redis:7-alpine
+          command:
+            - redis-sentinel
+            - /etc/redis/sentinel.conf
+          ports:
+            - name: sentinel
+              containerPort: 26379
+
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "-p", "26379", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "-p", "26379", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+          volumeMounts:
+            - name: sentinel-config
+              mountPath: /etc/redis
+
+      volumes:
+        - name: sentinel-config
+          configMap:
+            name: aurora-redis-config
+            items:
+              - key: sentinel.conf
+                path: sentinel.conf

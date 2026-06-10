@@ -56,7 +56,8 @@ class ChromaVectorStorage(BaseVectorStorage):
         for key, record in data.items():
             content = record.get("content", "")
             vector = record.get("__vector__")
-            meta = {k: v for k, v in record.items() if k not in ("content", "__vector__")}
+            meta = {k: v for k, v in record.items(
+            ) if k not in ("content", "__vector__")}
             documents.append(content)
             metadatas.append(meta)
             if vector is not None:
@@ -77,21 +78,49 @@ class ChromaVectorStorage(BaseVectorStorage):
         query_text: str,
         top_k: int,
         cosine_threshold: float = 0.0,
+        where: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         query_embedding = None
-        if self._embedding_func is not None:
-            import numpy as np
-
-            vec = await self._embedding_func([query_text], is_query=True)
-            query_embedding = vec[0].tolist()
+        has_embed = self._embedding_func is not None
+        if has_embed:
+            try:
+                vec = await self._embedding_func([query_text], is_query=True)
+                query_embedding = vec[0].tolist()
+                logger.debug(
+                    "[chroma_query] Embedding OK dim=%d collection=%s",
+                    len(query_embedding), self._collection_name,
+                )
+            except Exception as exc:
+                logger.error(
+                    "[chroma_query] EMBEDDING FAILED for collection=%s: %s. "
+                    "Will fall back to ChromaDB default embedding (may cause "
+                    "dimension mismatch). Check Ollama is running.",
+                    self._collection_name, exc,
+                )
+                has_embed = False
 
         kwargs: dict[str, Any] = {"n_results": top_k}
+        if where:
+            kwargs["where"] = where
         if query_embedding is not None:
             kwargs["query_embeddings"] = [query_embedding]
         else:
+            logger.warning(
+                "[chroma_query] No embedding func! Using ChromaDB default "
+                "embedding for collection=%s where=%s. Stored vectors may have "
+                "different dimensions.",
+                self._collection_name, where,
+            )
             kwargs["query_texts"] = [query_text]
 
-        results = self._collection.query(**kwargs)
+        try:
+            results = self._collection.query(**kwargs)
+        except Exception as exc:
+            logger.error(
+                "[chroma_query] ChromaDB query FAILED collection=%s where=%s: %s",
+                self._collection_name, where, exc,
+            )
+            return []
 
         out: list[dict[str, Any]] = []
         if results and results["ids"]:
@@ -111,6 +140,14 @@ class ChromaVectorStorage(BaseVectorStorage):
                     record.update(results["metadatas"][0][i])
                 out.append(record)
 
+        logger.info(
+            "[chroma_query] collection=%s where=%s has_embed=%s "
+            "raw_results=%d after_threshold=%.2f final=%d",
+            self._collection_name, where, has_embed,
+            len(results["ids"][0]) if results and results["ids"] else 0,
+            cosine_threshold, len(out),
+        )
+
         return out
 
     async def delete(self, ids: list[str]) -> None:
@@ -125,4 +162,5 @@ class ChromaVectorStorage(BaseVectorStorage):
                 metadata={"hnsw:space": "cosine"},
             )
         except Exception as exc:
-            logger.warning("Failed to drop collection %s: %s", self._collection_name, exc)
+            logger.warning("Failed to drop collection %s: %s",
+                           self._collection_name, exc)

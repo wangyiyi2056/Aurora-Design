@@ -43,6 +43,8 @@ def _session_message_to_dict(msg) -> dict:
         msg_dict["tool_calls"] = msg.tool_calls
     if msg.attachments:
         msg_dict["attachments"] = msg.attachments
+    if getattr(msg, "context_attachments", None):
+        msg_dict["context_attachments"] = msg.context_attachments
     return msg_dict
 
 
@@ -149,6 +151,7 @@ async def upsert_session_message(
             content=req.content,
             events=req.events,
             attachments=req.attachments,
+            context_attachments=req.context_attachments,
             tool_calls=req.tool_calls,
             tool_call_id=req.tool_call_id,
             tool_name=req.tool_name,

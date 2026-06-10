@@ -38,11 +38,18 @@ class OllamaEmbeddings(BaseEmbeddings):
 
     def __init__(self, config: LLMConfig) -> None:
         self.config = config
-        self.base_url = (
+        raw_url = (
             config.api_base
             or os.getenv("OLLAMA_BASE_URL")
             or DEFAULT_OLLAMA_BASE_URL
         ).rstrip("/")
+        # Strip /v1 suffix — Ollama's native API endpoints (/api/embed,
+        # /api/chat) live at the root, not under /v1.  Users often store
+        # the OpenAI-compatible base URL (http://host:11434/v1) which
+        # would result in an invalid /v1/api/embed path.
+        if raw_url.endswith("/v1"):
+            raw_url = raw_url[:-3]
+        self.base_url = raw_url
         self._timeout = float(config.extra.get("timeout", 120))
 
     async def aembed(self, texts: List[str]) -> List[List[float]]:

@@ -33,6 +33,7 @@ class PipelineStatus:
     failed_docs: int = 0
     pending_docs: int = 0
     parsing_count: int = 0
+    analyzing_count: int = 0
     processing_count: int = 0
     total_batches: int = 0
     current_batch: int = 0
@@ -54,6 +55,7 @@ class PipelineStatus:
             },
             "stages": {
                 "parsing": self.parsing_count,
+                "analyzing": self.analyzing_count,
                 "processing": self.processing_count,
             },
             "batches": {
@@ -115,12 +117,14 @@ class PipelineManager:
         failed: int = 0,
         current_batch: int = 0,
         parsing_delta: int = 0,
+        analyzing_delta: int = 0,
         processing_delta: int = 0,
     ) -> None:
         """Update pipeline progress."""
         self._status.processed_docs += processed
         self._status.failed_docs += failed
         self._status.parsing_count = max(0, self._status.parsing_count + parsing_delta)
+        self._status.analyzing_count = max(0, self._status.analyzing_count + analyzing_delta)
         self._status.processing_count = max(0, self._status.processing_count + processing_delta)
         self._status.pending_docs = max(
             0, self._status.total_docs - self._status.processed_docs - self._status.failed_docs

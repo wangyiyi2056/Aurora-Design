@@ -182,7 +182,7 @@ const WorkerLayoutControl = ({ layout, autoRunFor, mainLayout }: ExtendedWorkerL
     <Button
       size="icon"
       onClick={handleClick}
-      
+      tooltip={t('graphPanel.sideBar.layoutsControl.toggleAnimation')}
       variant={controlButtonVariant}
     >
       {isRunning ? <PauseIcon /> : <PlayIcon />}
@@ -306,7 +306,7 @@ const LayoutsControl = () => {
               size="icon"
               variant={controlButtonVariant}
               onClick={() => setOpened((e: boolean) => !e)}
-              
+              tooltip={t('graphPanel.sideBar.layoutsControl.select')}
             >
               <GripIcon />
             </Button>
@@ -315,7 +315,8 @@ const LayoutsControl = () => {
             side="right"
             align="start"
             sideOffset={8}
-            collisionPadding={5}
+            collisionPadding={8}
+            avoidCollisions
             sticky="always"
             className="p-1 min-w-auto"
           >

@@ -1,0 +1,70 @@
+# ──────────────────────────────────────────────────────────────────────
+# Aurora — Basic Docker Compose
+#
+# Services: aurora-app + redis
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f aurora-app
+#
+# The app is available at http://localhost:8080
+# ──────────────────────────────────────────────────────────────────────
+
+services:
+  aurora-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aurora-app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - AURORA_PORT=8888
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - aurora-data:/app/data
+      - aurora-uploads:/app/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8888/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - aurora-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: aurora-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aurora-net
+
+volumes:
+  aurora-data:
+    driver: local
+  aurora-uploads:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  aurora-net:
+    driver: bridge

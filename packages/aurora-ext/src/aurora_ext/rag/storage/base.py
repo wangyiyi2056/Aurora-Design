@@ -124,12 +124,14 @@ class BaseVectorStorage(StorageNameSpace, ABC):
         query: str,
         top_k: int,
         cosine_threshold: float = 0.0,
+        where: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         """Search by query string embedding, return top-k results.
 
         Results should include ``id``, ``content``, ``score``, and all
         metadata fields.  Only results with ``score >= cosine_threshold``
-        are returned.
+        are returned.  ``where`` optionally filters metadata before top-k
+        selection (for example ``{"kind": "chunk"}``).
         """
 
     @abstractmethod

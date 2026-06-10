@@ -36,6 +36,7 @@ from aurora_serve.datasource.service import DatasourceService
 from aurora_serve.design_skills.service import DesignSkillService
 from aurora_serve.design_systems.service import DesignSystemService
 from aurora_serve.knowledge.service import KnowledgeService
+from aurora_serve.knowledge.v2.service import KnowledgeV2Service
 from aurora_serve.prompt.service import PromptTemplateService
 from aurora_serve.chat.schema import (
     ChatChoice,
@@ -107,6 +108,7 @@ class EnhancedChatService:
         session_base_path: Optional[str] = None,
         datasource_service: Optional[DatasourceService] = None,
         knowledge_service: Optional[KnowledgeService] = None,
+        knowledge_v2_service: Optional[KnowledgeV2Service] = None,
         design_skill_service: Optional[DesignSkillService] = None,
         design_system_service: Optional[DesignSystemService] = None,
         prompt_template_service: Optional[PromptTemplateService] = None,
@@ -116,6 +118,7 @@ class EnhancedChatService:
         self.mcp_client = mcp_client
         self.datasource_service = datasource_service
         self.knowledge_service = knowledge_service
+        self.knowledge_v2_service = knowledge_v2_service
         self.design_skill_service = design_skill_service
         self.design_system_service = design_system_service
         self.prompt_template_service = prompt_template_service
@@ -502,9 +505,91 @@ class EnhancedChatService:
             return [str(item) for item in raw if item]
         return []
 
+    @staticmethod
+    def _friendly_llm_error_message(exc: Exception) -> str | None:
+        message = str(exc).strip()
+        lower = message.lower()
+
+        if (
+            "401" in message
+            or "authenticationerror" in lower
+            or "incorrect api key" in lower
+            or "invalid api key" in lower
+        ):
+            return (
+                "API Key 无效或已过期，请联系管理员更新。"
+                "请检查配置中的 api_key 或环境变量 OPENAI_API_KEY。"
+            )
+
+        if "no llm registered" in lower or (lower.startswith("llm '") and "not found" in lower):
+            return "当前没有可用的对话模型，请先在 Models 页面绑定一个可用的聊天模型。"
+
+        if any(
+            marker in lower
+            for marker in (
+                "connection error",
+                "connection failed",
+                "apiconnectionerror",
+                "failed to connect",
+                "connection refused",
+                "timeout",
+                "timed out",
+                "nodename nor servname",
+                "name or service not known",
+            )
+        ):
+            return (
+                "模型连接失败，请检查 Models 页面里的 base_url、api_key，"
+                "以及目标模型服务是否在线。当前请求没有拿到模型回复。"
+            )
+
+        return None
+
+    @staticmethod
+    def _build_error_chat_response(message: str, model_name: str = "chat") -> ChatResponse:
+        return ChatResponse(
+            id=f"aurora-{int(time.time() * 1000)}",
+            created=int(time.time()),
+            model=model_name,
+            choices=[
+                ChatChoice(
+                    message=ChatMessage(role="assistant", content=message),
+                    finish_reason="error",
+                )
+            ],
+        )
+
+    @staticmethod
+    def _build_knowledge_snippets_from_v2_result(
+        result: dict[str, Any],
+        *,
+        top_k: int,
+    ) -> list[str]:
+        chunks = result.get("chunks", []) if isinstance(result, dict) else []
+        references = result.get("references", []) if isinstance(result, dict) else []
+        ref_map = {
+            str(item.get("reference_id", "")): str(item.get("file_path", ""))
+            for item in references
+            if isinstance(item, dict)
+        }
+
+        snippets: list[str] = []
+        for idx, chunk in enumerate(chunks[:top_k], start=1):
+            if not isinstance(chunk, dict):
+                continue
+            content = str(chunk.get("content", "")).strip()
+            if not content:
+                continue
+            source = str(chunk.get("file_path", "")).strip()
+            if not source:
+                source = ref_map.get(str(chunk.get("reference_id", "")), "")
+            prefix = f"{idx}. "
+            if source:
+                prefix += f"[{source}] "
+            snippets.append(prefix + content)
+        return snippets
+
     async def _build_knowledge_context(self, req: ChatRequest) -> str:
-        if not self.knowledge_service:
-            return ""
         names = self._knowledge_names_from_ext_info(req)
         if not names:
             return ""
@@ -515,28 +600,79 @@ class EnhancedChatService:
         sections: list[str] = []
         top_k = int((req.ext_info or {}).get("knowledge_top_k") or 5)
         for name in names:
-            try:
-                result = await self.knowledge_service.query(name, question, top_k=top_k)
-            except Exception as exc:
-                sections.append(f"[{name}] retrieval failed: {exc}")
-                continue
-            docs = result.get("results", []) if isinstance(result, dict) else []
-            if not docs:
-                continue
-            snippets = []
-            for idx, doc in enumerate(docs[:top_k], start=1):
-                content = doc.get("content", "") if isinstance(doc, dict) else str(doc)
-                metadata = doc.get("metadata", {}) if isinstance(doc, dict) else {}
-                source = metadata.get("source") or metadata.get("file_name") or metadata.get("path") or ""
-                prefix = f"{idx}. "
-                if source:
-                    prefix += f"[{source}] "
-                snippets.append(prefix + str(content))
+            snippets: list[str] = []
+            last_error: str | None = None
+
+            if self.knowledge_v2_service is not None:
+                for mode in ("mix", "naive"):
+                    try:
+                        result = await self.knowledge_v2_service.query(
+                            name,
+                            query=question,
+                            mode=mode,
+                            only_need_context=True,
+                            top_k=max(top_k, 10),
+                            chunk_top_k=top_k,
+                            include_references=True,
+                            include_chunk_content=True,
+                            stream=False,
+                        )
+                    except Exception as exc:
+                        last_error = str(exc)
+                        continue
+
+                    if isinstance(result, dict) and result.get("error"):
+                        last_error = str(result["error"])
+                        continue
+
+                    snippets = self._build_knowledge_snippets_from_v2_result(
+                        result if isinstance(result, dict) else {},
+                        top_k=top_k,
+                    )
+                    if snippets:
+                        break
+
+            if not snippets and self.knowledge_service is not None:
+                try:
+                    result = await self.knowledge_service.query(name, question, top_k=top_k)
+                except Exception as exc:
+                    last_error = str(exc)
+                else:
+                    docs = result.get("results", []) if isinstance(result, dict) else []
+                    for idx, doc in enumerate(docs[:top_k], start=1):
+                        content = doc.get("content", "") if isinstance(doc, dict) else str(doc)
+                        metadata = doc.get("metadata", {}) if isinstance(doc, dict) else {}
+                        source = metadata.get("source") or metadata.get("file_name") or metadata.get("path") or ""
+                        prefix = f"{idx}. "
+                        if source:
+                            prefix += f"[{source}] "
+                        snippets.append(prefix + str(content))
+
             if snippets:
                 sections.append(f"Knowledge base: {name}\n" + "\n".join(snippets))
+            elif last_error:
+                sections.append(f"[{name}] retrieval failed: {last_error}")
         if not sections:
             return ""
         return "Knowledge context:\n" + "\n\n".join(sections)
+
+    @staticmethod
+    def _stream_error_events(message: str, model_name: str = "chat") -> list[str]:
+        payloads = [
+            {"type": "text_start"},
+            {"type": "text_delta", "content": message},
+            {
+                "type": "text_end",
+                "id": f"aurora-{int(time.time() * 1000)}",
+                "created": int(time.time()),
+                "model": model_name,
+                "finish_reason": "error",
+                "usage": None,
+            },
+        ]
+        events = [f"data: {json.dumps(payload, ensure_ascii=False)}\n\n" for payload in payloads]
+        events.append("data: [DONE]\n\n")
+        return events
 
     @staticmethod
     def _sse_event(payload: dict[str, Any]) -> str:
@@ -876,6 +1012,35 @@ class EnhancedChatService:
                 )
         return resolved
 
+    def _build_datasource_context(self, req: ChatRequest) -> str:
+        if not self.datasource_service:
+            return ""
+        datasource_name = (req.ext_info or {}).get("database_name")
+        if not datasource_name:
+            return ""
+        try:
+            connector = self.datasource_service.get_connector(str(datasource_name))
+            tables = connector.get_table_names()
+            schemas = connector.get_table_schemas(tables[:10])
+        except Exception as exc:
+            logger.warning("Failed to build datasource context for %s: %s", datasource_name, exc)
+            return ""
+        if not schemas.strip():
+            return ""
+        table_list = ", ".join(tables[:10]) if tables else "(none)"
+        more_tables = "" if len(tables) <= 10 else f"; showing first 10 of {len(tables)} tables"
+        return (
+            "[Datasource context]\n"
+            f"Selected datasource: {datasource_name}\n"
+            f"Database type: {connector.db_type}\n"
+            f"Tables: {table_list}{more_tables}\n\n"
+            "Schema:\n"
+            f"{schemas}\n\n"
+            "Use this schema when answering questions about the selected datasource. "
+            "If the user asks for exact aggregates or records, generate and run SQL only through the datasource analysis flow/tooling; "
+            "otherwise explain using the schema context without inventing data values."
+        )
+
     def _build_messages(self, req: ChatRequest) -> List[Message]:
         """Build messages from request."""
         messages: List[Message] = []
@@ -885,6 +1050,9 @@ class EnhancedChatService:
         design_system_context = self._build_design_system_context(req)
         if design_system_context:
             messages.append(Message(role="system", content=design_system_context))
+        datasource_context = self._build_datasource_context(req)
+        if datasource_context:
+            messages.append(Message(role="system", content=datasource_context))
         inline_local_images = self._effective_model_type(req) not in {"daemon", "cli"}
         for m in req.messages:
             resolved = self._resolve_content_parts(m.content, inline_local_images=inline_local_images)
@@ -1230,7 +1398,13 @@ class EnhancedChatService:
                     ),
                 )
 
-        llm = self._get_llm(req)
+        try:
+            llm = self._get_llm(req)
+        except Exception as exc:
+            friendly = self._friendly_llm_error_message(exc)
+            if friendly:
+                return self._build_error_chat_response(friendly)
+            raise
         max_tool_rounds = 5
 
         for round_num in range(max_tool_rounds):
@@ -1251,22 +1425,9 @@ class EnhancedChatService:
                     tool_choice="auto",
                 )
             except Exception as e:
-                error_msg = str(e)
-                if "401" in error_msg or "AuthenticationError" in error_msg or "Incorrect API key" in error_msg:
-                    return ChatResponse(
-                        id=f"aurora-{int(time.time() * 1000)}",
-                        created=int(time.time()),
-                        model=llm.config.model_name,
-                        choices=[
-                            ChatChoice(
-                                message=ChatMessage(
-                                    role="assistant",
-                                    content="API Key 无效或已过期，请联系管理员更新。请检查配置中的 api_key 或环境变量 OPENAI_API_KEY。",
-                                ),
-                                finish_reason="error",
-                            )
-                        ],
-                    )
+                friendly = self._friendly_llm_error_message(e)
+                if friendly:
+                    return self._build_error_chat_response(friendly, llm.config.model_name)
                 raise
 
             # Record API usage
@@ -1478,7 +1639,15 @@ class EnhancedChatService:
                     ),
                 )
 
-        llm = self._get_llm(req)
+        try:
+            llm = self._get_llm(req)
+        except Exception as exc:
+            friendly = self._friendly_llm_error_message(exc)
+            if friendly:
+                for event in self._stream_error_events(friendly):
+                    yield event
+                return
+            raise
 
         if tools:
             max_tool_rounds = 5
@@ -1494,24 +1663,32 @@ class EnhancedChatService:
                 finish_reason: str | None = None
                 usage: dict[str, int] | None = None
 
-                async for chunk in llm.achat_stream(
-                    messages,
-                    tools=tools,
-                    tool_choice="auto",
-                ):
-                    if chunk.text:
-                        if not text_started:
-                            yield f"data: {json.dumps({'type': 'text_start'})}\n\n"
-                            text_started = True
-                        full_text_parts.append(chunk.text)
-                        assistant_events.append({"kind": "text", "text": chunk.text})
-                        yield f"data: {json.dumps({'type': 'text_delta', 'content': chunk.text})}\n\n"
-                    if chunk.tool_calls:
-                        streamed_tool_calls.extend(chunk.tool_calls)
-                    if chunk.finish_reason:
-                        finish_reason = chunk.finish_reason
-                    if chunk.usage:
-                        usage = chunk.usage
+                try:
+                    async for chunk in llm.achat_stream(
+                        messages,
+                        tools=tools,
+                        tool_choice="auto",
+                    ):
+                        if chunk.text:
+                            if not text_started:
+                                yield f"data: {json.dumps({'type': 'text_start'})}\n\n"
+                                text_started = True
+                            full_text_parts.append(chunk.text)
+                            assistant_events.append({"kind": "text", "text": chunk.text})
+                            yield f"data: {json.dumps({'type': 'text_delta', 'content': chunk.text})}\n\n"
+                        if chunk.tool_calls:
+                            streamed_tool_calls.extend(chunk.tool_calls)
+                        if chunk.finish_reason:
+                            finish_reason = chunk.finish_reason
+                        if chunk.usage:
+                            usage = chunk.usage
+                except Exception as exc:
+                    friendly = self._friendly_llm_error_message(exc)
+                    if friendly:
+                        for event in self._stream_error_events(friendly, llm.config.model_name):
+                            yield event
+                        return
+                    raise
 
                 output = ModelOutput(
                     text="".join(full_text_parts),
@@ -1655,76 +1832,77 @@ class EnhancedChatService:
         assistant_events: list[dict[str, Any]] = []
         streamed_tool_names: dict[str, str] = {}
 
-        async for chunk in llm.achat_stream(messages):
-            event_type = chunk.extra.get("event_type") if chunk.extra else None
-            if event_type:
-                if is_reasoning_started and not is_reasoning_ended:
-                    yield f"data: {json.dumps({'type': 'reasoning_end'})}\n\n"
-                    is_reasoning_ended = True
-                    is_reasoning_started = False
+        try:
+            async for chunk in llm.achat_stream(messages):
+                event_type = chunk.extra.get("event_type") if chunk.extra else None
+                if event_type:
+                    if is_reasoning_started and not is_reasoning_ended:
+                        yield f"data: {json.dumps({'type': 'reasoning_end'})}\n\n"
+                        is_reasoning_ended = True
+                        is_reasoning_started = False
 
-                if event_type == "status":
-                    label = chunk.extra.get("label") or "working"
-                    detail = chunk.extra.get("detail") or chunk.extra.get("model")
-                    status_event: dict[str, Any] = {"kind": "status", "label": label}
-                    if detail:
-                        status_event["detail"] = detail
-                    assistant_events.append(status_event)
-                    yield f"data: {json.dumps({'type': 'status', 'label': label, 'detail': detail})}\n\n"
+                    if event_type == "status":
+                        label = chunk.extra.get("label") or "working"
+                        detail = chunk.extra.get("detail") or chunk.extra.get("model")
+                        status_event: dict[str, Any] = {"kind": "status", "label": label}
+                        if detail:
+                            status_event["detail"] = detail
+                        assistant_events.append(status_event)
+                        yield f"data: {json.dumps({'type': 'status', 'label': label, 'detail': detail})}\n\n"
+                        continue
+
+                    if event_type == "tool_use":
+                        tool_id = str(chunk.extra.get("id") or "")
+                        tool_name = str(chunk.extra.get("name") or "")
+                        if tool_id:
+                            streamed_tool_names[tool_id] = tool_name
+                        input_value = chunk.extra.get("input")
+                        if isinstance(input_value, str):
+                            arguments = input_value
+                            try:
+                                event_input = json.loads(input_value)
+                            except json.JSONDecodeError:
+                                event_input = input_value
+                        else:
+                            event_input = input_value or {}
+                            arguments = json.dumps(input_value or {}, ensure_ascii=False)
+                        assistant_events.append(
+                            {
+                                "kind": "tool_use",
+                                "id": tool_id,
+                                "name": tool_name,
+                                "input": event_input,
+                            }
+                        )
+                        yield f"data: {json.dumps({'type': 'tool_call_start', 'id': tool_id, 'tool_name': tool_name, 'arguments': arguments})}\n\n"
+                        continue
+
+                    if event_type == "tool_result":
+                        tool_id = str(chunk.extra.get("toolUseId") or "")
+                        result_content = str(chunk.extra.get("content") or "")
+                        is_error = bool(chunk.extra.get("isError"))
+                        assistant_events.append(
+                            {
+                                "kind": "tool_result",
+                                "toolUseId": tool_id,
+                                "content": result_content,
+                                "isError": is_error,
+                            }
+                        )
+                        yield f"data: {json.dumps({'type': 'tool_call_result', 'id': tool_id, 'tool_name': chunk.extra.get('name') or streamed_tool_names.get(tool_id, ''), 'content': result_content, 'is_error': is_error})}\n\n"
+                        continue
+
+                # Handle reasoning content (thinking) separately
+                if chunk.is_reasoning:
+                    if not is_reasoning_started:
+                        yield f"data: {json.dumps({'type': 'reasoning_start'})}\n\n"
+                        is_reasoning_started = True
+                        is_reasoning_ended = False
+                    if chunk.text:
+                        assistant_events.append({"kind": "thinking", "text": chunk.text})
+                        yield f"data: {json.dumps({'type': 'reasoning_delta', 'content': chunk.text})}\n\n"
                     continue
 
-                if event_type == "tool_use":
-                    tool_id = str(chunk.extra.get("id") or "")
-                    tool_name = str(chunk.extra.get("name") or "")
-                    if tool_id:
-                        streamed_tool_names[tool_id] = tool_name
-                    input_value = chunk.extra.get("input")
-                    if isinstance(input_value, str):
-                        arguments = input_value
-                        try:
-                            event_input = json.loads(input_value)
-                        except json.JSONDecodeError:
-                            event_input = input_value
-                    else:
-                        event_input = input_value or {}
-                        arguments = json.dumps(input_value or {}, ensure_ascii=False)
-                    assistant_events.append(
-                        {
-                            "kind": "tool_use",
-                            "id": tool_id,
-                            "name": tool_name,
-                            "input": event_input,
-                        }
-                    )
-                    yield f"data: {json.dumps({'type': 'tool_call_start', 'id': tool_id, 'tool_name': tool_name, 'arguments': arguments})}\n\n"
-                    continue
-
-                if event_type == "tool_result":
-                    tool_id = str(chunk.extra.get("toolUseId") or "")
-                    result_content = str(chunk.extra.get("content") or "")
-                    is_error = bool(chunk.extra.get("isError"))
-                    assistant_events.append(
-                        {
-                            "kind": "tool_result",
-                            "toolUseId": tool_id,
-                            "content": result_content,
-                            "isError": is_error,
-                        }
-                    )
-                    yield f"data: {json.dumps({'type': 'tool_call_result', 'id': tool_id, 'tool_name': chunk.extra.get('name') or streamed_tool_names.get(tool_id, ''), 'content': result_content, 'is_error': is_error})}\n\n"
-                    continue
-
-            # Handle reasoning content (thinking) separately
-            if chunk.is_reasoning:
-                if not is_reasoning_started:
-                    yield f"data: {json.dumps({'type': 'reasoning_start'})}\n\n"
-                    is_reasoning_started = True
-                    is_reasoning_ended = False
-                if chunk.text:
-                    assistant_events.append({"kind": "thinking", "text": chunk.text})
-                    yield f"data: {json.dumps({'type': 'reasoning_delta', 'content': chunk.text})}\n\n"
-                continue
-            else:
                 # Actual content starts - end reasoning phase if it was started
                 if is_reasoning_started and not is_reasoning_ended:
                     yield f"data: {json.dumps({'type': 'reasoning_end'})}\n\n"
@@ -1742,6 +1920,13 @@ class EnhancedChatService:
                     yield f"data: {json.dumps({'type': 'text_delta', 'content': chunk.text})}\n\n"
                 if chunk.finish_reason:
                     yield f"data: {json.dumps({'type': 'text_end', 'finish_reason': chunk.finish_reason})}\n\n"
+        except Exception as exc:
+            friendly = self._friendly_llm_error_message(exc)
+            if friendly:
+                for event in self._stream_error_events(friendly, llm.config.model_name):
+                    yield event
+                return
+            raise
 
         # If only reasoning happened without content, still send proper events
         if is_reasoning_started and not is_reasoning_ended:

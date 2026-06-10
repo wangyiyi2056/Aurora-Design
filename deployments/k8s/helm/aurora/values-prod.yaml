@@ -1,0 +1,151 @@
+# ──────────────────────────────────────────────────────────────────────
+# Aurora Helm — Production Environment Overrides
+#
+# Usage:
+#   helm install aurora ./helm/aurora \
+#     -f helm/aurora/values-prod.yaml \
+#     --namespace aurora --create-namespace
+#
+# IMPORTANT: Set secrets before deploying:
+#   helm install aurora ./helm/aurora \
+#     -f helm/aurora/values-prod.yaml \
+#     --set secrets.openaiApiKey="sk-..." \
+#     --set secrets.postgresPassword="..." \
+#     --set secrets.neo4jPassword="..."
+# ──────────────────────────────────────────────────────────────────────
+
+replicaCount: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 15
+  targetCPUUtilizationPercentage: 65
+  targetMemoryUtilizationPercentage: 75
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 1Gi
+  limits:
+    cpu: "4"
+    memory: 4Gi
+
+app:
+  logLevel: warn
+  environment: production
+
+persistence:
+  data:
+    size: 50Gi
+    storageClass: "gp3"  # AWS EBS gp3; adjust per cloud
+  uploads:
+    size: 100Gi
+    storageClass: "gp3"
+
+postgresql:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  storage:
+    size: 100Gi
+    storageClass: "gp3"
+  config:
+    maxConnections: 500
+    sharedBuffers: 1GB
+
+redis:
+  replicas: 3
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  maxmemory: 1gb
+  storage:
+    size: 10Gi
+    storageClass: "gp3"
+
+neo4j:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  storage:
+    size: 100Gi
+    storageClass: "gp3"
+  heap:
+    initialSize: 512m
+    maxSize: 2g
+    pageCacheSize: 1g
+
+milvus:
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+  storage:
+    size: 100Gi
+    storageClass: "gp3"
+  etcd:
+    storage:
+      size: 10Gi
+  minio:
+    storage:
+      size: 100Gi
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+ingress:
+  hosts:
+    - host: aurora.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: aurora-tls
+      hosts:
+        - aurora.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+
+nodeSelector:
+  node.kubernetes.io/instance-type: m5.xlarge
+
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "aurora"
+    effect: "NoSchedule"
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - aurora
+          topologyKey: kubernetes.io/hostname

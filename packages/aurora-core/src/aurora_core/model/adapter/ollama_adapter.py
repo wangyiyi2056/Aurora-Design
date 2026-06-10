@@ -42,11 +42,16 @@ class OllamaLLM(BaseLLM):
 
     def __init__(self, config: LLMConfig) -> None:
         super().__init__(config)
-        self.base_url = (
+        raw_url = (
             config.api_base
             or os.getenv("OLLAMA_BASE_URL")
             or DEFAULT_OLLAMA_BASE_URL
         ).rstrip("/")
+        # Strip /v1 suffix — Ollama's native API endpoints (/api/chat)
+        # live at the root, not under /v1.
+        if raw_url.endswith("/v1"):
+            raw_url = raw_url[:-3]
+        self.base_url = raw_url
         self._timeout = float(config.extra.get("timeout", 120))
 
     def _build_ollama_messages(
@@ -104,7 +109,8 @@ class OllamaLLM(BaseLLM):
                 "Ensure Ollama is running: `ollama serve`"
             ) from e
         except httpx.HTTPStatusError as e:
-            logger.error("Ollama API error: %s %s", e.response.status_code, e.response.text)
+            logger.error("Ollama API error: %s %s",
+                         e.response.status_code, e.response.text)
             raise
 
         message_data = data.get("message", {})
@@ -116,7 +122,8 @@ class OllamaLLM(BaseLLM):
                 "prompt_tokens": data.get("prompt_eval_count", 0),
                 "completion_tokens": data.get("eval_count", 0),
                 "total_tokens": (
-                    data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
+                    data.get("prompt_eval_count", 0) +
+                    data.get("eval_count", 0)
                 ),
             },
             finish_reason="stop" if data.get("done") else None,

@@ -80,6 +80,7 @@ export function ConversationList({
             content: m.content,
             events: m.events ?? [],
             attachments: m.attachments ?? [],
+            contextAttachments: m.contextAttachments ?? m.context_attachments ?? [],
             startTime: m.timestamp ? toMillis(m.timestamp) : undefined,
             endTime: m.type === "assistant" && m.end_time ? toMillis(m.end_time) : undefined,
           }))

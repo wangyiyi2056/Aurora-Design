@@ -11,18 +11,34 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 from aurora_core.component import BaseComponent
 
 
+def _find_project_root() -> Path:
+    """Find the project root by walking up from this file looking for pyproject.toml."""
+    current = Path(__file__).resolve().parent
+    for _ in range(10):  # Walk up max 10 levels
+        if (current / "pyproject.toml").exists():
+            # Check if this is the workspace root (has packages/ subdirectory)
+            if (current / "packages").is_dir():
+                return current
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    # Fallback: CWD
+    return Path.cwd()
+
+
 def metadata_db_path() -> Path:
     configured = os.getenv("AURORA_METADATA_DB")
     if configured:
         return Path(configured)
-    return Path("data") / "aurora.db"
+    return _find_project_root() / "data" / "aurora.db"
 
 
 def storage_dir() -> Path:
     configured = os.getenv("AURORA_STORAGE_DIR")
     if configured:
         return Path(configured)
-    return Path("data")
+    return _find_project_root() / "data"
 
 
 class Base(DeclarativeBase):

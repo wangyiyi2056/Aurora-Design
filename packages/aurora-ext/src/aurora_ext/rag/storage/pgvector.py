@@ -146,6 +146,7 @@ class PGVectorStorage(BaseVectorStorage):
         query_text: str,
         top_k: int,
         cosine_threshold: float = 0.0,
+        where: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         await self._ensure_table()
 
@@ -157,17 +158,25 @@ class PGVectorStorage(BaseVectorStorage):
         query_embedding = vec[0].tolist() if hasattr(vec[0], "tolist") else list(vec[0])
         vec_str = "[" + ",".join(str(float(x)) for x in query_embedding) + "]"
 
+        where_sql = ""
+        params: list[Any] = [vec_str]
+        if where:
+            for key, value in where.items():
+                where_sql += " AND metadata ->> %s = %s"
+                params.extend([key, str(value)])
+        params.extend([vec_str, top_k])
+
         async with self._pool.connection() as conn:
             cur = await conn.execute(
                 f"""
                 SELECT id, content, metadata,
                        1 - (embedding <=> %s::vector) AS score
                 FROM {self._table}
-                WHERE embedding IS NOT NULL
+                WHERE embedding IS NOT NULL{where_sql}
                 ORDER BY embedding <=> %s::vector
                 LIMIT %s
                 """,
-                [vec_str, vec_str, top_k],
+                params,
             )
             rows = await cur.fetchall()
 
@@ -184,6 +193,11 @@ class PGVectorStorage(BaseVectorStorage):
             metadata = row[2] if isinstance(row[2], dict) else json.loads(row[2])
             record.update(metadata)
             out.append(record)
+        if where:
+            out = [
+                r for r in out
+                if all(r.get(k) == v for k, v in where.items())
+            ]
         return out
 
     async def delete(self, ids: list[str]) -> None:

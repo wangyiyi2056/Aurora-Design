@@ -15,11 +15,21 @@ const FullScreenControl = () => {
   return (
     <>
       {isFullScreen ? (
-        <Button variant={controlButtonVariant} onClick={toggle}  size="icon">
+        <Button
+          variant={controlButtonVariant}
+          onClick={toggle}
+          tooltip={t('graphPanel.sideBar.fullScreenControl.toggle')}
+          size="icon"
+        >
           <MinimizeIcon />
         </Button>
       ) : (
-        <Button variant={controlButtonVariant} onClick={toggle}  size="icon">
+        <Button
+          variant={controlButtonVariant}
+          onClick={toggle}
+          tooltip={t('graphPanel.sideBar.fullScreenControl.toggle')}
+          size="icon"
+        >
           <MaximizeIcon />
         </Button>
       )}

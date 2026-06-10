@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import {
@@ -43,9 +44,9 @@ import {
 import { useDeleteKnowledge, useCreateKnowledge } from "../hooks/use-knowledge"
 
 const CHUNK_STRATEGIES = [
-  { value: "fixed", label: "Fixed Size" },
-  { value: "recursive", label: "Recursive" },
-  { value: "semantic", label: "Semantic" },
+  { value: "fixed", labelKey: "knowledge.strategies.fixed" },
+  { value: "recursive", labelKey: "knowledge.strategies.recursive" },
+  { value: "semantic", labelKey: "knowledge.strategies.semantic" },
 ]
 
 function KnowledgeCard({
@@ -55,6 +56,7 @@ function KnowledgeCard({
   name: string
   onDelete: (name: string) => void
 }) {
+  const { t } = useTranslation("construct")
   const navigate = useNavigate()
   const { data: detail } = useKnowledgeDetailV2(name)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -87,28 +89,28 @@ function KnowledgeCard({
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <Boxes className="h-3 w-3" />
-            <span>Chunks</span>
+            <span>{t("knowledge.v2.list.chunks")}</span>
             <span className="ml-auto font-medium tabular-nums text-foreground">
               {detail?.chunks?.toLocaleString() ?? "-"}
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <GitBranch className="h-3 w-3" />
-            <span>Strategy</span>
+            <span>{t("knowledge.v2.list.strategy")}</span>
             <span className="ml-auto font-medium text-foreground">
               {detail?.chunk_strategy ?? "-"}
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <FileText className="h-3 w-3" />
-            <span>Size</span>
+            <span>{t("knowledge.v2.list.size")}</span>
             <span className="ml-auto font-medium tabular-nums text-foreground">
               {detail?.chunk_size ?? "-"}
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <BookOpen className="h-3 w-3" />
-            <span>Overlap</span>
+            <span>{t("knowledge.v2.list.overlap")}</span>
             <span className="ml-auto font-medium tabular-nums text-foreground">
               {detail?.chunk_overlap ?? "-"}
             </span>
@@ -120,15 +122,14 @@ function KnowledgeCard({
       <Dialog open={deleteConfirm} onOpenChange={setDeleteConfirm}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Knowledge Base</DialogTitle>
+            <DialogTitle>{t("knowledge.v2.list.deleteKb")}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{name}"? This will permanently remove
-              all documents, chunks, entities, and relationships. This action cannot be undone.
+              {t("knowledge.v2.list.deleteKbDesc").replace("{{name}}", name)}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteConfirm(false)}>
-              Cancel
+              {t("knowledge.v2.list.cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -138,7 +139,7 @@ function KnowledgeCard({
                 setDeleteConfirm(false)
               }}
             >
-              Delete
+              {t("knowledge.v2.list.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -148,6 +149,7 @@ function KnowledgeCard({
 }
 
 export default function KnowledgeListPage() {
+  const { t } = useTranslation("construct")
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { data: names = [], isLoading } = useKnowledgeListV2()
@@ -206,7 +208,7 @@ export default function KnowledgeListPage() {
           }}
         >
           <Plus className="mr-1 h-4 w-4" />
-          Create Knowledge Base
+          {t("knowledge.v2.list.createKb")}
         </Button>
       </div>
 
@@ -218,10 +220,9 @@ export default function KnowledgeListPage() {
       ) : names.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Database className="h-12 w-12 text-muted-foreground/30 mb-4" />
-          <h3 className="text-lg font-medium mb-1">No Knowledge Bases</h3>
+          <h3 className="text-lg font-medium mb-1">{t("knowledge.v2.list.noKbs")}</h3>
           <p className="text-sm text-muted-foreground mb-4 max-w-md">
-            Create your first knowledge base to start ingesting documents and building
-            a knowledge graph for RAG-powered queries.
+            {t("knowledge.v2.list.noKbsDesc")}
           </p>
           <Button
             onClick={() => {
@@ -230,7 +231,7 @@ export default function KnowledgeListPage() {
             }}
           >
             <Plus className="mr-1 h-4 w-4" />
-            Create Knowledge Base
+            {t("knowledge.v2.list.createKb")}
           </Button>
         </div>
       ) : (
@@ -249,29 +250,29 @@ export default function KnowledgeListPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create Knowledge Base</DialogTitle>
+            <DialogTitle>{t("knowledge.v2.list.createKb")}</DialogTitle>
             <DialogDescription>
-              Configure a new knowledge base for document ingestion and RAG queries.
+              {t("knowledge.v2.list.createKbDesc")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             {/* Name */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Name</label>
+              <label className="text-sm font-medium">{t("knowledge.v2.list.name")}</label>
               <Input
-                placeholder="my-knowledge-base"
+                placeholder={t("knowledge.v2.list.namePlaceholder")}
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                A unique identifier for this knowledge base
+                {t("knowledge.v2.list.nameHint")}
               </p>
             </div>
 
             {/* Chunk strategy */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Chunk Strategy</label>
+              <label className="text-sm font-medium">{t("knowledge.v2.list.chunkStrategy")}</label>
               <Select value={newStrategy} onValueChange={setNewStrategy}>
                 <SelectTrigger>
                   <SelectValue />
@@ -279,7 +280,7 @@ export default function KnowledgeListPage() {
                 <SelectContent>
                   {CHUNK_STRATEGIES.map((s) => (
                     <SelectItem key={s.value} value={s.value}>
-                      {s.label}
+                      {t(s.labelKey as any)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -289,7 +290,7 @@ export default function KnowledgeListPage() {
             {/* Chunk size */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Chunk Size</label>
+                <label className="text-sm font-medium">{t("knowledge.v2.list.chunkSize")}</label>
                 <span className="text-sm tabular-nums text-muted-foreground">{newSize}</span>
               </div>
               <Slider
@@ -308,7 +309,7 @@ export default function KnowledgeListPage() {
             {/* Chunk overlap */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Chunk Overlap</label>
+                <label className="text-sm font-medium">{t("knowledge.v2.list.chunkOverlap")}</label>
                 <span className="text-sm tabular-nums text-muted-foreground">{newOverlap}</span>
               </div>
               <Slider
@@ -329,13 +330,13 @@ export default function KnowledgeListPage() {
             <p className="text-sm text-destructive">
               {createKb.error instanceof Error
                 ? createKb.error.message
-                : "Failed to create knowledge base. It may already exist."}
+                : t("knowledge.v2.list.createFailed")}
             </p>
           )}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
+              {t("knowledge.v2.list.cancel")}
             </Button>
             <Button
               onClick={handleCreate}
@@ -346,7 +347,7 @@ export default function KnowledgeListPage() {
               ) : (
                 <Plus className="mr-1.5 h-4 w-4" />
               )}
-              Create
+              {t("knowledge.v2.list.create")}
             </Button>
           </DialogFooter>
         </DialogContent>

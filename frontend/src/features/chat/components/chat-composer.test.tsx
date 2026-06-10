@@ -178,6 +178,7 @@ describe("ChatComposer attachments", () => {
         source: "built-in",
         status: "published",
         isEditable: false,
+        enabled: true,
       },
     ]
 
@@ -266,6 +267,7 @@ describe("ChatComposer attachments", () => {
       [],
       [],
       ["prompt-1"],
+      [{ kind: "custom_prompt", id: "prompt-1", name: "sales-dashboard" }],
     )
   })
 
@@ -309,7 +311,116 @@ describe("ChatComposer attachments", () => {
     fireEvent.click(screen.getByTestId("chat-send"))
 
     expect(screen.queryByTestId("composer-selected-custom-prompt")).not.toBeInTheDocument()
-    expect(onSend).toHaveBeenCalledWith("Build the page", [], [], [])
+    expect(onSend).toHaveBeenCalledWith("Build the page", [], [], [], [])
+  })
+
+
+  it("sends and clears selected datasource context", () => {
+    const onSend = vi.fn()
+    const onSelectDatasource = vi.fn()
+
+    render(
+      <ChatComposer
+        projectId="session-1"
+        projectFiles={[]}
+        streaming={false}
+        onEnsureProject={async () => "session-1"}
+        onSend={onSend}
+        onStop={vi.fn()}
+        datasources={[{ name: "sales-db", db_type: "sqlite", description: "Sales", connected: true }]}
+        selectedDatasourceName="sales-db"
+        onSelectDatasource={onSelectDatasource}
+      />,
+    )
+
+    fireEvent.change(screen.getByTestId("chat-composer-input"), {
+      target: { value: "介绍这个数据源", selectionStart: 7 },
+    })
+    fireEvent.click(screen.getByTestId("chat-send"))
+
+    expect(onSend).toHaveBeenCalledWith(
+      "介绍这个数据源",
+      [],
+      [],
+      [],
+      [{ kind: "datasource", name: "sales-db" }],
+    )
+    expect(onSelectDatasource).toHaveBeenCalledWith(null)
+  })
+
+  it("sends and clears selected design contexts", () => {
+    const onSend = vi.fn()
+    const onSelectDesignSkill = vi.fn()
+    const onSelectDesignSystem = vi.fn()
+
+    render(
+      <ChatComposer
+        projectId="session-1"
+        projectFiles={[]}
+        streaming={false}
+        onEnsureProject={async () => "session-1"}
+        onSend={onSend}
+        onStop={vi.fn()}
+        designSkills={[
+          {
+            id: "dashboard",
+            name: "dashboard",
+            description: "Build dashboards.",
+            source: "builtin",
+            mode: "template",
+            surface: "web",
+            scenario: "dashboard",
+            previewType: "html",
+            examplePrompt: "",
+            hasAssets: false,
+            hasReferences: false,
+            triggers: [],
+            body: null,
+            hidden: false,
+            status: "ready",
+            adapterKind: "",
+            dependencyType: "",
+            requiredTools: [],
+          },
+        ]}
+        selectedDesignSkillId="dashboard"
+        onSelectDesignSkill={onSelectDesignSkill}
+        designSystems={[
+          {
+            id: "vercel",
+            title: "Vercel",
+            category: "Developer Tools",
+            summary: "Black and white precision.",
+            swatches: ["#ffffff", "#171717"],
+            surface: "web",
+            source: "built-in",
+            status: "published",
+            isEditable: false,
+            enabled: true,
+          },
+        ]}
+        selectedDesignSystemId="vercel"
+        onSelectDesignSystem={onSelectDesignSystem}
+      />,
+    )
+
+    fireEvent.change(screen.getByTestId("chat-composer-input"), {
+      target: { value: "Build UI", selectionStart: 8 },
+    })
+    fireEvent.click(screen.getByTestId("chat-send"))
+
+    expect(onSend).toHaveBeenCalledWith(
+      "Build UI",
+      [],
+      [],
+      [],
+      [
+        { kind: "design_skill", id: "dashboard", name: "dashboard" },
+        { kind: "design_system", id: "vercel", title: "Vercel" },
+      ],
+    )
+    expect(onSelectDesignSkill).toHaveBeenCalledWith(null)
+    expect(onSelectDesignSystem).toHaveBeenCalledWith(null)
   })
 
   it("shows design skill loading in the picker", () => {

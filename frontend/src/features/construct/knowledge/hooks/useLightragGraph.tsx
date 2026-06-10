@@ -11,6 +11,7 @@ import { useSettingsStore } from '@/features/construct/knowledge/stores/settings
 
 import seedrandom from 'seedrandom'
 import { resolveNodeColor, DEFAULT_NODE_COLOR } from '@/features/construct/knowledge/utils/graphColor'
+import { normalizeGraphQueryLabel, shouldFallbackEmptyLabelToGlobal } from '@/features/construct/knowledge/components/graph/graph-label-refresh'
 
 // Select color based on node type
 const getNodeColorByType = (nodeType: string | undefined): string => {
@@ -222,7 +223,7 @@ const createSigmaGraph = (rawGraph: RawGraph | null) => {
     const y = Math.random()
 
     graph.addNode(rawNode.id, {
-      label: rawNode.labels.join(', '),
+      label: rawNode.id,
       color: rawNode.color,
       x: x,
       y: y,
@@ -241,7 +242,7 @@ const createSigmaGraph = (rawGraph: RawGraph | null) => {
 
     try {
       rawEdge.dynamicId = graph.addEdge(rawEdge.source, rawEdge.target, {
-        label: rawEdge.properties?.keywords || undefined,
+        label: rawEdge.label,
         size: weight, // Set initial size based on weight
         originalWeight: weight, // Store original weight for recalculation
         type: 'curvedNoArrow' // Explicitly set edge type to no arrow
@@ -316,6 +317,9 @@ const useLightragGraph = (knowledgeName: string) => {
 
   // Track if a fetch is in progress to prevent multiple simultaneous fetches
   const fetchInProgressRef = useRef(false)
+  const lastFetchKeyRef = useRef('')
+  const requestIdRef = useRef(0)
+  const initialQueryLabelAppliedRef = useRef(false)
 
   // Reset graph when query label is cleared
   useEffect(() => {
@@ -326,13 +330,14 @@ const useLightragGraph = (knowledgeName: string) => {
       state.setLabelsFetchAttempted(false)
       dataLoadedRef.current = false
       initialLoadRef.current = false
+      lastFetchKeyRef.current = ''
+      requestIdRef.current += 1
     }
   }, [queryLabel, rawGraph, sigmaGraph])
 
   // Graph data fetching logic
   useEffect(() => {
-    // Skip if fetch is already in progress
-    if (fetchInProgressRef.current) {
+    if (!knowledgeName || knowledgeName === 'undefined') {
       return
     }
 
@@ -341,11 +346,46 @@ const useLightragGraph = (knowledgeName: string) => {
       return;
     }
 
-    // Only fetch data when graphDataFetchAttempted is false (avoids re-fetching on vite dev mode)
-    // GraphDataFetchAttempted must set to false when queryLabel is changed
-    if (!isFetching && !useGraphStore.getState().graphDataFetchAttempted) {
+    const normalizedQueryLabel = normalizeGraphQueryLabel(queryLabel)
+
+    // First time entering the graph should always load the full graph.
+    // queryLabel is persisted globally, so it may still contain a previous
+    // specific/empty label from an earlier visit. Reset it to '*' before
+    // issuing the first graph request for this mounted viewer.
+    if (!initialQueryLabelAppliedRef.current) {
+      initialQueryLabelAppliedRef.current = true
+      if (normalizedQueryLabel !== '*') {
+        useSettingsStore.getState().setQueryLabel('*')
+        lastFetchKeyRef.current = ''
+        return
+      }
+    }
+
+    const fetchKey = `${knowledgeName}|${normalizedQueryLabel}|${maxQueryDepth}|${maxNodes}|${graphDataVersion}`
+
+    if (fetchInProgressRef.current) {
+      if (lastFetchKeyRef.current === fetchKey) {
+        return
+      }
+
+      // The selected knowledge base/label changed while an older request is
+      // still in flight. Invalidate that request and allow the new knowledge
+      // base to fetch immediately; otherwise the global isFetching flag from
+      // the old request can block the first load and leave the viewer showing
+      // the stale empty graph.
+      requestIdRef.current += 1
+      fetchInProgressRef.current = false
+      useGraphStore.getState().setIsFetching(false)
+    }
+
+    // Fetch whenever the selected graph label changes, or when an explicit refresh
+    // increments graphDataVersion. This keeps the behavior simple:
+    // specific label -> that subgraph, '*' -> full graph.
+    if (lastFetchKeyRef.current !== fetchKey) {
       // Set flags
       fetchInProgressRef.current = true
+      lastFetchKeyRef.current = fetchKey
+      const requestId = ++requestIdRef.current
       useGraphStore.getState().setGraphDataFetchAttempted(true)
 
       const state = useGraphStore.getState()
@@ -362,7 +402,7 @@ const useLightragGraph = (knowledgeName: string) => {
       console.log('Preparing graph data...')
 
       // Use a local copy of the parameters
-      const currentQueryLabel = queryLabel
+      const currentQueryLabel = normalizedQueryLabel
       const currentMaxQueryDepth = maxQueryDepth
       const currentMaxNodes = maxNodes
 
@@ -371,6 +411,10 @@ const useLightragGraph = (knowledgeName: string) => {
 
       // 3. Process data
       dataPromise.then((result) => {
+        if (requestId !== requestIdRef.current) {
+          return
+        }
+
         const state = useGraphStore.getState()
         const data = result?.rawGraph;
 
@@ -392,6 +436,16 @@ const useLightragGraph = (knowledgeName: string) => {
 
         // Check if data is empty or invalid
         if (!data || !data.nodes || data.nodes.length === 0) {
+          if (shouldFallbackEmptyLabelToGlobal(currentQueryLabel, false)) {
+            state.setGraphDataFetchAttempted(false)
+            state.setLastSuccessfulQueryLabel('')
+            useSettingsStore.getState().setQueryLabel('*')
+            useGraphStore.getState().incrementGraphDataVersion()
+            fetchInProgressRef.current = false
+            state.setIsFetching(false)
+            return
+          }
+
           // If no data or empty, create a generic empty graph with one node
           const emptyGraph = new MultiUndirectedGraph();
 
@@ -417,10 +471,8 @@ const useLightragGraph = (knowledgeName: string) => {
           const errorMessage = '';
           const isAuthError = errorMessage && errorMessage.includes('Authentication required');
 
-          // Only clear queryLabel if it's not an auth error and current label is not empty
-          if (!isAuthError && currentQueryLabel) {
-            useSettingsStore.getState().setQueryLabel('');
-          }
+          // Do not clear queryLabel so the dropdown retains the user's selection
+          // even if the query returns no results.
 
           // Only clear last successful query label if it's not an auth error
           if (!isAuthError) {
@@ -440,8 +492,14 @@ const useLightragGraph = (knowledgeName: string) => {
           state.setRawGraph(data);
           state.setGraphIsEmpty(false);
 
+          // If we fetched the fallback global graph (*) because the query was empty,
+          // update the queryLabel to '*' so the reset useEffect doesn't destroy the graph
+          if (!currentQueryLabel) {
+            useSettingsStore.getState().setQueryLabel('*');
+          }
+
           // Update last successful query label
-          state.setLastSuccessfulQueryLabel(currentQueryLabel);
+          state.setLastSuccessfulQueryLabel(currentQueryLabel || '*');
 
           // Reset camera view
           state.setMoveToSelectedNode(true);
@@ -459,17 +517,22 @@ const useLightragGraph = (knowledgeName: string) => {
         }
       }).catch((error) => {
         console.error('Error fetching graph data:', error)
+        if (requestId !== requestIdRef.current) {
+          return
+        }
 
         // Reset state on error
         const state = useGraphStore.getState()
         state.setIsFetching(false)
         dataLoadedRef.current = false;
         fetchInProgressRef.current = false
-        state.setGraphDataFetchAttempted(false)
+        lastFetchKeyRef.current = ''
+        // DO NOT reset graphDataFetchAttempted to false to prevent infinite loop
+        // state.setGraphDataFetchAttempted(false)
         state.setLastSuccessfulQueryLabel('') // Clear last successful query label on error
       })
     }
-  }, [queryLabel, maxQueryDepth, maxNodes, isFetching, t, graphDataVersion])
+  }, [knowledgeName, queryLabel, maxQueryDepth, maxNodes, isFetching, t, graphDataVersion])
 
   // Handle node expansion
   useEffect(() => {
