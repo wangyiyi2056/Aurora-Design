@@ -20,6 +20,7 @@ class SessionMessage:
     tool_name: Optional[str] = None
     events: Optional[List[Dict[str, Any]]] = None
     attachments: Optional[List[Dict[str, Any]]] = None
+    context_attachments: Optional[List[Dict[str, Any]]] = None
     timestamp: float = field(default_factory=lambda: time.time())
     end_time: Optional[float] = None
     updated_at: float = field(default_factory=lambda: time.time())

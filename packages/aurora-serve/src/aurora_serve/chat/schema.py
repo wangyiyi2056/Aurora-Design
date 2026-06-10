@@ -109,6 +109,7 @@ class SessionMessageUpsertRequest(BaseModel):
     content: Any = ""
     events: Optional[List[Dict[str, Any]]] = None
     attachments: Optional[List[Dict[str, Any]]] = None
+    context_attachments: Optional[List[Dict[str, Any]]] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_call_id: Optional[str] = None
     tool_name: Optional[str] = None

@@ -275,7 +275,8 @@ export default function Settings() {
           side="right"
           align="end"
           sideOffset={8}
-          collisionPadding={5}
+          collisionPadding={8}
+          avoidCollisions
           className="p-2 max-w-[200px]"
           onCloseAutoFocus={(e) => e.preventDefault()}
         >

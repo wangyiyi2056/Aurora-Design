@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { useProviderStore } from "@/stores/provider-store"
@@ -18,8 +19,12 @@ import {
   AlertTriangle,
   Info,
   Settings2,
+  Eye,
+  Stethoscope,
+  Wrench,
 } from "lucide-react"
 import { UploadDialog } from "./UploadDialog"
+import { DocumentPreview } from "./DocumentPreview"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -54,9 +59,12 @@ import {
   useInsertText,
   useDeleteDocuments,
   useClearCache,
+  useCacheStats,
   useReprocessFailed,
   useCancelPipeline,
+  useRepairDocuments,
 } from "../hooks/use-knowledge-v2"
+import { diagnoseDocuments, type DiagnoseReport } from "@/services/knowledge-v2"
 import type { DocStatus, DocStatusInfo, DocumentsRequest } from "@/services/knowledge-v2"
 
 interface DocumentManagerProps {
@@ -67,6 +75,7 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 
 export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
+  const { t } = useTranslation("construct")
   const navigate = useNavigate()
 
   // State
@@ -83,9 +92,17 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
   const [deleteFile, setDeleteFile] = useState(false)
   const [deleteLlmCache, setDeleteLlmCache] = useState(false)
   const [detailDoc, setDetailDoc] = useState<DocStatusInfo | null>(null)
+  const [previewDoc, setPreviewDoc] = useState<DocStatusInfo | null>(null)
   const [uploadErrors, setUploadErrors] = useState<Array<{ file: string; error: string }>>([])
   const [processingDeleteDoc, setProcessingDeleteDoc] = useState<DocStatusInfo | null>(null)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false)
+  const [diagnoseReport, setDiagnoseReport] = useState<DiagnoseReport | null>(null)
+  const [diagnoseLoading, setDiagnoseLoading] = useState(false)
+  const [clearCacheOpen, setClearCacheOpen] = useState(false)
+
+  // Cache stats for confirmation dialog
+  const { data: cacheStats } = useCacheStats(knowledgeName)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Model readiness check
@@ -132,6 +149,31 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
   const clearCacheMutation = useClearCache()
   const reprocess = useReprocessFailed()
   const cancelPipeline = useCancelPipeline()
+  const repairMutation = useRepairDocuments()
+
+  const handleDiagnose = useCallback(async () => {
+    setDiagnoseOpen(true)
+    setDiagnoseLoading(true)
+    try {
+      const report = await diagnoseDocuments(knowledgeName)
+      setDiagnoseReport(report)
+    } catch (err) {
+      console.error("Diagnose failed:", err)
+    } finally {
+      setDiagnoseLoading(false)
+    }
+  }, [knowledgeName])
+
+  const handleRepair = useCallback(async () => {
+    try {
+      await repairMutation.mutateAsync({ name: knowledgeName })
+      // Re-run diagnosis after repair
+      const report = await diagnoseDocuments(knowledgeName)
+      setDiagnoseReport(report)
+    } catch (err) {
+      console.error("Repair failed:", err)
+    }
+  }, [knowledgeName, repairMutation])
 
   // Derived state
   const documents = docsData?.items ?? []
@@ -276,9 +318,15 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
   }, [knowledgeName, processingDeleteDoc, cancelPipeline, deleteDocs])
 
   const handleClearCache = useCallback(() => {
-    if (window.confirm("Clear LLM cache? This cannot be undone.")) {
-      clearCacheMutation.mutate({ name: knowledgeName })
-    }
+    setClearCacheOpen(true)
+  }, [])
+
+  const handleConfirmClearCache = useCallback(() => {
+    clearCacheMutation.mutate({ name: knowledgeName }, {
+      onSuccess: () => {
+        setClearCacheOpen(false)
+      }
+    })
   }, [knowledgeName, clearCacheMutation])
 
   const handleReprocess = useCallback(() => {
@@ -418,7 +466,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
             setPage(1)
           }}
         >
-          <span>All</span>
+          <span>{t("knowledge.v2.doc.all")}</span>
           <span className="font-semibold tabular-nums">{totalDocs}</span>
         </button>
 
@@ -458,7 +506,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
           disabled={!isModelReady}
         >
           <Upload className="mr-1.5 h-3.5 w-3.5" />
-          Upload
+          {t("knowledge.v2.doc.upload")}
         </Button>
         <Button
           variant="outline"
@@ -467,14 +515,14 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
           disabled={!isModelReady}
         >
           <FileText className="mr-1 h-3.5 w-3.5" />
-          Insert Text
+          {t("knowledge.v2.doc.insertText")}
         </Button>
         <Button
           variant="outline"
           size="sm"
           onClick={handleReprocess}
           disabled={reprocess.isPending}
-          title="Reprocess failed documents"
+          title={t("knowledge.doc.reprocess")}
         >
           <RotateCcw className={cn("h-3.5 w-3.5", reprocess.isPending && "animate-spin")} />
         </Button>
@@ -483,9 +531,18 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
           size="sm"
           onClick={handleClearCache}
           disabled={clearCacheMutation.isPending}
-          title="Clear LLM cache"
+          title={t("knowledge.doc.clearLlmCache")}
         >
           <Eraser className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleDiagnose}
+          disabled={diagnoseLoading}
+          title="诊断文档完整性（检查内容/chunks 是否丢失）"
+        >
+          <Stethoscope className="h-3.5 w-3.5" />
         </Button>
       </div>
 
@@ -505,7 +562,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
           <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-primary/10 backdrop-blur-sm border-2 border-dashed border-primary">
             <div className="flex flex-col items-center gap-2 text-primary">
               <Upload className="h-8 w-8" />
-              <span className="text-sm font-medium">Drop files to upload</span>
+              <span className="text-sm font-medium">{t("knowledge.v2.doc.dropFiles")}</span>
             </div>
           </div>
         )}
@@ -541,7 +598,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                 <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
                     <FileText className="h-8 w-8 opacity-30" />
-                    <span>No documents found</span>
+                    <span>{t("knowledge.v2.doc.noDocs")}</span>
                   </div>
                 </TableCell>
               </TableRow>
@@ -596,7 +653,17 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                     {formatDate(doc.created_at)}
                   </TableCell>
                   <TableCell>
-                    <Button
+                    <div className="flex items-center gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setPreviewDoc(doc)}
+                        className="text-muted-foreground hover:text-primary"
+                        title="Preview document"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => {
@@ -609,6 +676,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -621,7 +689,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
       {totalPages > 1 && (
         <div className="flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Page</span>
+            <span className="text-sm text-muted-foreground">{t("knowledge.v2.doc.page")}</span>
             <span className="text-sm font-medium tabular-nums">
               {page} / {totalPages}
             </span>
@@ -641,7 +709,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
               <SelectContent>
                 {PAGE_SIZE_OPTIONS.map((s) => (
                   <SelectItem key={s} value={String(s)}>
-                    {s} / page
+                    {s} {t("knowledge.v2.doc.perPage")}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -671,13 +739,13 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
       <Dialog open={textDialogOpen} onOpenChange={setTextDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Insert Text Document</DialogTitle>
+            <DialogTitle>{t("knowledge.v2.doc.insertTextTitle")}</DialogTitle>
             <DialogDescription>
-              Paste or type text content to add to this knowledge base.
+              {t("knowledge.v2.doc.insertTextDesc")}
             </DialogDescription>
           </DialogHeader>
           <Textarea
-            placeholder="Enter text content..."
+            placeholder={t("knowledge.v2.doc.insertTextPlaceholder")}
             value={textContent}
             onChange={(e) => setTextContent(e.target.value)}
             className="min-h-[200px]"
@@ -690,13 +758,13 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                 setTextContent("")
               }}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               onClick={handleInsertText}
               disabled={!textContent.trim() || insertTextMutation.isPending}
             >
-              {insertTextMutation.isPending ? "Inserting..." : "Insert"}
+              {insertTextMutation.isPending ? t("common.saving") : t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -713,10 +781,10 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Info className="h-4 w-4" />
-              Document Details
+              {t("knowledge.v2.doc.docDetails")}
             </DialogTitle>
             <DialogDescription>
-              Detailed information about this document and its processing status.
+              {t("knowledge.v2.doc.docDetailsDesc")}
             </DialogDescription>
           </DialogHeader>
 
@@ -724,7 +792,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
             <div className="space-y-4">
               <div className="space-y-3">
                 <DetailRow
-                  label="File"
+                  label={t("knowledge.doc.file")}
                   value={
                     <div className="flex items-center gap-2 min-w-0">
                       <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -735,12 +803,12 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                   }
                 />
                 <DetailRow
-                  label="Status"
+                  label={t("knowledge.doc.status")}
                   value={<StatusBadge status={detailDoc.status} />}
                 />
-                <DetailRow label="ID" value={detailDoc.id} mono />
+                <DetailRow label={t("knowledge.doc.id")} value={detailDoc.id} mono />
                 {detailDoc.track_id && (
-                  <DetailRow label="Track ID" value={detailDoc.track_id} mono />
+                  <DetailRow label={t("knowledge.doc.trackId")} value={detailDoc.track_id} mono />
                 )}
               </div>
 
@@ -749,7 +817,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                   <div className="flex items-center gap-2 mb-2">
                     <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
                     <span className="text-sm font-semibold text-red-800 dark:text-red-300">
-                      Processing Error
+                      {t("knowledge.v2.doc.processingError")}
                     </span>
                   </div>
                   {detailDoc.error_msg ? (
@@ -758,13 +826,13 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                     </pre>
                   ) : (
                     <p className="text-xs text-red-600 dark:text-red-400 italic">
-                      No error message was recorded.
+                      {t("knowledge.v2.doc.noErrorMsg")}
                     </p>
                   )}
                   <div className="mt-3 flex items-center gap-2 text-xs text-red-600 dark:text-red-500">
                     <Info className="h-3 w-3" />
                     <span>
-                      Error occurred during{" "}
+                      {t("knowledge.v2.doc.errorStage")}{" "}
                       <strong>{guessFailureStage(detailDoc)}</strong>
                     </span>
                   </div>
@@ -773,7 +841,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
 
               <div className="rounded-lg border p-3 space-y-2">
                 <DetailRow
-                  label="Chunks"
+                  label={t("knowledge.doc.chunks")}
                   value={
                     <span className="tabular-nums font-medium">
                       {detailDoc.chunks_count.toLocaleString()}
@@ -781,7 +849,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                   }
                 />
                 <DetailRow
-                  label="Content Length"
+                  label={t("knowledge.doc.contentLength")}
                   value={
                     <span className="tabular-nums">
                       {detailDoc.content_length > 0
@@ -792,7 +860,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                 />
                 {detailDoc.content_summary && (
                   <DetailRow
-                    label="Summary"
+                    label={t("knowledge.doc.summary")}
                     value={
                       <span className="text-muted-foreground line-clamp-2">
                         {detailDoc.content_summary}
@@ -810,11 +878,11 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
 
               <div className="rounded-lg border p-3 space-y-2">
                 <DetailRow
-                  label="Created"
+                  label={t("knowledge.doc.created")}
                   value={formatDate(detailDoc.created_at)}
                 />
                 <DetailRow
-                  label="Updated"
+                  label={t("knowledge.doc.updated")}
                   value={formatDate(detailDoc.updated_at)}
                 />
                 {/* Processing duration for completed docs */}
@@ -822,7 +890,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                   typeof detailDoc.metadata?.processing_start_time === "number" &&
                   typeof detailDoc.metadata?.processing_end_time === "number" && (
                     <DetailRow
-                      label="Duration"
+                      label={t("knowledge.doc.duration")}
                       value={
                         <span className="tabular-nums">
                           {formatDuration(
@@ -848,7 +916,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setDetailDoc(null)}>
-              Close
+              {t("common.close")}
             </Button>
             {detailDoc?.status === "FAILED" && (
               <Button
@@ -860,7 +928,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                 disabled={reprocess.isPending}
               >
                 <RotateCcw className={cn("mr-1.5 h-3.5 w-3.5", reprocess.isPending && "animate-spin")} />
-                Reprocess
+                {t("knowledge.v2.doc.reprocess")}
               </Button>
             )}
           </DialogFooter>
@@ -874,7 +942,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
           if (!open) setProcessingDeleteDoc(null)
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <AlertTriangle className="h-5 w-5" />
@@ -886,16 +954,16 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
                 {processingDeleteDoc?.status === "PARSING" && "文件解析"}
                 {processingDeleteDoc?.status === "ANALYZING" && "内容分析"}
                 {processingDeleteDoc?.status === "PREPROCESSED" && "预处理"}
-                {processingDeleteDoc?.status === "PROCESSING" && "实体抽取"}
+                {processingDeleteDoc?.status === "PROCESSING" && t("knowledge.v2.doc.extracting")}
               </span>
               ，强制删除可能导致数据不一致。
             </DialogDescription>
           </DialogHeader>
 
-          <div className="rounded-lg border bg-muted/50 p-3 space-y-2">
-            <div className="flex items-center gap-2 text-sm">
+          <div className="rounded-lg border bg-muted/50 p-3 space-y-2 min-w-0">
+            <div className="flex items-center gap-2 text-sm min-w-0">
               <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="truncate font-medium">
+              <span className="truncate font-medium min-w-0">
                 {processingDeleteDoc?.file_path || processingDeleteDoc?.content_summary || processingDeleteDoc?.id}
               </span>
             </div>
@@ -959,7 +1027,7 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
           }
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
               <Trash2 className="h-4 w-4" />
@@ -972,11 +1040,11 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
 
           {/* 文件信息 */}
           {deleteConfirmDoc && (
-            <div className="rounded-lg border bg-muted/40 px-3 py-2.5 flex items-center gap-2.5">
+            <div className="rounded-lg border bg-muted/40 px-3 py-2.5 flex items-center gap-2.5 min-w-0">
               <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span
-                className="text-sm font-medium truncate"
-                title={deleteConfirmDoc.file_path || deleteConfirmDoc.id}
+                className="text-sm font-medium truncate min-w-0"
+                title={deleteConfirmDoc.file_path || deleteConfirmDoc.content_summary || deleteConfirmDoc.id}
               >
                 {deleteConfirmDoc.file_path || deleteConfirmDoc.content_summary || deleteConfirmDoc.id}
               </span>
@@ -1018,27 +1086,23 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
               </div>
             </label>
 
-            {/* delete_llm_cache — 后端暂未实现，展示为禁用 */}
-            <div className="flex items-start gap-2.5 opacity-50 select-none">
+            {/* delete_llm_cache — 清除该文档的 LLM 抽取缓存 */}
+            <label className="flex items-start gap-2.5 cursor-pointer group">
               <input
                 type="checkbox"
-                className="mt-0.5 h-4 w-4 rounded border-border cursor-not-allowed shrink-0"
-                disabled
-                checked={false}
-                readOnly
+                className="mt-0.5 h-4 w-4 rounded border-border accent-primary cursor-pointer shrink-0"
+                checked={deleteLlmCache}
+                onChange={(e) => setDeleteLlmCache(e.target.checked)}
               />
               <div>
-                <p className="text-sm font-medium flex items-center gap-1.5">
+                <p className="text-sm font-medium group-hover:text-foreground transition-colors">
                   清除 LLM 抽取缓存
-                  <span className="text-[10px] font-normal rounded px-1.5 py-0.5 bg-muted text-muted-foreground border">
-                    暂未实现
-                  </span>
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  实体/关系抽取的 LLM 缓存清除，后续版本支持
+                  删除该文档相关的实体/关系抽取缓存，下次重新处理时将重新调用 LLM 抽取
                 </p>
               </div>
-            </div>
+            </label>
 
             {/* 分隔线 + 向量/图数据说明 */}
             <div className="border-t pt-2.5">
@@ -1096,6 +1160,322 @@ export function DocumentManager({ knowledgeName }: DocumentManagerProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Clear Cache Confirmation Dialog */}
+      <Dialog open={clearCacheOpen} onOpenChange={setClearCacheOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eraser className="h-5 w-5 text-amber-500" />
+              清除 LLM 缓存
+            </DialogTitle>
+            <DialogDescription>
+              此操作将清除知识库的 LLM 响应缓存，不会影响文档内容或知识图谱。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {cacheStats ? (
+              <div className="space-y-3">
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">缓存条目数</span>
+                    <span className="text-lg font-semibold">{cacheStats.count}</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-sm text-muted-foreground">预估大小</span>
+                    <span className="text-sm font-medium">{cacheStats.estimated_size_mb} MB</span>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  清除缓存后，下次提取实体和关系时将重新调用 LLM，可能会增加处理时间和 API 成本。
+                </p>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setClearCacheOpen(false)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmClearCache}
+              disabled={clearCacheMutation.isPending}
+            >
+              {clearCacheMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  清除中...
+                </>
+              ) : (
+                <>
+                  <Eraser className="mr-2 h-4 w-4" />
+                  确认清除
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diagnose Dialog */}
+      <Dialog open={diagnoseOpen} onOpenChange={setDiagnoseOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Stethoscope className="h-5 w-5 text-primary" />
+              文档完整性诊断
+            </DialogTitle>
+            <DialogDescription>
+              检查所有已处理文档的内容和 Chunks 是否完整
+            </DialogDescription>
+          </DialogHeader>
+
+          {diagnoseLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-sm text-muted-foreground">正在诊断...</span>
+            </div>
+          ) : diagnoseReport ? (
+            <div className="space-y-4">
+              {/* Status Distribution */}
+              <div className="rounded-lg border p-4">
+                <h4 className="text-sm font-medium mb-3">文档状态分布</h4>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">总文档数</span>
+                    <span className="font-semibold">{diagnoseReport.total}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">已处理</span>
+                    <span className="font-semibold text-emerald-600">{diagnoseReport.processed_count}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">失败</span>
+                    <span className="font-semibold text-red-600">{diagnoseReport.failed_count}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">处理中</span>
+                    <span className="font-semibold text-blue-600">{diagnoseReport.in_progress_count}</span>
+                  </div>
+                </div>
+                {Object.entries(diagnoseReport.status_counts).length > 0 && (
+                  <div className="mt-3 pt-3 border-t">
+                    <p className="text-xs text-muted-foreground mb-2">详细状态:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(diagnoseReport.status_counts).map(([status, count]) => (
+                        <span key={status} className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded">
+                          <span className="font-medium">{status}</span>
+                          <span className="text-muted-foreground">({count})</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* PROCESSED documents integrity check */}
+              {diagnoseReport.processed_count > 0 && (
+                <div className="rounded-lg border p-4">
+                  <h4 className="text-sm font-medium mb-3">已处理文档完整性检查</h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-emerald-600">{diagnoseReport.healthy}</p>
+                      <p className="text-xs text-muted-foreground">✅ 正常</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-red-600">{diagnoseReport.missing_content}</p>
+                      <p className="text-xs text-muted-foreground">❌ 丢失内容</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-amber-600">{diagnoseReport.missing_chunks}</p>
+                      <p className="text-xs text-muted-foreground">⚠️ 丢失 Chunks</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Failed documents */}
+              {diagnoseReport.failed_count > 0 && (
+                <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertCircle className="h-4 w-4 text-red-500" />
+                    <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                      {diagnoseReport.failed_count} 个文档处理失败
+                    </span>
+                  </div>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {diagnoseReport.details.failed_docs.map((doc) => (
+                      <div key={doc.id} className="text-xs">
+                        <div className="flex items-center gap-2">
+                          <X className="h-3 w-3 text-red-400 shrink-0" />
+                          <span className="truncate font-medium">{doc.basename || doc.file_path || doc.id}</span>
+                        </div>
+                        <p className="text-red-600 dark:text-red-400 ml-5 mt-0.5">{doc.error_msg}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* In-progress documents */}
+              {diagnoseReport.in_progress_count > 0 && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Clock className="h-4 w-4 text-blue-500" />
+                    <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                      {diagnoseReport.in_progress_count} 个文档正在处理中
+                    </span>
+                  </div>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {diagnoseReport.details.in_progress_docs.map((doc) => (
+                      <div key={doc.id} className="text-xs flex items-center gap-2">
+                        <Loader2 className="h-3 w-3 text-blue-400 shrink-0 animate-spin" />
+                        <span className="truncate">{doc.basename || doc.file_path || doc.id}</span>
+                        <span className="text-blue-600 dark:text-blue-400 shrink-0">({doc.status})</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Issue details */}
+              {diagnoseReport.missing_content > 0 && (
+                <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertCircle className="h-4 w-4 text-red-500" />
+                    <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                      {diagnoseReport.missing_content} 个文档丢失了完整内容
+                    </span>
+                  </div>
+                  <p className="text-xs text-red-600 dark:text-red-400 mb-2">
+                    这些文档的全文内容在 KV 存储中不存在。可能是之前 clear_llm_cache 的 bug 导致的。
+                  </p>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {diagnoseReport.details.missing_content_docs.map((doc) => (
+                      <div key={doc.id} className="text-xs flex items-center gap-2">
+                        {doc.file_exists ? (
+                          <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                        ) : (
+                          <X className="h-3 w-3 text-red-400 shrink-0" />
+                        )}
+                        <span className="truncate">{doc.basename || doc.file_path || doc.id}</span>
+                        {doc.file_exists && (
+                          <span className="text-emerald-600 dark:text-emerald-400 shrink-0">可修复</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {diagnoseReport.missing_chunks > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                      {diagnoseReport.missing_chunks} 个文档丢失了 Chunks
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+                    这些文档的 chunk 数据不存在，但文档状态仍显示为 PROCESSED。
+                  </p>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {diagnoseReport.details.missing_chunks_docs.map((doc) => (
+                      <div key={doc.id} className="text-xs flex items-center gap-2">
+                        {doc.file_exists ? (
+                          <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                        ) : (
+                          <X className="h-3 w-3 text-red-400 shrink-0" />
+                        )}
+                        <span className="truncate">{doc.basename || doc.file_path || doc.id}</span>
+                        {doc.file_exists && (
+                          <span className="text-emerald-600 dark:text-emerald-400 shrink-0">可修复</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* All healthy */}
+              {diagnoseReport.missing_content === 0 && diagnoseReport.missing_chunks === 0 && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30 p-4 text-center">
+                  <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                    所有文档完整性正常！
+                  </p>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">
+                    {diagnoseReport.healthy} 个已处理文档的内容和 Chunks 均完好。
+                  </p>
+                </div>
+              )}
+
+              {/* Repair info */}
+              {diagnoseReport.repairable > 0 && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Info className="h-4 w-4 text-blue-500" />
+                    <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                      {diagnoseReport.repairable} 个文档可以自动修复
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    这些文档的原始文件仍在磁盘上，点击「自动修复」将重新处理它们。
+                    通过 insert_text 插入的文本如果丢失则无法自动修复，需要重新上传。
+                  </p>
+                </div>
+              )}
+
+              {/* Not repairable warning */}
+              {diagnoseReport.missing_content > 0 && diagnoseReport.repairable === 0 && (
+                <div className="rounded-lg border border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/30 p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertTriangle className="h-4 w-4 text-orange-500" />
+                    <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                      无法自动修复
+                    </span>
+                  </div>
+                  <p className="text-xs text-orange-600 dark:text-orange-400">
+                    这些文档的原始文件已不在磁盘上（可能是通过 insert_text 插入的），需要重新上传文件。
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setDiagnoseOpen(false)}>
+              关闭
+            </Button>
+            {diagnoseReport && diagnoseReport.repairable > 0 && (
+              <Button
+                onClick={handleRepair}
+                disabled={repairMutation.isPending}
+              >
+                {repairMutation.isPending ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Wrench className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                自动修复 ({diagnoseReport.repairable})
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Document Preview Slide-over */}
+      <DocumentPreview
+        doc={previewDoc}
+        knowledgeName={knowledgeName}
+        onClose={() => setPreviewDoc(null)}
+      />
     </div>
   )
 }
@@ -1275,35 +1655,35 @@ function guessFailureStage(doc: DocStatusInfo): string {
   const err = (doc.error_msg ?? "").toLowerCase()
 
   if (err.includes("llm not configured") || err.includes("chat model")) {
-    return "model binding (Chat Model not bound)"
+    return "模型绑定 (未绑定 Chat Model)"
   }
   if (err.includes("embedding model not configured") || err.includes("embedding model not bound")) {
-    return "model binding (Embedding Model not bound)"
+    return "模型绑定 (未绑定 Embedding Model)"
   }
   if (err.includes("upload") || err.includes("network") || err.includes("http")) {
-    return "upload"
+    return "文件上传"
   }
   if (err.includes("parse") || err.includes("extract") || err.includes("empty document")) {
-    return "parsing"
+    return "文件解析"
   }
   if (err.includes("chunk") || err.includes("split")) {
-    return "chunking"
+    return "文档分块"
   }
   if (err.includes("embed") || err.includes("vector") || err.includes("embedding")) {
-    return "embedding"
+    return "向量化 (Embedding)"
   }
   if (err.includes("entity") || err.includes("relation") || err.includes("llm") || err.includes("model")) {
-    return "entity extraction (LLM)"
+    return "实体/关系抽取 (LLM)"
   }
   if (err.includes("cancel")) {
-    return "pipeline (cancelled)"
+    return "处理管线 (已终止)"
   }
   if (err.includes("graph") || err.includes("merge")) {
-    return "graph merge"
+    return "图谱数据合并"
   }
   if (err.includes("storage") || err.includes("write") || err.includes("persist")) {
-    return "storage"
+    return "数据存储"
   }
 
-  return "processing"
+  return "系统处理中"
 }

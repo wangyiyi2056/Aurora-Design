@@ -1,0 +1,31 @@
+Aurora has been deployed successfully!
+
+Release:   {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Chart:     {{ .Chart.Name }}-{{ .Chart.Version }}
+App:       {{ .Chart.AppVersion }}
+
+{{- if .Values.ingress.enabled }}
+
+Aurora is accessible at:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+
+{{- else if eq .Values.service.type "ClusterIP" }}
+
+Access Aurora via port-forward:
+  kubectl port-forward svc/{{ include "aurora.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+
+Then open: http://localhost:8080
+
+{{- else if eq .Values.service.type "LoadBalancer" }}
+
+Aurora will be available at the LoadBalancer external IP.
+Check status with:
+  kubectl get svc {{ include "aurora.fullname" . }} -n {{ .Release.Namespace }} -w
+{{- end }}
+
+Check deployment status:
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }}
+  kubectl logs -l app.kubernetes.io/instance={{ .Release.Name }} -f -n {{ .Release.Namespace }}

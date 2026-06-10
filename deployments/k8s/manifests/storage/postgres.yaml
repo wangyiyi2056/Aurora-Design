@@ -1,0 +1,208 @@
+# ──────────────────────────────────────────────────────────────────────
+# PostgreSQL StatefulSet (primary + read replica)
+#
+# For production, consider using:
+#   - Cloud-managed PostgreSQL (RDS, Cloud SQL, Azure Database)
+#   - Zalando PostgreSQL Operator
+#   - CrunchyData PostgreSQL Operator
+# ──────────────────────────────────────────────────────────────────────
+
+# ── ConfigMap for PostgreSQL tuning ──────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aurora-postgres-config
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora-postgres
+    app.kubernetes.io/component: database
+data:
+  postgresql.conf: |
+    max_connections = 200
+    shared_buffers = 256MB
+    effective_cache_size = 512MB
+    work_mem = 16MB
+    maintenance_work_mem = 128MB
+    wal_buffers = 8MB
+    checkpoint_completion_target = 0.9
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    log_min_duration_statement = 1000
+    shared_preload_libraries = 'pg_stat_statements'
+
+---
+# ── Secret for PostgreSQL credentials ────────────────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aurora-postgres-secret
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora-postgres
+    app.kubernetes.io/component: database
+type: Opaque
+data:
+  # echo -n 'aurora' | base64
+  POSTGRES_USER: YXVyb3Jh
+  # echo -n 'aurora_secret' | base64
+  POSTGRES_PASSWORD: YXVyb3JhX3NlY3JldA==
+  # echo -n 'aurora' | base64
+  POSTGRES_DB: YXVyb3Jh
+  # echo -n 'aurora_replication' | base64
+  REPLICATION_PASSWORD: YXVyb3JhX3JlcGxpY2F0aW9u
+
+---
+# ── Service (headless for StatefulSet) ────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: aurora-postgres-headless
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora-postgres
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: aurora-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+
+---
+# ── Service (client-facing) ──────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: aurora-postgres
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora-postgres
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: aurora-postgres
+    app.kubernetes.io/component: database
+    role: primary
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+
+---
+# ── StatefulSet ──────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: aurora-postgres
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora-postgres
+    app.kubernetes.io/component: database
+spec:
+  serviceName: aurora-postgres-headless
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aurora-postgres
+      app.kubernetes.io/component: database
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aurora-postgres
+        app.kubernetes.io/component: database
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: aurora-postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: aurora-postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: aurora-postgres-secret
+                  key: POSTGRES_DB
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          args:
+            - postgres
+            - -c
+            - config_file=/etc/postgresql/postgresql.conf
+
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - aurora
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - aurora
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-config
+              mountPath: /etc/postgresql
+            - name: postgres-init
+              mountPath: /docker-entrypoint-initdb.d
+
+      volumes:
+        - name: postgres-config
+          configMap:
+            name: aurora-postgres-config
+        - name: postgres-init
+          configMap:
+            name: aurora-postgres-config
+            optional: true
+
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 20Gi

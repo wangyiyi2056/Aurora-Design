@@ -6,6 +6,7 @@ import {
   GraphSearchContextProviderProps
 } from '@react-sigma/graph-search'
 import { AsyncSearch } from '@/components/ui/AsyncSearch'
+import { Badge } from '@/components/ui/badge'
 import { searchResultLimit } from '@/features/construct/knowledge/lib/constants'
 import { useGraphStore } from '@/features/construct/knowledge/stores/graph'
 import MiniSearch from 'minisearch'
@@ -33,19 +34,25 @@ const NodeOption = ({ id }: { id: string }) => {
   const label = graph.getNodeAttribute(id, 'label') || id
   const color = graph.getNodeAttribute(id, 'color') || '#666'
   const size = graph.getNodeAttribute(id, 'size') || 4
+  const entityType = graph.getNodeAttribute(id, 'entity_type') || ''
 
-  // Custom node display component that doesn't rely on @react-sigma/graph-search
+  // Compact node display with bordered color dot and optional entity type badge
   return (
-    <div className="flex items-center gap-2 p-2 text-sm">
+    <div className="flex items-center gap-2 py-1 px-1.5">
       <div
-        className="rounded-full flex-shrink-0"
+        className="rounded-full flex-shrink-0 ring-2 ring-border"
         style={{
-          width: Math.max(8, Math.min(size * 2, 16)),
-          height: Math.max(8, Math.min(size * 2, 16)),
+          width: Math.max(10, Math.min(size * 2, 14)),
+          height: Math.max(10, Math.min(size * 2, 14)),
           backgroundColor: color
         }}
       />
-      <span className="truncate">{label}</span>
+      <span className="truncate text-sm flex-1 min-w-0">{label}</span>
+      {entityType && (
+        <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 leading-tight">
+          {entityType}
+        </Badge>
+      )}
     </div>
   )
 }
@@ -205,7 +212,8 @@ export const GraphSearchInput = ({
 
   return (
     <AsyncSearch
-      className="bg-background/60 w-24 rounded-xl border-1 opacity-60 backdrop-blur-lg transition-all hover:w-fit hover:opacity-100 w-full"
+      className="min-w-[300px] rounded-md border bg-background text-foreground shadow-sm"
+      searchInputClassName="max-h-8"
       fetcher={loadOptions}
       renderOption={OptionComponent}
       getOptionValue={(item) => item.id}

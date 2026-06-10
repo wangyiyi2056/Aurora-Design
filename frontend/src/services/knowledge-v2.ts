@@ -20,6 +20,7 @@ export interface QueryRequest {
   hl_keywords?: string[]
   ll_keywords?: string[]
   conversation_history?: Array<{ role: string; content: string }>
+  history_turns?: number
   user_prompt?: string
   enable_rerank?: boolean
   include_references?: boolean
@@ -268,6 +269,13 @@ export async function deleteDocuments(
   return res.data
 }
 
+export async function getCacheStats(name: string) {
+  const res = await apiClient.get(
+    `/v1/knowledge/${encodeURIComponent(name)}/documents/cache_stats`
+  )
+  return res.data
+}
+
 export async function clearCache(name: string) {
   const res = await apiClient.post(
     `/v1/knowledge/${encodeURIComponent(name)}/documents/clear_cache`
@@ -285,6 +293,40 @@ export async function reprocessFailed(name: string) {
 export async function cancelPipeline(name: string) {
   const res = await apiClient.post(
     `/v1/knowledge/${encodeURIComponent(name)}/documents/cancel_pipeline`
+  )
+  return res.data
+}
+
+export interface DiagnoseReport {
+  total: number
+  status_counts: Record<string, number>
+  processed_count: number
+  failed_count: number
+  in_progress_count: number
+  healthy: number
+  missing_content: number
+  missing_chunks: number
+  repairable: number
+  details: {
+    healthy_docs: Array<{ id: string; file_path: string; basename: string; status: string }>
+    missing_content_docs: Array<{ id: string; file_path: string; basename: string; status: string; issue: string; file_exists: boolean }>
+    missing_chunks_docs: Array<{ id: string; file_path: string; basename: string; status: string; issue: string; file_exists: boolean }>
+    failed_docs: Array<{ id: string; file_path: string; basename: string; status: string; error_msg: string }>
+    in_progress_docs: Array<{ id: string; file_path: string; basename: string; status: string }>
+    repairable_docs: Array<{ id: string; file_path: string; basename: string; status: string; issue?: string; file_exists: boolean }>
+  }
+}
+
+export async function diagnoseDocuments(name: string): Promise<DiagnoseReport> {
+  const res = await apiClient.get(
+    `/v1/knowledge/${encodeURIComponent(name)}/documents/diagnose`
+  )
+  return res.data
+}
+
+export async function repairDocuments(name: string) {
+  const res = await apiClient.post(
+    `/v1/knowledge/${encodeURIComponent(name)}/documents/repair`
   )
   return res.data
 }

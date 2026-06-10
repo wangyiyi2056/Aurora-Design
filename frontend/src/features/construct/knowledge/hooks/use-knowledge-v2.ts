@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import {
   listKnowledgeV2,
   uploadDocument,
@@ -7,9 +7,12 @@ import {
   getStatusCounts,
   getPipelineStatus,
   deleteDocuments,
+  getCacheStats,
   clearCache,
   reprocessFailed,
   cancelPipeline,
+  diagnoseDocuments,
+  repairDocuments,
   queryKnowledgeV2,
   queryKnowledgeData,
   getGraphLabels,
@@ -35,7 +38,7 @@ import { getKnowledgeDetail as getV1Detail } from "@/services/knowledge"
 // Query key factories
 // ─────────────────────────────────────────────────────────────────────────────
 
-const knowledgeKeys = {
+export const knowledgeKeys = {
   all: ["knowledge", "v2"] as const,
   list: () => [...knowledgeKeys.all, "list"] as const,
   detail: (name: string) => [...knowledgeKeys.all, "detail", name] as const,
@@ -44,6 +47,7 @@ const knowledgeKeys = {
     [...knowledgeKeys.all, "documents", name, "paginated", params] as const,
   statusCounts: (name: string) => [...knowledgeKeys.all, "status-counts", name] as const,
   pipeline: (name: string) => [...knowledgeKeys.all, "pipeline-status", name] as const,
+  cacheStats: (name: string) => [...knowledgeKeys.all, "cache-stats", name] as const,
   graph: (name: string) => [...knowledgeKeys.all, "graph", name] as const,
   graphLabels: (name: string) => [...knowledgeKeys.all, "graph", name, "labels"] as const,
   popularLabels: (name: string, limit: number) =>
@@ -52,6 +56,23 @@ const knowledgeKeys = {
     [...knowledgeKeys.all, "graph", "search-labels", name, q, limit] as const,
   subgraph: (name: string, label: string, depth: number, nodes: number) =>
     [...knowledgeKeys.all, "graph", "subgraph", name, label, depth, nodes] as const,
+}
+
+export function invalidateKnowledgeDetailV2Queries(qc: QueryClient, name: string) {
+  qc.invalidateQueries({ queryKey: knowledgeKeys.detail(name) })
+  qc.invalidateQueries({ queryKey: knowledgeKeys.documents(name) })
+  qc.invalidateQueries({ queryKey: knowledgeKeys.statusCounts(name) })
+  qc.invalidateQueries({ queryKey: knowledgeKeys.pipeline(name) })
+  qc.invalidateQueries({ queryKey: knowledgeKeys.cacheStats(name) })
+  qc.invalidateQueries({ queryKey: knowledgeKeys.graph(name) })
+  qc.invalidateQueries({ queryKey: knowledgeKeys.graphLabels(name) })
+  qc.invalidateQueries({
+    predicate: (query) => {
+      const key = query.queryKey
+      if (key[0] !== "knowledge" || key[1] !== "v2" || key[2] !== "graph") return false
+      return key[3] === name || key[4] === name
+    },
+  })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -226,6 +247,35 @@ export function useClearCache() {
     mutationFn: ({ name }: { name: string }) => clearCache(name),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: knowledgeKeys.all })
+    },
+  })
+}
+
+export function useCacheStats(name: string) {
+  return useQuery({
+    queryKey: knowledgeKeys.cacheStats(name),
+    queryFn: () => getCacheStats(name),
+    enabled: !!name,
+    refetchOnWindowFocus: false,
+  })
+}
+
+export function useDiagnoseDocuments() {
+  return useQuery({
+    queryKey: ["knowledge", "v2", "diagnose"],
+    queryFn: () => diagnoseDocuments(""),
+    enabled: false,
+  })
+}
+
+export function useRepairDocuments() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name }: { name: string }) => repairDocuments(name),
+    onSuccess: (_data, { name }) => {
+      qc.invalidateQueries({ queryKey: knowledgeKeys.documents(name) })
+      qc.invalidateQueries({ queryKey: knowledgeKeys.statusCounts(name) })
+      qc.invalidateQueries({ queryKey: knowledgeKeys.pipeline(name) })
     },
   })
 }

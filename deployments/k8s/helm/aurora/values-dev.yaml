@@ -1,0 +1,95 @@
+# ──────────────────────────────────────────────────────────────────────
+# Aurora Helm — Development Environment Overrides
+#
+# Usage:
+#   helm install aurora-dev ./helm/aurora \
+#     -f helm/aurora/values-dev.yaml \
+#     --namespace aurora-dev --create-namespace
+# ──────────────────────────────────────────────────────────────────────
+
+replicaCount: 1
+
+autoscaling:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+app:
+  logLevel: debug
+  environment: development
+
+persistence:
+  data:
+    size: 5Gi
+  uploads:
+    size: 5Gi
+
+postgresql:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  storage:
+    size: 5Gi
+
+redis:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  maxmemory: 128mb
+  storage:
+    size: 2Gi
+
+neo4j:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  storage:
+    size: 5Gi
+
+milvus:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  etcd:
+    storage:
+      size: 2Gi
+  minio:
+    storage:
+      size: 5Gi
+  storage:
+    size: 10Gi
+
+podDisruptionBudget:
+  enabled: false
+
+ingress:
+  hosts:
+    - host: aurora-dev.local
+      paths:
+        - path: /
+          pathType: Prefix

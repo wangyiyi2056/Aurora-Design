@@ -124,7 +124,7 @@ const useSettingsStoreBase = create<SettingsState>()(
       userPromptHistory: [],
 
       querySettings: {
-        mode: 'global',
+        mode: 'mix',
         top_k: 40,
         chunk_top_k: 20,
         max_entity_tokens: 6000,
@@ -191,11 +191,8 @@ const useSettingsStoreBase = create<SettingsState>()(
       setRetrievalHistory: (history: Message[]) => set({ retrievalHistory: history }),
 
       updateQuerySettings: (settings: Partial<QueryRequest>) => {
-        // Filter out history_turns to prevent changes, always keep it as 0
-        const filteredSettings = { ...settings }
-        delete filteredSettings.history_turns
         set((state) => ({
-          querySettings: { ...state.querySettings, ...filteredSettings, history_turns: 0 }
+          querySettings: { ...state.querySettings, ...settings }
         }))
       },
 

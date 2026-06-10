@@ -31,3 +31,36 @@ def test_sessions_use_storage_dir_and_support_title_updates(tmp_path, monkeypatc
         loaded = client.get(f"/api/v1/chat/sessions/{session_id}")
         assert loaded.status_code == 200
         assert loaded.json()["session"]["title"] == "Sales analysis"
+
+
+def test_session_messages_persist_context_attachments(tmp_path, monkeypatch):
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "aurora.db"))
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
+
+    with TestClient(create_app()) as client:
+        create_resp = client.post("/api/v1/chat/sessions")
+        assert create_resp.status_code == 200
+        session_id = create_resp.json()["session_id"]
+
+        upsert_resp = client.put(
+            f"/api/v1/chat/sessions/{session_id}/messages/user-1",
+            json={
+                "type": "user",
+                "role": "user",
+                "content": "介绍数据源",
+                "context_attachments": [
+                    {"kind": "datasource", "name": "sales-db"},
+                    {"kind": "design_skill", "id": "dashboard", "name": "dashboard"},
+                ],
+            },
+        )
+        assert upsert_resp.status_code == 200
+
+    with TestClient(create_app()) as client:
+        loaded = client.get(f"/api/v1/chat/sessions/{session_id}")
+        assert loaded.status_code == 200
+        message = loaded.json()["messages"][0]
+        assert message["context_attachments"] == [
+            {"kind": "datasource", "name": "sales-db"},
+            {"kind": "design_skill", "id": "dashboard", "name": "dashboard"},
+        ]

@@ -15,17 +15,25 @@ import os
 from typing import Any, Optional
 
 from aurora_ext.rag.storage.base import BaseKVStorage
+from aurora_ext.rag.storage.workspace import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
 
 class JsonKVStorage(BaseKVStorage):
-    """JSON file-backed key-value store."""
+    """JSON file-backed key-value store.
+
+    Supports workspace isolation: when a ``WorkspaceManager`` is present
+    in ``global_config``, data files are placed in a workspace
+    subdirectory — ``{working_dir}/{workspace_id}/{namespace}.json``.
+    """
 
     def __init__(self, namespace: str, global_config: dict[str, Any]) -> None:
         super().__init__(namespace, global_config)
         working_dir = global_config.get("working_dir", "./rag_storage")
-        self._file_path = os.path.join(working_dir, f"{namespace}.json")
+        wm = get_workspace_manager(global_config)
+        self._workspace_manager = wm
+        self._file_path = wm.get_file_path(working_dir, f"{namespace}.json")
         self._data: dict[str, dict[str, Any]] = {}
         self._loaded = False
 

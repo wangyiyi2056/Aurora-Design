@@ -22,6 +22,17 @@ def test_register_and_get_llm():
     assert registry.get_llm() is llm
 
 
+def test_get_llm_uses_explicit_default():
+    registry = ModelRegistry()
+    old_llm = FakeLLM(LLMConfig(model_name="old", model_type="test"))
+    new_llm = FakeLLM(LLMConfig(model_name="new", model_type="test"))
+
+    registry.register_llm("old", old_llm)
+    registry.register_llm("new", new_llm, is_default=True)
+
+    assert registry.get_llm() is new_llm
+
+
 def test_get_llm_not_found():
     registry = ModelRegistry()
     with pytest.raises(KeyError):

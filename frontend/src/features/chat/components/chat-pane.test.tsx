@@ -58,6 +58,29 @@ describe("ChatPane message actions", () => {
     expect(screen.getByRole("textbox")).toHaveValue("会失败的请求")
   })
 
+
+  it("renders context attachments on user messages", () => {
+    renderPane([
+      {
+        id: "u1",
+        role: "user",
+        content: "介绍数据源",
+        contextAttachments: [
+          { kind: "datasource", name: "sales-db" },
+          { kind: "design_skill", id: "dashboard", name: "dashboard" },
+          { kind: "design_system", id: "vercel", title: "Vercel" },
+          { kind: "custom_prompt", id: "prompt-1", name: "sales-dashboard" },
+        ],
+      },
+    ])
+
+    const chips = screen.getByTestId("user-context-attachments")
+    expect(chips).toHaveTextContent("sales-db")
+    expect(chips).toHaveTextContent("dashboard")
+    expect(chips).toHaveTextContent("Vercel")
+    expect(chips).toHaveTextContent("sales-dashboard")
+  })
+
   it("opens a user attachment with its workspace path instead of only the basename", () => {
     const onRequestOpenFile = vi.fn()
     render(

@@ -7,7 +7,7 @@ import type { PromptTemplate } from '../../../services/prompts';
 import type { DatasourceItem } from '../../../services/database';
 import { projectRawUrl } from '../providers/registry';
 import type { TodoItem } from '../runtime/todos';
-import type { AppConfig, ChatAttachment, ChatCommentAttachment, ChatMessage, Conversation, PreviewComment, ProjectFile, ProjectMetadata } from '../types';
+import type { AppConfig, ChatAttachment, ChatCommentAttachment, ChatContextAttachment, ChatMessage, Conversation, PreviewComment, ProjectFile, ProjectMetadata } from '../types';
 import { dayKey, dayLabel, exactDateTime, messageTime, relativeTimeLong } from '../utils/chat-time';
 import { commentsToAttachments } from '../comments';
 import { AgentProcessView } from './agent-process-view';
@@ -68,6 +68,7 @@ interface Props {
     attachments: ChatAttachment[],
     commentAttachments: ChatCommentAttachment[],
     customPromptIds: string[],
+    contextAttachments: ChatContextAttachment[],
   ) => void;
   onStop: () => void;
   // Click-to-open chain: passes a basename up to ProjectView, which sets
@@ -453,6 +454,32 @@ function isActiveRunStatus(status: ChatMessage['runStatus']): boolean {
   return status === 'queued' || status === 'running';
 }
 
+
+function contextAttachmentKey(attachment: ChatContextAttachment): string {
+  if (attachment.kind === 'datasource') return `datasource:${attachment.name}`;
+  return `${attachment.kind}:${attachment.id}`;
+}
+
+function contextAttachmentLabel(attachment: ChatContextAttachment): string {
+  if (attachment.kind === 'datasource') return attachment.name;
+  if (attachment.kind === 'design_system') return attachment.title;
+  return attachment.name;
+}
+
+function contextAttachmentClassName(attachment: ChatContextAttachment): string {
+  if (attachment.kind === 'datasource') return 'datasource-chip';
+  if (attachment.kind === 'design_skill') return 'design-skill-chip';
+  if (attachment.kind === 'design_system') return 'design-system-chip';
+  return 'custom-prompt-chip';
+}
+
+function contextAttachmentIcon(attachment: ChatContextAttachment): 'link' | 'sparkles' | 'grid' | 'file' {
+  if (attachment.kind === 'datasource') return 'link';
+  if (attachment.kind === 'design_skill') return 'sparkles';
+  if (attachment.kind === 'design_system') return 'grid';
+  return 'file';
+}
+
 function UserMessage({
   message,
   retryEditable,
@@ -474,6 +501,7 @@ function UserMessage({
 }) {
   const attachments = message.attachments ?? [];
   const commentAttachments = message.commentAttachments ?? [];
+  const contextAttachments = message.contextAttachments ?? [];
   const text = message.content;
   return (
     <div className={`msg user${retryEditable ? ' retry-editable' : ''}`}>
@@ -519,6 +547,18 @@ function UserMessage({
                 <strong>{a.elementId}</strong>
                 <span>{a.comment}</span>
               </span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {contextAttachments.length > 0 ? (
+        <div className="user-attachments context-history-attachments" data-testid="user-context-attachments">
+          {contextAttachments.map((a) => (
+            <span key={contextAttachmentKey(a)} className={`user-attachment staged-chip ${contextAttachmentClassName(a)}`}>
+              <span className="staged-icon" aria-hidden>
+                <Icon name={contextAttachmentIcon(a)} size={13} />
+              </span>
+              <span className="staged-name">{contextAttachmentLabel(a)}</span>
             </span>
           ))}
         </div>

@@ -15,6 +15,7 @@ from aurora_ext.rag import (
     EmbeddingAssembler,
     KnowledgeFactory,
 )
+from aurora_ext.rag.retrieval.citation_tracker import Citation, CitationTracker, QueryResultWithCitations
 from aurora_ext.rag.retriever.embedding_retriever import EmbeddingRetriever
 from aurora_ext.storage import ChromaVectorStore
 from aurora_serve.metadata import (
@@ -181,14 +182,73 @@ class KnowledgeService(BaseService):
                 for doc in docs
             ]
 
-    async def query(self, name: str, query: str, top_k: int = 5) -> dict[str, object]:
+    async def query(
+        self,
+        name: str,
+        query: str,
+        top_k: int = 5,
+        source_filter: str | None = None,
+        min_score: float = 0.0,
+    ) -> dict[str, object]:
+        """Query a knowledge base and return results with citation tracking.
+
+        Response shape::
+
+            {
+              "answer": "",
+              "citations": [
+                {"content": "...", "source": "file.pdf", "page": 1, ...}
+              ],
+              "results": [ ... ],   # backward-compatible raw results
+            }
+        """
         retriever = self._retrievers.get(name) or self._restore_retriever(name, top_k=top_k)
         if retriever is None:
             return {"error": f"Knowledge base '{name}' not found"}
         if hasattr(retriever, "top_k"):
             retriever.top_k = top_k
-        docs = await retriever.retrieve(query)
-        return {"results": [{"content": d.content, "metadata": d.metadata} for d in docs]}
+
+        # Prefer raw results for citation building (includes score, chunk_id …)
+        if hasattr(retriever, "retrieve_raw"):
+            raw_results = await retriever.retrieve_raw(query)
+        else:
+            docs = await retriever.retrieve(query)
+            raw_results = [
+                {"content": d.content, **d.metadata} for d in docs
+            ]
+
+        citations = CitationTracker.build(
+            raw_results,
+            min_score=min_score,
+            source_filter=source_filter,
+        )
+
+        # Also keep backward-compatible raw doc results
+        docs = await retriever.retrieve(query) if not hasattr(retriever, "retrieve_raw") else None
+
+        return {
+            "answer": "",
+            "citations": [
+                {
+                    "content": c.content,
+                    "source": c.source_file,
+                    "page": c.page,
+                    "chunk_id": c.chunk_id,
+                    "score": c.score,
+                }
+                for c in citations
+            ],
+            "results": [
+                {"content": d.content, "metadata": d.metadata} for d in docs
+            ]
+            if docs
+            else [
+                {"content": r.get("content", ""), "metadata": {
+                    k: v for k, v in r.items() if k != "content"
+                }}
+                for r in raw_results
+            ],
+        }
 
     def delete_document(self, name: str, document_id: str) -> bool:
         with self.metadata_store.session() as session:

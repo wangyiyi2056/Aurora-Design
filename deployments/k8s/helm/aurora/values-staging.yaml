@@ -1,0 +1,70 @@
+# ──────────────────────────────────────────────────────────────────────
+# Aurora Helm — Staging Environment Overrides
+#
+# Usage:
+#   helm install aurora-staging ./helm/aurora \
+#     -f helm/aurora/values-staging.yaml \
+#     --namespace aurora-staging --create-namespace
+# ──────────────────────────────────────────────────────────────────────
+
+replicaCount: 2
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+app:
+  logLevel: info
+  environment: staging
+
+persistence:
+  data:
+    size: 10Gi
+  uploads:
+    size: 10Gi
+
+postgresql:
+  replicas: 1
+  storage:
+    size: 10Gi
+
+redis:
+  replicas: 1
+  maxmemory: 256mb
+  storage:
+    size: 3Gi
+
+neo4j:
+  replicas: 1
+  storage:
+    size: 10Gi
+
+milvus:
+  storage:
+    size: 15Gi
+  etcd:
+    storage:
+      size: 3Gi
+  minio:
+    storage:
+      size: 10Gi
+
+ingress:
+  hosts:
+    - host: aurora-staging.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: aurora-staging-tls
+      hosts:
+        - aurora-staging.example.com

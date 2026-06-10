@@ -53,6 +53,8 @@ export interface AsyncSearchProps<T> {
   className?: string
   /** Custom trigger button class names */
   triggerClassName?: string
+  /** Custom search input class names */
+  searchInputClassName?: string
   /** Custom no results message */
   noResultsMessage?: string
   /** Allow clearing the selection */
@@ -74,6 +76,7 @@ export function AsyncSearch<T>({
   onFocus,
   disabled = false,
   className,
+  searchInputClassName,
   noResultsMessage
 }: AsyncSearchProps<T>) {
   const [open, setOpen] = useState(false)
@@ -172,11 +175,11 @@ export function AsyncSearch<T>({
       onMouseDown={handleMouseDown}
     >
       <Command shouldFilter={false} className="bg-transparent">
-        <div>
+        <div className="relative">
           <CommandInput
             placeholder={placeholder}
             value={searchTerm}
-            className="max-h-8"
+            className={cn('max-h-8', searchInputClassName)}
             aria-label={ariaLabel}
             onFocus={handleFocus}
             onValueChange={(value) => {
@@ -190,7 +193,7 @@ export function AsyncSearch<T>({
             </div>
           )}
         </div>
-        <CommandList hidden={!open}>
+        <CommandList hidden={!open} className="scrollbar-visible overflow-y-scroll">
           {error && <div className="text-destructive p-4 text-center">{error}</div>}
           {loading && options.length === 0 && (loadingSkeleton || <DefaultLoadingSkeleton />)}
           {!loading &&

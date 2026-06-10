@@ -26,6 +26,7 @@ import type {
   AgentEvent,
   ChatAttachment as PaneChatAttachment,
   ChatCommentAttachment,
+  ChatContextAttachment,
   ChatMessage as PaneChatMessage,
 } from "@/features/chat/types"
 import { createSession, deleteSession, listSessions, loadSession, upsertSessionMessage } from "@/services/chat"
@@ -269,6 +270,7 @@ export default function ChatPage() {
             content,
             events: m.events ?? [],
             attachments: m.attachments ?? [],
+            contextAttachments: m.contextAttachments ?? m.context_attachments ?? [],
             startTime: m.timestamp ? toMillis(m.timestamp) : undefined,
             endTime: m.type === "assistant" && m.end_time ? toMillis(m.end_time) : undefined,
           }
@@ -365,6 +367,7 @@ export default function ChatPage() {
         content: msg.content,
         events: msg.events,
         attachments: msg.attachments,
+        contextAttachments: msg.contextAttachments,
         createdAt,
         startedAt: msg.startTime,
         endedAt: msg.endTime,
@@ -410,6 +413,7 @@ export default function ChatPage() {
       content: text,
       events,
       attachments: msg.attachments,
+      contextAttachments: msg.contextAttachments,
       createdAt,
       startedAt: msg.startTime,
       endedAt: msg.endTime,
@@ -456,8 +460,9 @@ export default function ChatPage() {
     paneAttachments: PaneChatAttachment[],
     _commentAttachments: ChatCommentAttachment[],
     customPromptIds: string[] = [],
+    contextAttachments: ChatContextAttachment[] = [],
   ) => {
-    if ((!prompt.trim() && paneAttachments.length === 0 && customPromptIds.length === 0) || loading) return
+    if ((!prompt.trim() && paneAttachments.length === 0 && customPromptIds.length === 0 && contextAttachments.length === 0) || loading) return
     const question = prompt.trim()
     const contentParts: ContentPart[] = [
       ...paneAttachments.map((att) => ({
@@ -495,8 +500,23 @@ export default function ChatPage() {
 
     const userMessageId = createMessageId("user")
     const assistantMessageId = createMessageId("assistant")
+    const contextDatasourceName = contextAttachments.find((item) => item.kind === "datasource")?.name
+    const contextDesignSkillId = contextAttachments.find((item) => item.kind === "design_skill")?.id
+    const contextDesignSystemId = contextAttachments.find((item) => item.kind === "design_system")?.id
+    const contextCustomPromptIds = contextAttachments
+      .filter((item): item is Extract<ChatContextAttachment, { kind: "custom_prompt" }> => item.kind === "custom_prompt")
+      .map((item) => item.id)
+    const effectiveCustomPromptIds = contextCustomPromptIds.length > 0 ? contextCustomPromptIds : customPromptIds
+
     const userTimestamp = Date.now()
-    addMessage({ id: userMessageId, role: "user", content: question, attachments: paneAttachments, startTime: userTimestamp })
+    addMessage({
+      id: userMessageId,
+      role: "user",
+      content: question,
+      attachments: paneAttachments,
+      contextAttachments,
+      startTime: userTimestamp,
+    })
     setLoading(true)
 
     let currentSessionId = sessionId
@@ -546,6 +566,7 @@ export default function ChatPage() {
         role: "user",
         content: question,
         attachments: paneAttachments,
+        context_attachments: contextAttachments,
         timestamp: userTimestamp / 1000,
       })
       await saveSessionMessage(assistantMessageId, {
@@ -571,10 +592,10 @@ export default function ChatPage() {
         frontend_persistence: true,
         user_message_id: userMessageId,
         assistant_message_id: assistantMessageId,
-        ...(customPromptIds.length > 0 ? { custom_prompt_ids: customPromptIds } : {}),
-        ...(selectedDesignSkillId ? { design_skill_id: selectedDesignSkillId } : {}),
-        ...(selectedDesignSystemId ? { design_system_id: selectedDesignSystemId } : {}),
-        ...(selectedDatasourceName ? { database_name: selectedDatasourceName } : {}),
+        ...(effectiveCustomPromptIds.length > 0 ? { custom_prompt_ids: effectiveCustomPromptIds } : {}),
+        ...(contextDesignSkillId ? { design_skill_id: contextDesignSkillId } : {}),
+        ...(contextDesignSystemId ? { design_system_id: contextDesignSystemId } : {}),
+        ...(contextDatasourceName ? { database_name: contextDatasourceName } : {}),
       },
       shouldApply: () =>
         Boolean(streamSessionId) &&

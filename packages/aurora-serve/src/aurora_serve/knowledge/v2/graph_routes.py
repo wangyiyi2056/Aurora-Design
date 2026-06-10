@@ -14,6 +14,9 @@ from aurora_serve.knowledge.v2.schemas import (
     EntityCreateRequest,
     EntityMergeRequest,
     EntityUpdateRequest,
+    GraphImportRequest,
+    GraphImportResponse,
+    GraphImportStats,
     GraphResponse,
     OperationSummaryResponse,
     RelationCreateRequest,
@@ -269,6 +272,7 @@ async def merge_entities(
             name,
             entities_to_change=req.entities_to_change,
             entity_to_change_into=req.entity_to_change_into,
+            merge_strategy=req.merge_strategy,
         )
         return OperationSummaryResponse(**result)
     except ValueError as exc:
@@ -279,4 +283,184 @@ async def merge_entities(
             req.entities_to_change,
             req.entity_to_change_into,
         )
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ── Graph Import ─────────────────────────────────────────────────────
+
+
+@router.post("/graph/import", response_model=GraphImportResponse)
+async def import_graph(
+    name: str,
+    request: Request,
+    req: GraphImportRequest | None = None,
+    service: Any = Depends(get_knowledge_v2_service),
+) -> GraphImportResponse:
+    """Batch-import entities and relationships into the knowledge graph.
+
+    Accepts two content types:
+
+    - ``application/json`` — standard JSON body matching
+      :class:`GraphImportRequest`.
+    - ``application/x-yaml`` / ``application/yaml`` — YAML body that is
+      parsed server-side into the same structure.
+
+    The ``merge_strategy`` field controls conflict resolution:
+
+    - ``overwrite`` — replace existing entities/relationships entirely.
+    - ``merge`` — combine descriptions and increment weights (default).
+    - ``skip`` — leave existing entities/relationships untouched.
+    """
+    content_type = request.headers.get("content-type", "")
+
+    try:
+        # Handle YAML input
+        if "yaml" in content_type:
+            body = await request.body()
+            yaml_text = body.decode("utf-8")
+
+            from aurora_ext.rag.injection.custom_kg_injector import CustomKGInjector
+
+            try:
+                parsed = CustomKGInjector.parse_from_yaml(yaml_text)
+            except ImportError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid YAML format: {exc}",
+                ) from exc
+
+            # Normalise to GraphImportRequest shape
+            req = GraphImportRequest.model_validate(parsed)
+
+        if req is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Request body is required (JSON or YAML)",
+            )
+
+        entities = [e.model_dump(exclude_none=True) for e in req.entities]
+        relationships = [r.model_dump(exclude_none=True) for r in req.relationships]
+
+        result = await service.import_graph(
+            name,
+            entities=entities,
+            relationships=relationships,
+            merge_strategy=req.merge_strategy.value,
+        )
+
+        stats_dict = result.get("stats", {})
+        return GraphImportResponse(
+            status=result.get("status", "success"),
+            message=result.get("message", ""),
+            stats=GraphImportStats(**stats_dict),
+        )
+
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to import graph for kb '%s'", name)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ── KG Export ─────────────────────────────────────────────────────────
+
+
+@router.get("/graph/export")
+async def export_graph(
+    name: str,
+    format: str = Query(
+        default="csv",
+        description="Export format: csv, excel, markdown, txt",
+    ),
+    scope: str = Query(
+        default="all",
+        description="What to export: all, entities, relationships",
+    ),
+    include_embeddings: bool = Query(
+        default=False,
+        description="Include vector embedding data in export",
+    ),
+    entity_filter: str = Query(
+        default="",
+        description="Comma-separated entity names to filter by (empty = all)",
+    ),
+    max_entities: int = Query(
+        default=0,
+        ge=0,
+        description="Maximum entities to export (0 = unlimited)",
+    ),
+    max_relationships: int = Query(
+        default=0,
+        ge=0,
+        description="Maximum relationships to export (0 = unlimited)",
+    ),
+    service: Any = Depends(get_knowledge_v2_service),
+) -> Any:
+    """Export knowledge graph data in the specified format.
+
+    Returns a file download response with the appropriate Content-Type
+    and Content-Disposition headers.
+    """
+    from fastapi.responses import Response
+
+    from aurora_serve.knowledge.v2.schemas import (
+        ExportFormatEnum,
+        ExportScopeEnum,
+    )
+
+    try:
+        # Validate format
+        try:
+            fmt = ExportFormatEnum(format.lower())
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported format '{format}'. "
+                f"Use: csv, excel, markdown, txt",
+            ) from None
+
+        # Validate scope
+        try:
+            exp_scope = ExportScopeEnum(scope.lower())
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported scope '{scope}'. "
+                f"Use: all, entities, relationships",
+            ) from None
+
+        filter_list = [
+            f.strip() for f in entity_filter.split(",") if f.strip()
+        ]
+
+        result = await service.export_graph(
+            name,
+            export_format=fmt.value,
+            export_scope=exp_scope.value,
+            include_embeddings=include_embeddings,
+            entity_filter=filter_list,
+            max_entities=max_entities,
+            max_relationships=max_relationships,
+        )
+
+        return Response(
+            content=result["content"],
+            media_type=result["mime_type"],
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{result["filename"]}"'
+                ),
+                "X-Entity-Count": str(result["entity_count"]),
+                "X-Relationship-Count": str(result["relationship_count"]),
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to export graph for kb '%s'", name)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

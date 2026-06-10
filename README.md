@@ -210,6 +210,35 @@ See [`frontend/README.md`](frontend/README.md) for more details.
 uv run pytest tests/ -v
 ```
 
+## Docker Deployment
+
+### Quick start
+
+```bash
+cp .env.example .env
+# Add your OPENAI_API_KEY to .env
+
+docker compose up -d --build
+```
+
+The app is available at **http://localhost:8080**.
+
+### Full stack (PostgreSQL + Neo4j + Milvus + Redis)
+
+```bash
+docker compose -f docker-compose.full.yml up -d --build
+```
+
+### Health check
+
+```bash
+curl http://localhost:8080/api/v1/health
+# {"status":"ok"}
+```
+
+See [docs/deployment/docker.md](docs/deployment/docker.md) for the complete
+deployment guide, image variants, and production considerations.
+
 ## Implementation Phases
 
 - [x] Phase 1: Skeleton — model abstraction + chat service

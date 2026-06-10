@@ -1,0 +1,79 @@
+# ──────────────────────────────────────────────────────────────────────
+# Aurora Ingress — Nginx Ingress Controller
+# ──────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aurora-ingress
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora
+    app.kubernetes.io/component: ingress
+  annotations:
+    # ── Nginx Ingress Controller ──────────────────────────────────────
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/websocket-services: "aurora"
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    # ── TLS (uncomment and configure for production) ─────────────────
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  # tls:
+  #   - hosts:
+  #       - aurora.example.com
+  #     secretName: aurora-tls
+  rules:
+    - host: aurora.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aurora
+                port:
+                  name: http
+
+---
+# ──────────────────────────────────────────────────────────────────────
+# Aurora Ingress — Traefik (alternative)
+#
+# Apply this INSTEAD of the Nginx ingress above.
+# Do not apply both simultaneously.
+# ──────────────────────────────────────────────────────────────────────
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: aurora-ingress-traefik
+#   namespace: aurora
+#   labels:
+#     app.kubernetes.io/name: aurora
+#     app.kubernetes.io/component: ingress
+#   annotations:
+#     kubernetes.io/ingress.class: traefik
+#     traefik.ingress.kubernetes.io/router.entrypoints: websecure
+#     traefik.ingress.kubernetes.io/router.tls: "true"
+#     traefik.ingress.kubernetes.io/router.middlewares: aurora-ratelimit@kubernetescrd
+# spec:
+#   ingressClassName: traefik
+#   tls:
+#     - hosts:
+#         - aurora.example.com
+#       secretName: aurora-tls
+#   rules:
+#     - host: aurora.example.com
+#       http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: aurora
+#                 port:
+#                   name: http

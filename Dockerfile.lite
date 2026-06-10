@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1
+# ──────────────────────────────────────────────────────────────────────
+# Aurora — Lite Dockerfile (backend only, no frontend, no optional deps)
+#
+# Produces a smaller image for development or minimal deployments.
+# The frontend is expected to be served separately (e.g. via CDN or
+# a standalone nginx container).
+# ──────────────────────────────────────────────────────────────────────
+
+ARG PYTHON_VERSION=3.11
+
+# ═══════════════════════════════════════════════════════════════════════
+# Stage 1: Dependency builder
+# ═══════════════════════════════════════════════════════════════════════
+FROM python:${PYTHON_VERSION}-slim AS deps
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /build
+
+COPY pyproject.toml uv.lock ./
+COPY packages/aurora-core/pyproject.toml packages/aurora-core/
+COPY packages/aurora-serve/pyproject.toml packages/aurora-serve/
+COPY packages/aurora-ext/pyproject.toml packages/aurora-ext/
+COPY packages/aurora-app/pyproject.toml packages/aurora-app/
+COPY packages/sandbox/pyproject.toml packages/sandbox/
+
+# Install without optional extras (no [all])
+RUN uv sync \
+    --frozen \
+    --no-dev \
+    --no-install-workspace
+
+COPY packages/ packages/
+COPY configs/ configs/
+
+RUN uv sync --frozen --no-dev
+
+# ═══════════════════════════════════════════════════════════════════════
+# Stage 2: Runtime
+# ═══════════════════════════════════════════════════════════════════════
+FROM python:${PYTHON_VERSION}-slim AS runtime
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --system --gid 1001 aurora && \
+    useradd --system --uid 1001 --gid aurora --create-home aurora
+
+WORKDIR /app
+
+COPY --from=deps /build/.venv /app/.venv
+COPY --from=deps /build/packages /app/packages
+COPY --from=deps /build/configs /app/configs
+COPY pyproject.toml uv.lock /app/
+
+RUN mkdir -p /app/data /app/uploads /app/.aurora && \
+    chown -R aurora:aurora /app
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    AURORA_PORT=8888
+
+USER aurora
+
+EXPOSE 8888
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://127.0.0.1:8888/api/v1/health || exit 1
+
+CMD ["uvicorn", "aurora_app.main:app", "--host", "0.0.0.0", "--port", "8888"]

@@ -1,4 +1,3 @@
-import { LOCAL_STORAGE_PREFIX } from '@/features/construct/knowledge/lib/constants'
 import { searchHistoryMaxItems, searchHistoryVersion } from '@/features/construct/knowledge/lib/constants'
 
 /**

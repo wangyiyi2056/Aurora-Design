@@ -517,6 +517,38 @@ async def test_chat_service_stream_uses_ext_info_database_name(tmp_path):
     assert "[DONE]" in body
 
 
+def test_chat_service_builds_datasource_context_for_selected_database(tmp_path, monkeypatch):
+    monkeypatch.setenv("AURORA_METADATA_DB", str(tmp_path / "metadata.db"))
+    monkeypatch.setenv("AURORA_STORAGE_DIR", str(tmp_path / "storage"))
+    db_path = tmp_path / "sales.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("create table sales (category text, amount integer)")
+        conn.executemany("insert into sales values (?, ?)", [("A", 10), ("B", 7)])
+
+    registry = ModelRegistry()
+    registry.register_llm("fake", FakeLLM(LLMConfig(model_name="fake", model_type="test")))
+    datasource = DatasourceService(MetadataStore())
+    datasource.add_connection(
+        DBConfig(name="sales-db", db_type="sqlite", database=str(db_path))
+    )
+    service = object.__new__(ChatService)
+    service.datasource_service = datasource
+
+    context = service._build_datasource_context(
+        ChatRequest(
+            model="fake",
+            messages=[ChatMessage(role="user", content="请介绍这个数据源可以分析什么")],
+            ext_info={"database_name": "sales-db"},
+        )
+    )
+
+    assert "Datasource context" in context
+    assert "sales-db" in context
+    assert "CREATE TABLE sales" in context
+    assert "category" in context
+    assert "amount" in context
+
+
 @pytest.mark.asyncio
 async def test_chat_service_injects_knowledge_context_from_ext_info():
     class KnowledgeAwareLLM(FakeLLM):

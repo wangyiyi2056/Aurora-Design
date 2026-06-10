@@ -112,38 +112,73 @@ class ModelConfigService(BaseService):
 
     def _register_runtime(self, entity: ModelConfigEntity) -> None:
         if entity.type in {"daemon", "cli"}:
-            # When ANTHROPIC_BASE_URL is set, use the Anthropic API adapter
-            # directly instead of spawning `claude -p` (pipe mode is often
-            # incompatible with third-party proxies).
+            agent_id = (entity.base_url or entity.name).strip().lower()
+
+            # Check if local CLI binary is available on PATH.
+            import shutil
+            cli_available = shutil.which(agent_id) is not None
+
+            # Only redirect to the HTTP Anthropic adapter when ALL of:
+            #   1. ANTHROPIC_BASE_URL is set (proxy endpoint)
+            #   2. Agent is claude/openclaude
+            #   3. Local CLI binary is NOT found on PATH
+            #   4. AURORA_FORCE_CLI is not set (user hasn't forced CLI mode)
+            #
+            # When the local CLI *is* available, always prefer it — it handles
+            # authentication, retries, and rate-limiting internally.
             proxy_base = os.getenv("ANTHROPIC_BASE_URL")
-            if proxy_base:
+            force_cli = os.getenv("AURORA_FORCE_CLI", "").lower() in {
+                "1", "true", "yes"}
+            use_proxy = (
+                proxy_base
+                and agent_id in {"claude", "openclaude"}
+                and not cli_available
+                and not force_cli
+            )
+
+            if use_proxy:
                 api_key = (
                     entity.api_key
                     or os.getenv("ANTHROPIC_API_KEY")
                     or os.getenv("ANTHROPIC_AUTH_TOKEN")
                     or ""
                 )
-                model_name = os.getenv("ANTHROPIC_MODEL") or entity.base_url or entity.name
+                model_name = os.getenv(
+                    "ANTHROPIC_MODEL") or entity.base_url or entity.name
                 config = LLMConfig(
                     model_name=model_name,
                     model_type="anthropic",
                     api_base=proxy_base,
                     api_key=api_key,
                 )
-                self.registry.register_llm(entity.name, AnthropicLLM(config))
+                self.registry.register_llm(
+                    entity.name,
+                    AnthropicLLM(config),
+                    is_default=entity.is_default,
+                )
                 logger.info(
                     "Registered daemon model '%s' via AnthropicLLM adapter "
-                    "(proxy=%s, model=%s)",
-                    entity.name, proxy_base, model_name,
+                    "(proxy=%s, model=%s, cli_available=%s)",
+                    entity.name, proxy_base, model_name, cli_available,
                 )
                 return
+
             config = LLMConfig(
                 model_name=entity.name,
                 model_type="daemon",
                 api_base=entity.base_url or entity.name,
                 api_key=entity.api_key,
             )
-            self.registry.register_llm(entity.name, LocalCliLLM(config))
+            self.registry.register_llm(
+                entity.name,
+                LocalCliLLM(config),
+                is_default=entity.is_default,
+            )
+            logger.info(
+                "Registered daemon model '%s' via LocalCliLLM "
+                "(agent_id=%s, cli_available=%s, force_cli=%s)",
+                entity.name, agent_id, cli_available, force_cli,
+            )
             return
         if not entity.api_key and not entity.base_url:
             return
@@ -165,12 +200,24 @@ class ModelConfigService(BaseService):
             api_key=entity.api_key,
         )
         if model_type == "embedding":
-            self.registry.register_embeddings(entity.name, OpenAIEmbeddings(config))
+            self.registry.register_embeddings(
+                entity.name,
+                OpenAIEmbeddings(config),
+                is_default=entity.is_default,
+            )
             return
         if adapter_type == "anthropic":
-            self.registry.register_llm(entity.name, AnthropicLLM(config))
+            self.registry.register_llm(
+                entity.name,
+                AnthropicLLM(config),
+                is_default=entity.is_default,
+            )
         else:
-            self.registry.register_llm(entity.name, OpenAILLM(config))
+            self.registry.register_llm(
+                entity.name,
+                OpenAILLM(config),
+                is_default=entity.is_default,
+            )
 
     @staticmethod
     def _is_kimi_coding_base_url(base_url: str | None) -> bool:

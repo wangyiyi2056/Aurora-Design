@@ -27,6 +27,12 @@ export interface ChatCommentAttachment {
   source?: "saved-comment" | "board-batch"
 }
 
+export type ChatContextAttachment =
+  | { kind: "datasource"; name: string }
+  | { kind: "design_skill"; id: string; name: string }
+  | { kind: "design_system"; id: string; title: string }
+  | { kind: "custom_prompt"; id: string; name: string }
+
 export type PersistedAgentEvent =
   | { kind: "status"; label: string; detail?: string }
   | { kind: "text"; text: string }
@@ -73,6 +79,7 @@ export interface ChatMessage {
   endTime?: number
   attachments?: ChatAttachment[]
   commentAttachments?: ChatCommentAttachment[]
+  contextAttachments?: ChatContextAttachment[]
   producedFiles?: ProjectFile[]
 }
 

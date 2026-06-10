@@ -15,9 +15,31 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         from pathlib import Path
 
+        # Configure application-level logging so RAG diagnostics are visible
+        import logging as _logging_mod
+        import sys as _sys
+        _log_level_str = os.getenv("AURORA_LOG_LEVEL", "INFO").upper()
+        _level = getattr(_logging_mod, _log_level_str, _logging_mod.INFO)
+        _handler = _logging_mod.StreamHandler(_sys.stderr)
+        _handler.setFormatter(_logging_mod.Formatter(
+            "%(levelname)s %(name)s: %(message)s"))
+        for _pkg in ("aurora_serve", "aurora_ext", "aurora_core"):
+            _pkg_logger = _logging_mod.getLogger(_pkg)
+            _pkg_logger.setLevel(_level)
+            _pkg_logger.addHandler(_handler)
+            _pkg_logger.propagate = False
+        _logging_mod.getLogger("aurora_ext").info(
+            "DIAG: aurora_ext logger initialised OK")
+        _logging_mod.getLogger("aurora_serve").info(
+            "DIAG: logging setup complete, level=%s", _level)
+
         from aurora_core.component import SystemApp
         from aurora_core.config.settings import Settings
         from aurora_core.model.adapter.anthropic_adapter import AnthropicLLM
+        from aurora_core.model.adapter.azure_adapter import AzureOpenAILLM
+        from aurora_core.model.adapter.azure_embeddings import AzureOpenAIEmbeddings
+        from aurora_core.model.adapter.ollama_adapter import OllamaLLM
+        from aurora_core.model.adapter.ollama_embeddings import OllamaEmbeddings
         from aurora_core.model.adapter.openai_adapter import OpenAILLM
         from aurora_core.model.adapter.openai_embeddings import OpenAIEmbeddings
         from aurora_core.model.registry import ModelRegistry
@@ -53,6 +75,11 @@ def create_app() -> FastAPI:
         system_app.register_instance(metadata_store)
         app.state.metadata_store = metadata_store
 
+        # Initialise authentication subsystem (JWT + API keys).
+        from aurora_serve.auth.middleware import _init_auth
+
+        _init_auth(app)
+
         registry = ModelRegistry()
         for cfg in settings.llm_configs:
             model_type = cfg.get("model_type", "openai")
@@ -72,7 +99,8 @@ def create_app() -> FastAPI:
                     api_key=api_key,
                     api_base=cfg.get("api_base"),
                 )
-                registry.register_embeddings("openai", OpenAIEmbeddings(emb_config))
+                registry.register_embeddings(
+                    "openai", OpenAIEmbeddings(emb_config))
             elif model_type == "anthropic":
                 api_key = cfg.get("api_key") or os.getenv("ANTHROPIC_API_KEY")
                 if not api_key:
@@ -82,19 +110,58 @@ def create_app() -> FastAPI:
                     )
                     continue
                 llm_config = LLMConfig(**cfg)
-                registry.register_llm(cfg["model_name"], AnthropicLLM(llm_config))
+                registry.register_llm(
+                    cfg["model_name"], AnthropicLLM(llm_config))
+            elif model_type == "azure_openai":
+                api_key = cfg.get("api_key") or os.getenv(
+                    "AZURE_OPENAI_API_KEY")
+                if not api_key:
+                    logger.warning(
+                        "Skipping LLM '%s': AZURE_OPENAI_API_KEY not set",
+                        cfg.get("model_name"),
+                    )
+                    continue
+                llm_config = LLMConfig(**cfg)
+                registry.register_llm(
+                    cfg["model_name"], AzureOpenAILLM(llm_config))
+                emb_config = LLMConfig(
+                    model_name=cfg.get("embedding_model",
+                                       "text-embedding-3-small"),
+                    model_type="azure_openai",
+                    api_key=api_key,
+                    api_base=cfg.get("api_base") or os.getenv(
+                        "AZURE_OPENAI_ENDPOINT"),
+                    extra=cfg.get("extra", {}),
+                )
+                registry.register_embeddings(
+                    "azure_openai", AzureOpenAIEmbeddings(emb_config)
+                )
+            elif model_type == "ollama":
+                llm_config = LLMConfig(**cfg)
+                registry.register_llm(cfg["model_name"], OllamaLLM(llm_config))
+                emb_model = cfg.get("embedding_model", "nomic-embed-text")
+                emb_config = LLMConfig(
+                    model_name=emb_model,
+                    model_type="ollama",
+                    api_base=cfg.get("api_base") or os.getenv(
+                        "OLLAMA_BASE_URL"),
+                )
+                registry.register_embeddings(
+                    "ollama", OllamaEmbeddings(emb_config))
         app.state.model_registry = registry
 
         # Log summary of registered models
         llm_count = len(registry._llms) if hasattr(registry, "_llms") else 0
-        emb_count = len(registry._embeddings) if hasattr(registry, "_embeddings") else 0
+        emb_count = len(registry._embeddings) if hasattr(
+            registry, "_embeddings") else 0
         if llm_count == 0:
             logger.error(
                 "❌ No LLM models registered! Knowledge base ingestion and querying will fail. "
                 "Please set OPENAI_API_KEY environment variable."
             )
         else:
-            logger.info("✅ Registered %d LLM(s) and %d embedding provider(s)", llm_count, emb_count)
+            logger.info(
+                "✅ Registered %d LLM(s) and %d embedding provider(s)", llm_count, emb_count)
 
         model_config_service = ModelConfigService(metadata_store, registry)
         model_config_service.on_init()  # Load saved models into registry immediately
@@ -121,7 +188,8 @@ def create_app() -> FastAPI:
         system_app.register_instance(datasource_service)
         app.state.datasource_service = datasource_service
 
-        default_ds = settings.default_datasource if hasattr(settings, "default_datasource") else ""
+        default_ds = settings.default_datasource if hasattr(
+            settings, "default_datasource") else ""
 
         skill_service = SkillService(datasource_service, registry, default_ds)
         system_app.register_instance(skill_service)
@@ -154,9 +222,11 @@ def create_app() -> FastAPI:
             kv_storage=JsonKVStorage("rag_kv", _rag_config),
             vector_storage=ChromaVectorStorage("rag_vectors", _rag_config),
             graph_storage=NetworkXGraphStorage("rag_graph", _rag_config),
-            doc_status_storage=JsonDocStatusStorage("rag_doc_status", _rag_config),
+            doc_status_storage=JsonDocStatusStorage(
+                "rag_doc_status", _rag_config),
             working_dir=_rag_dir,
             input_dir=str(storage_dir() / "uploads" / "knowledge"),
+            role_configs=settings.llm_roles,
         )
         system_app.register_instance(knowledge_v2_service)
         app.state.knowledge_v2_service = knowledge_v2_service
@@ -205,11 +275,13 @@ def create_app() -> FastAPI:
             session_base_path=str(storage_dir() / "sessions"),
             datasource_service=datasource_service,
             knowledge_service=knowledge_service,
+            knowledge_v2_service=knowledge_v2_service,
             design_skill_service=design_skill_service,
             design_system_service=design_system_service,
             prompt_template_service=prompt_service,
         )
-        system_app.register_instance(app.state.chat_service, name="chat_service")
+        system_app.register_instance(
+            app.state.chat_service, name="chat_service")
 
         system_app.on_init()
         system_app.after_init()
@@ -220,6 +292,15 @@ def create_app() -> FastAPI:
         mcp_client.disconnect_all()
 
     app = FastAPI(title="Aurora", lifespan=lifespan)
+
+    # Global auth middleware — registered BEFORE CORSMiddleware so that
+    # Starlette's build_middleware_stack wraps CORSMiddleware around
+    # AuthMiddleware.  This ensures 401 responses from AuthMiddleware
+    # still receive CORS headers.
+    from aurora_serve.auth.middleware import AuthMiddleware
+
+    app.add_middleware(AuthMiddleware, aurora_app=app)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -227,11 +308,39 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
     app.include_router(api_router, prefix="/api/v1")
 
+    # Prometheus metrics endpoint — mounted at top-level /metrics for scraper compatibility
+    from aurora_serve.health.api import prometheus_router
+    app.include_router(prometheus_router)
+
     # Ollama-compatible API — mounted at /api (not /api/v1) for Ollama client compatibility
-    from aurora_serve.knowledge.v2.ollama_routes import router as ollama_router
-    app.include_router(ollama_router)
+    from pathlib import Path as _Path
+
+    from aurora_serve.ollama_compat import (
+        router as ollama_router,
+        load_ollama_config,
+        set_config,
+    )
+
+    _ollama_config_path = _Path("configs/aurora.toml")
+    if not _ollama_config_path.exists():
+        _ollama_config_path = _Path("../configs/aurora.toml")
+    ollama_cfg = load_ollama_config(
+        _ollama_config_path if _ollama_config_path.exists() else None
+    )
+    set_config(ollama_cfg)
+    if ollama_cfg.enabled:
+        app.include_router(ollama_router)
+        logger.info(
+            "Ollama compat: enabled — default model=%s, kb=%s, mapping=%s",
+            ollama_cfg.full_model_name,
+            ollama_cfg.default_kb,
+            ollama_cfg.model_mapping,
+        )
+    else:
+        logger.info("Ollama compat: disabled via config")
     return app
 
 

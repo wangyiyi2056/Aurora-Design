@@ -76,7 +76,7 @@ const ZoomControl = () => {
       <Button
         variant={controlButtonVariant}
         onClick={handleRotate}
-        
+        tooltip={t('graphPanel.sideBar.zoomControl.rotateCw')}
         size="icon"
       >
         <RotateCwIcon />
@@ -84,7 +84,7 @@ const ZoomControl = () => {
       <Button
         variant={controlButtonVariant}
         onClick={handleRotateCounterClockwise}
-        
+        tooltip={t('graphPanel.sideBar.zoomControl.rotateCcw')}
         size="icon"
       >
         <RotateCcwIcon />
@@ -92,15 +92,25 @@ const ZoomControl = () => {
       <Button
         variant={controlButtonVariant}
         onClick={handleResetZoom}
-        
+        tooltip={t('graphPanel.sideBar.zoomControl.resetZoom')}
         size="icon"
       >
         <FullscreenIcon />
       </Button>
-      <Button variant={controlButtonVariant} onClick={handleZoomIn}  size="icon">
+      <Button
+        variant={controlButtonVariant}
+        onClick={handleZoomIn}
+        tooltip={t('graphPanel.sideBar.zoomControl.zoomIn')}
+        size="icon"
+      >
         <ZoomInIcon />
       </Button>
-      <Button variant={controlButtonVariant} onClick={handleZoomOut}  size="icon">
+      <Button
+        variant={controlButtonVariant}
+        onClick={handleZoomOut}
+        tooltip={t('graphPanel.sideBar.zoomControl.zoomOut')}
+        size="icon"
+      >
         <ZoomOutIcon />
       </Button>
     </>

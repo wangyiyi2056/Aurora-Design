@@ -1,0 +1,56 @@
+# ── ClusterIP Service (internal) ──────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: aurora
+  namespace: aurora
+  labels:
+    app.kubernetes.io/name: aurora
+    app.kubernetes.io/component: app
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: aurora
+    app.kubernetes.io/component: app
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+    - name: backend
+      port: 8888
+      targetPort: backend
+      protocol: TCP
+
+---
+# ── LoadBalancer Service (external access) ────────────────────────────
+# Use this when you don't have an Ingress controller, or for
+# cloud-managed load balancers (AWS ELB, GCP LB, Azure LB).
+#
+# Uncomment to enable:
+#
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: aurora-lb
+#   namespace: aurora
+#   labels:
+#     app.kubernetes.io/name: aurora
+#     app.kubernetes.io/component: app
+#   annotations:
+#     # AWS ELB example:
+#     # service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+#     # service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+#     #
+#     # GCP example:
+#     # cloud.google.com/load-balancer-type: "Internal"
+# spec:
+#   type: LoadBalancer
+#   selector:
+#     app.kubernetes.io/name: aurora
+#     app.kubernetes.io/component: app
+#   ports:
+#     - name: http
+#       port: 80
+#       targetPort: http
+#       protocol: TCP

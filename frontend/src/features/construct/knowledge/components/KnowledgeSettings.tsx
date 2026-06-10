@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useCallback, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import {
   AlertTriangle,
@@ -44,12 +45,13 @@ interface KnowledgeSettingsProps {
 }
 
 const CHUNK_STRATEGIES = [
-  { value: "fixed", label: "Fixed Size" },
-  { value: "recursive", label: "Recursive" },
-  { value: "semantic", label: "Semantic" },
+  { value: "fixed", labelKey: "knowledge.strategies.fixed" },
+  { value: "recursive", labelKey: "knowledge.strategies.recursive" },
+  { value: "semantic", labelKey: "knowledge.strategies.semantic" },
 ]
 
 export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
+  const { t } = useTranslation("construct")
   const navigate = useNavigate()
 
   const { data: detail } = useKnowledgeDetailV2(knowledgeName)
@@ -128,28 +130,28 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Database className="h-4 w-4" />
-            Knowledge Base Info
+            {t("knowledge.v2.settings.kbInfo")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Database className="h-3 w-3" /> Name
+                <Database className="h-3 w-3" /> {t("knowledge.v2.settings.name")}
               </span>
               <p className="text-sm font-medium">{knowledgeName}</p>
             </div>
             <div className="space-y-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <FileText className="h-3 w-3" /> Documents
+                <FileText className="h-3 w-3" /> {t("knowledge.v2.settings.documents")}
               </span>
               <p className="text-sm font-medium tabular-nums">
-                {detail?.chunks !== undefined ? "Available" : "-"}
+                {detail?.chunks !== undefined ? t("knowledge.settings.available") : "-"}
               </p>
             </div>
             <div className="space-y-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Boxes className="h-3 w-3" /> Chunks
+                <Boxes className="h-3 w-3" /> {t("knowledge.v2.settings.chunks")}
               </span>
               <p className="text-sm font-medium tabular-nums">
                 {detail?.chunks?.toLocaleString() ?? "-"}
@@ -157,7 +159,7 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
             </div>
             <div className="space-y-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <GitBranch className="h-3 w-3" /> Chunk Strategy
+                <GitBranch className="h-3 w-3" /> {t("knowledge.v2.settings.strategy")}
               </span>
               <p className="text-sm font-medium">
                 {detail?.chunk_strategy || "-"}
@@ -165,7 +167,7 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
             </div>
             <div className="space-y-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Calendar className="h-3 w-3" /> Collection
+                <Calendar className="h-3 w-3" /> {t("knowledge.v2.settings.collection")}
               </span>
               <p className="text-sm text-muted-foreground truncate" title={detail?.collection_name}>
                 {detail?.collection_name || "-"}
@@ -178,11 +180,11 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
       {/* Chunk configuration */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Chunk Configuration</CardTitle>
+          <CardTitle className="text-base">{t("knowledge.v2.settings.chunkConfig")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
-            <span className="text-sm w-28 shrink-0">Strategy</span>
+            <span className="text-sm w-28 shrink-0">{t("knowledge.settings.strategy")}</span>
             <Select
               value={chunkStrategy}
               onValueChange={setChunkStrategy}
@@ -193,7 +195,7 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
               <SelectContent>
                 {CHUNK_STRATEGIES.map((s) => (
                   <SelectItem key={s.value} value={s.value}>
-                    {s.label}
+                    {t(s.labelKey as any)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -201,7 +203,7 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
           </div>
 
           <div className="flex items-center gap-4">
-            <span className="text-sm w-28 shrink-0">Chunk Size</span>
+            <span className="text-sm w-28 shrink-0">{t("knowledge.v2.settings.chunkSize")}</span>
             <Slider
               className="flex-1"
               min={128}
@@ -214,7 +216,7 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
           </div>
 
           <div className="flex items-center gap-4">
-            <span className="text-sm w-28 shrink-0">Overlap</span>
+            <span className="text-sm w-28 shrink-0">{t("knowledge.settings.overlap")}</span>
             <Slider
               className="flex-1"
               min={0}
@@ -229,11 +231,11 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
           <div className="flex items-center gap-2 pt-2">
             <Button onClick={handleSaveChunkConfig} size="sm">
               {saveSuccess ? (
-                <>Saved</>
+                <>{t("knowledge.settings.saved")}</>
               ) : (
                 <>
                   <Save className="mr-1 h-3.5 w-3.5" />
-                  Save Configuration
+                  {t("knowledge.v2.settings.saveConfig")}
                 </>
               )}
             </Button>
@@ -244,14 +246,14 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
       {/* Cache management */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Cache Management</CardTitle>
+          <CardTitle className="text-base">{t("knowledge.v2.settings.cacheManagement")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">LLM Response Cache</p>
+              <p className="text-sm font-medium">{t("knowledge.v2.settings.llmCache")}</p>
               <p className="text-xs text-muted-foreground">
-                Clear cached LLM responses to force regeneration
+                {t("knowledge.v2.settings.llmCacheDesc")}
               </p>
             </div>
             <Button
@@ -260,14 +262,14 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
               onClick={() => setClearCacheConfirm(true)}
             >
               <Eraser className="mr-1 h-3.5 w-3.5" />
-              Clear LLM Cache
+              {t("knowledge.v2.settings.clearLlmCache")}
             </Button>
           </div>
           <div className="flex items-center justify-between border-t pt-3">
             <div>
-              <p className="text-sm font-medium">Query Cache</p>
+              <p className="text-sm font-medium">{t("knowledge.v2.settings.queryCache")}</p>
               <p className="text-xs text-muted-foreground">
-                Clear cached query results
+                {t("knowledge.v2.settings.queryCacheDesc")}
               </p>
             </div>
             <Button
@@ -276,7 +278,7 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
               onClick={() => setClearQueryCacheConfirm(true)}
             >
               <Eraser className="mr-1 h-3.5 w-3.5" />
-              Clear Query Cache
+              {t("knowledge.v2.settings.clearQueryCache")}
             </Button>
           </div>
         </CardContent>
@@ -287,15 +289,15 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
         <CardHeader>
           <CardTitle className="text-base text-destructive flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
-            Danger Zone
+            {t("knowledge.v2.settings.dangerZone")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Delete All Documents</p>
+              <p className="text-sm font-medium">{t("knowledge.v2.settings.deleteAll")}</p>
               <p className="text-xs text-muted-foreground">
-                Remove all documents from this knowledge base
+                {t("knowledge.v2.settings.deleteAllDesc")}
               </p>
             </div>
             <Button
@@ -304,14 +306,14 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
               onClick={() => setDeleteAllConfirm(true)}
             >
               <Trash2 className="mr-1 h-3.5 w-3.5" />
-              Delete All
+              {t("knowledge.v2.settings.deleteAll")}
             </Button>
           </div>
           <div className="flex items-center justify-between border-t pt-3">
             <div>
-              <p className="text-sm font-medium">Delete Knowledge Base</p>
+              <p className="text-sm font-medium">{t("knowledge.v2.settings.deleteKb")}</p>
               <p className="text-xs text-muted-foreground">
-                Permanently delete this knowledge base and all its data
+                {t("knowledge.v2.settings.deleteKbDesc")}
               </p>
             </div>
             <Button
@@ -320,7 +322,7 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
               onClick={() => setDeleteKbConfirm(true)}
             >
               <Trash2 className="mr-1 h-3.5 w-3.5" />
-              Delete
+              {t("common.delete")}
             </Button>
           </div>
         </CardContent>
@@ -330,15 +332,14 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
       <Dialog open={clearCacheConfirm} onOpenChange={setClearCacheConfirm}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Clear LLM Cache</DialogTitle>
+            <DialogTitle>{t("knowledge.v2.settings.clearLlmCacheTitle")}</DialogTitle>
             <DialogDescription>
-              This will clear all cached LLM responses. Future queries will regenerate
-              responses. This action cannot be undone.
+              {t("knowledge.v2.settings.clearLlmCacheConfirm")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setClearCacheConfirm(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               onClick={handleClearLlmCache}
@@ -347,7 +348,7 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
               {clearCacheMutation.isPending ? (
                 <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
               ) : null}
-              Clear Cache
+              {t("knowledge.settings.clear")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -356,14 +357,14 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
       <Dialog open={clearQueryCacheConfirm} onOpenChange={setClearQueryCacheConfirm}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Clear Query Cache</DialogTitle>
+            <DialogTitle>{t("knowledge.settings.clearQueryCacheTitle")}</DialogTitle>
             <DialogDescription>
-              This will clear all cached query results. This action cannot be undone.
+              {t("knowledge.v2.settings.clearLlmCacheConfirm")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setClearQueryCacheConfirm(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               onClick={handleClearQueryCache}
@@ -372,7 +373,7 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
               {clearCacheMutation.isPending ? (
                 <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
               ) : null}
-              Clear Cache
+              {t("knowledge.settings.clear")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -381,21 +382,20 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
       <Dialog open={deleteAllConfirm} onOpenChange={setDeleteAllConfirm}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete All Documents</DialogTitle>
+            <DialogTitle>{t("knowledge.settings.deleteAllDocsTitle")}</DialogTitle>
             <DialogDescription>
-              This will permanently delete all documents in "{knowledgeName}".
-              This action cannot be undone.
+              {t("knowledge.v2.list.deleteKbDesc", { name: knowledgeName })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteAllConfirm(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               variant="destructive"
               onClick={handleDeleteAllDocuments}
             >
-              Delete All Documents
+              {t("knowledge.v2.settings.deleteAll")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -404,15 +404,14 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
       <Dialog open={deleteKbConfirm} onOpenChange={setDeleteKbConfirm}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Knowledge Base</DialogTitle>
+            <DialogTitle>{t("knowledge.v2.settings.deleteKb")}</DialogTitle>
             <DialogDescription>
-              This will permanently delete the knowledge base "{knowledgeName}" and all
-              its documents, chunks, entities, and relationships. This action cannot be undone.
+              {t("knowledge.v2.list.deleteKbDesc", { name: knowledgeName })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteKbConfirm(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -422,7 +421,7 @@ export function KnowledgeSettings({ knowledgeName }: KnowledgeSettingsProps) {
               {deleteKb.isPending ? (
                 <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
               ) : null}
-              Delete Knowledge Base
+              {t("knowledge.v2.settings.deleteKb")}
             </Button>
           </DialogFooter>
         </DialogContent>

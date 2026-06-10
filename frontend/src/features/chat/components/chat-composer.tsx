@@ -14,7 +14,7 @@ import type { PromptTemplate } from '../../../services/prompts';
 import type { DatasourceItem } from '../../../services/database';
 import { projectRawUrl, uploadProjectFiles, openFolderDialog } from "../providers/registry";
 import { patchProject } from "../state/projects";
-import type { AppConfig, ChatAttachment, ChatCommentAttachment, ProjectFile, ProjectMetadata } from "../types";
+import type { AppConfig, ChatAttachment, ChatCommentAttachment, ChatContextAttachment, ProjectFile, ProjectMetadata } from "../types";
 import { Icon } from "./icon";
 import { BUILT_IN_PETS, CUSTOM_PET_ID, resolveActivePet } from "./pet/pets";
 
@@ -53,6 +53,7 @@ interface Props {
     attachments: ChatAttachment[],
     commentAttachments: ChatCommentAttachment[],
     customPromptIds: string[],
+    contextAttachments: ChatContextAttachment[],
   ) => void;
   onStop: () => void;
   // Opens the global settings dialog (CLI / model / agent picker). The
@@ -426,9 +427,29 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       setDraft("");
       setStaged([]);
       setSelectedCustomPromptIds([]);
+      onSelectDesignSkill?.(null);
+      onSelectDesignSystem?.(null);
+      onSelectDatasource?.(null);
       setUploadError(null);
       setMention(null);
       setSlash(null);
+    }
+
+    function buildContextAttachments(): ChatContextAttachment[] {
+      const items: ChatContextAttachment[] = [];
+      if (selectedDesignSkill) {
+        items.push({ kind: "design_skill", id: selectedDesignSkill.id, name: selectedDesignSkill.name });
+      }
+      if (selectedDesignSystem) {
+        items.push({ kind: "design_system", id: selectedDesignSystem.id, title: selectedDesignSystem.title });
+      }
+      if (selectedDatasource) {
+        items.push({ kind: "datasource", name: selectedDatasource.name });
+      }
+      for (const prompt of selectedCustomPrompts) {
+        items.push({ kind: "custom_prompt", id: prompt.id, name: prompt.name });
+      }
+      return items;
     }
 
     async function ensureProject(): Promise<string | null> {
@@ -599,15 +620,17 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       const hatched = expandHatchCommand(prompt);
       if (hatched) {
         if (streaming) return;
-        onSend(hatched, staged, commentAttachments, selectedCustomPromptIds);
+        const contextAttachments = buildContextAttachments();
+        onSend(hatched, staged, commentAttachments, selectedCustomPromptIds, contextAttachments);
         reset();
         return;
       }
+      const contextAttachments = buildContextAttachments();
       if (
-        (!prompt && staged.length === 0 && commentAttachments.length === 0 && selectedCustomPromptIds.length === 0) ||
+        (!prompt && staged.length === 0 && commentAttachments.length === 0 && selectedCustomPromptIds.length === 0 && contextAttachments.length === 0) ||
         streaming
       ) return;
-      onSend(prompt, staged, commentAttachments, selectedCustomPromptIds);
+      onSend(prompt, staged, commentAttachments, selectedCustomPromptIds, contextAttachments);
       reset();
     }
 

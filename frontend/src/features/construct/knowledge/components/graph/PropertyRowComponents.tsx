@@ -43,14 +43,13 @@ interface PropertyValueProps {
 }
 
 export const PropertyValue = ({ value, onClick, tooltip }: PropertyValueProps) => (
-  <div className="flex items-center gap-1 overflow-hidden">
+  <div className="flex items-center gap-1 overflow-hidden flex-1 min-w-0">
     <span
-      className="hover:bg-primary/20 rounded p-1 overflow-hidden text-ellipsis whitespace-nowrap"
-      tooltipClassName="max-w-80 -translate-x-15"
-      text={value}
-      tooltip={tooltip || (typeof value === 'string' ? value : JSON.stringify(value, null, 2))}
-      side="left"
+      className="hover:bg-primary/20 rounded p-1 truncate cursor-text block w-full"
+      title={tooltip || (typeof value === 'string' ? value : JSON.stringify(value, null, 2))}
       onClick={onClick}
-    />
+    >
+      {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
+    </span>
   </div>
 )

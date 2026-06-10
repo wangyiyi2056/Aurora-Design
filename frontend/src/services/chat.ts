@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client"
-import type { AgentEvent, ChatAttachment } from "@/features/chat/types"
+import type { AgentEvent, ChatAttachment, ChatContextAttachment } from "@/features/chat/types"
 import type { SessionMeta } from "@/stores/chat-store"
 
 export interface ContentPart {
@@ -53,6 +53,8 @@ export interface SessionLoadResponse {
     tool_calls?: unknown[]
     events?: AgentEvent[]
     attachments?: ChatAttachment[]
+    context_attachments?: ChatContextAttachment[]
+    contextAttachments?: ChatContextAttachment[]
   }[]
 }
 
@@ -62,6 +64,8 @@ export interface SessionMessageUpsertInput {
   content?: string
   events?: AgentEvent[]
   attachments?: ChatAttachment[]
+  context_attachments?: ChatContextAttachment[]
+  contextAttachments?: ChatContextAttachment[]
   tool_calls?: unknown[]
   tool_call_id?: string
   tool_name?: string

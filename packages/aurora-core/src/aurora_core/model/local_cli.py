@@ -390,6 +390,8 @@ def build_agent_args(
             "exec",
             "--json",
             "--skip-git-repo-check",
+            "--ignore-rules",
+            "--ephemeral",
             "--sandbox",
             "workspace-write",
             "-c",
@@ -779,13 +781,18 @@ async def run_agent_stream(
         yield {"type": "error", "message": msg}
 
 
-def collapse_messages_for_cli(messages: Iterable[Any]) -> str:
+def collapse_messages_for_cli(
+    messages: Iterable[Any],
+    *,
+    include_artifact_handoff: bool = False,
+) -> str:
     sections: list[str] = []
     for message in messages:
         role = getattr(message, "role", None) or message.get("role", "user")
         content = getattr(message, "content", None) if not isinstance(message, dict) else message.get("content")
         sections.append(f"## {role}\n{_message_content_to_text(content)}")
-    sections.append(CLI_ARTIFACT_HANDOFF)
+    if include_artifact_handoff:
+        sections.append(CLI_ARTIFACT_HANDOFF)
     return "\n\n".join(sections)
 
 

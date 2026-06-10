@@ -1,7 +1,10 @@
 from fastapi.testclient import TestClient
 
 from aurora_core.model.adapter.openai_adapter import OpenAILLM
+from aurora_core.model.registry import ModelRegistry
 from aurora_serve.chat.schema import ChatChoice, ChatMessage, ChatResponse
+from aurora_serve.metadata import MetadataStore
+from aurora_serve.models.service import ModelConfigService
 from aurora_serve.server import create_app
 
 
@@ -109,6 +112,53 @@ def test_model_config_registers_daemon_model_without_api_key(tmp_path, monkeypat
         assert create_resp.status_code == 200
         llm = client.app.state.model_registry.get_llm("Local Codex")
         assert llm.config.model_type == "daemon"
+
+
+def test_codex_cli_model_ignores_anthropic_proxy_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://proxy.example/v1")
+    registry = ModelRegistry()
+    service = ModelConfigService(MetadataStore(tmp_path / "aurora.db"), registry)
+
+    service.create(
+        name="Local Codex",
+        type="cli",
+        base_url="codex",
+        api_key="",
+        is_default=True,
+    )
+
+    llm = registry.get_llm()
+    assert llm.config.model_name == "Local Codex"
+    assert llm.config.model_type == "daemon"
+    assert llm.config.api_base == "codex"
+
+
+def test_default_model_config_updates_runtime_default_llm(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    registry = ModelRegistry()
+    service = ModelConfigService(MetadataStore(tmp_path / "aurora.db"), registry)
+
+    service.create(
+        name="Old OpenAI",
+        type="llm",
+        base_url="https://api.openai.com/v1",
+        api_key="sk-secret",
+        is_default=True,
+    )
+    old_llm = registry.get_llm()
+    assert old_llm.config.model_name == "Old OpenAI"
+
+    service.create(
+        name="Local Codex",
+        type="cli",
+        base_url="codex",
+        api_key="",
+        is_default=True,
+    )
+
+    default_llm = registry.get_llm()
+    assert default_llm.config.model_name == "Local Codex"
+    assert default_llm.config.model_type == "daemon"
 
 
 def test_duplicate_model_name_returns_conflict(tmp_path, monkeypatch):

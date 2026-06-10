@@ -51,7 +51,7 @@ class SQLAgent:
             success, result = connector.run(sql)
             if success:
                 formatted = self._format_result(result)
-                return True, f"SQL:\n```sql\n{sql}\n```\n\nResults:\n{formatted}"
+                return True, f"SQL:\n```sql\n{sql}\n```\n\nResult:\n{formatted}"
             last_error = result
             prompt = (
                 f"The previous SQL query failed with error:\n{last_error}\n\n"

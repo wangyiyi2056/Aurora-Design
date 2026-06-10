@@ -45,12 +45,18 @@ class PDFParser(BaseParser):
                 raise ValueError(f"Failed to decrypt PDF: {path}") from exc
 
         pages_text: list[str] = []
+        page_boundaries: list[int] = []
+        char_offset = 0
         for i, page in enumerate(reader.pages):
             try:
                 text = page.extract_text() or ""
-                pages_text.append(text)
             except Exception as exc:
                 logger.warning("Failed to extract text from page %d of %s: %s", i, path, exc)
+                text = ""
+            page_boundaries.append(char_offset)
+            pages_text.append(text)
+            # +2 accounts for the "\n\n" separator that joins pages
+            char_offset += len(text) + 2
 
         full_text = "\n\n".join(pages_text)
 
@@ -61,5 +67,7 @@ class PDFParser(BaseParser):
             metadata={
                 "page_count": len(reader.pages),
                 "char_count": len(full_text),
+                "page_boundaries": page_boundaries,
+                "file_path": str(path),
             },
         )

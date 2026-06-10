@@ -1,0 +1,38 @@
+apiVersion: v2
+name: aurora
+description: Aurora — Agentic AI Data Platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - ai
+  - data-platform
+  - knowledge-graph
+  - vector-database
+home: https://github.com/aurora-ai/aurora
+maintainers:
+  - name: Aurora Team
+
+dependencies:
+  # These are optional — enable in values.yaml
+  # Uncomment and run `helm dependency update` to use:
+  #
+  # - name: postgresql
+  #   version: "15.x.x"
+  #   repository: https://charts.bitnami.com/bitnami
+  #   condition: postgresql.enabled
+  #
+  # - name: redis
+  #   version: "19.x.x"
+  #   repository: https://charts.bitnami.com/bitnami
+  #   condition: redis.enabled
+  #
+  # - name: neo4j
+  #   version: "5.x.x"
+  #   repository: https://helm.neo4j.com/neo4j
+  #   condition: neo4j.enabled
+  #
+  # - name: milvus
+  #   version: "4.x.x"
+  #   repository: https://zilliztech.github.io/milvus-helm
+  #   condition: milvus.enabled

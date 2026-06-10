@@ -51,3 +51,221 @@ description = "Aurora DuckDB analytical database"
 # password = ""
 # database = "aurora"
 # description = "Aurora MySQL database"
+
+# ── Per-Role LLM Bindings ──
+# Each role can be bound to a different model / adapter.
+# Fields: model (or model_name), model_type, api_key, api_base,
+#         temperature, max_tokens, max_async, timeout.
+# Env var overrides: AURORA_LLM_<ROLE>_<FIELD>
+#   e.g. AURORA_LLM_EXTRACT_API_KEY, AURORA_LLM_QUERY_TEMPERATURE
+# Roles left unconfigured fall back to the default LLM.
+#
+# [llm_roles.extract]
+# model = "gpt-4"
+# model_type = "openai"
+# api_base = "https://api.openai.com/v1"
+# temperature = 0.3
+# max_tokens = 4096
+# max_async = 4
+
+# [llm_roles.query]
+# model = "gpt-3.5-turbo"
+# model_type = "openai"
+# temperature = 0.7
+# max_tokens = 2048
+
+# [llm_roles.keywords]
+# model = "gpt-4"
+# model_type = "openai"
+# temperature = 0.2
+# max_tokens = 512
+
+# [llm_roles.vlm]
+# model = "gpt-4-vision-preview"
+# model_type = "openai"
+# max_async = 2
+
+# ── RAG Storage Backend Configuration ──
+#
+# Each storage type can be backed by one of several engines.
+# Env var overrides: AURORA_<TYPE>_BACKEND, AURORA_<SERVICE>_URI
+#
+# Available backends per type:
+#   kv:         json, postgres, redis, mongo, opensearch
+#   vector:     chroma, milvus, pgvector, faiss, qdrant, mongo, opensearch
+#   graph:      networkx, neo4j, postgres, memgraph, opensearch
+#   doc_status: json, postgres, mongo, opensearch
+#
+# Active backends (defaults: json / chroma / networkx / json)
+# kv_backend = "json"
+# vector_backend = "chroma"
+# graph_backend = "networkx"
+# doc_status_backend = "json"
+
+# ── PostgreSQL (KV, DocStatus, Vector via pgvector, Graph via relational tables) ──
+# postgres_uri = "postgresql://user:pass@localhost:5432/aurora"
+# Env: AURORA_POSTGRES_URI
+
+# ── Neo4j (Graph) ──
+# neo4j_uri = "bolt://localhost:7687"
+# neo4j_user = "neo4j"
+# neo4j_password = "password"
+# Env: AURORA_NEO4J_URI, AURORA_NEO4J_USER, AURORA_NEO4J_PASSWORD
+
+# ── Milvus (Vector) ──
+# milvus_uri = "http://localhost:19530"
+# milvus_token = ""
+# Env: AURORA_MILVUS_URI, AURORA_MILVUS_TOKEN
+
+# ── Redis (KV) ──
+# redis_uri = "redis://localhost:6379"
+# Env: AURORA_REDIS_URI
+
+# ── MongoDB (KV, Vector via Atlas, DocStatus) ──
+# mongo_uri = "mongodb://localhost:27017"
+# mongo_db = "aurora_rag"
+# mongo_vector_index = "vector_index"  # Atlas Vector Search index name
+# Env: AURORA_MONGO_URI
+
+# ── Qdrant (Vector) ──
+# qdrant_uri = "http://localhost:6333"
+# qdrant_api_key = ""
+# Env: AURORA_QDRANT_URI, AURORA_QDRANT_API_KEY
+
+# ── FAISS (Vector, local file-based) ──
+# faiss_index_type = "hnsw"  # or "flat"
+# No external service required — persists to {working_dir}/faiss/
+
+# ── OpenSearch (KV, Vector, Graph, DocStatus) ──
+# opensearch_uri = "https://localhost:9200"
+# opensearch_user = "admin"
+# opensearch_password = "admin"
+# opensearch_verify_certs = false
+# Env: AURORA_OPENSEARCH_URI
+
+# ── Memgraph (Graph, Cypher-compatible) ──
+# memgraph_uri = "bolt://localhost:7688"
+# memgraph_user = ""
+# memgraph_password = ""
+# Env: AURORA_MEMGRAPH_URI, AURORA_MEMGRAPH_USER, AURORA_MEMGRAPH_PASSWORD
+
+# ── Embedding Configuration ──
+# embedding_dim = 1536  # Override default embedding dimension
+
+# ── Workspace (Multi-Tenant) Configuration ──
+#
+# Enable workspace isolation to partition storage data across tenants.
+# Each workspace gets its own namespace prefix, file directory, or
+# database schema depending on the isolation mode.
+#
+# Isolation modes:
+#   prefix     — prepend workspace ID to keys/collections/labels (default)
+#   schema     — use a dedicated database schema per workspace (PostgreSQL)
+#   collection — use a dedicated collection per workspace (MongoDB, Chroma)
+#
+# When enabled, all storage backends respect the X-Workspace-Id header
+# (or workspace_id parameter) to isolate data per tenant.
+#
+# [workspace]
+# enabled = true
+# default_workspace = "default"
+# isolation_mode = "prefix"
+# allowed_workspaces = ["default", "tenant_a", "tenant_b"]
+
+# ── Knowledge Graph Extraction Configuration ──
+# Multi-round iterative extraction with concurrency control.
+# Env var overrides: AURORA_KG_EXTRACTION_<FIELD>
+
+[kg_extraction]
+entity_extract_max_gleaning = 2
+relation_extract_max_gleaning = 2
+max_parallel_extract = 5
+enable_incremental_extract = true
+max_total_records = 100
+max_entity_records = 40
+use_json = false
+enable_cache = true
+
+[kg_extraction.language]
+output_language = "English"  # English, Chinese, Japanese, Korean, etc.
+
+[kg_extraction.entity_types]
+custom_types = ["Person", "Organization", "Location", "Technology", "API"]
+# type_prompt_file = "prompts/entity_types.txt"
+
+[kg_extraction.relation_types]
+custom_types = ["works_for", "located_in", "uses", "develops"]
+
+# ── Cache Configuration ──
+# Multi-layer intelligent caching for LLM responses, entity extraction,
+# and embedding similarity. Reduces API costs and latency for repeated queries.
+#
+# [cache]
+# enabled = true  # Global cache toggle
+#
+# # LLM Response Cache — caches repeated prompt responses
+# # Env: AURORA_CACHE_LLM_ENABLED, AURORA_CACHE_LLM_TTL, AURORA_CACHE_LLM_MAX_SIZE
+# llm_cache_enabled = true
+# llm_cache_ttl = 86400  # 24 hours in seconds
+# llm_cache_max_size = 10000  # Maximum cached responses
+# llm_cache_persist = false  # Optional disk persistence
+#
+# # Entity Extraction Cache — caches document entity extraction results
+# # Env: AURORA_CACHE_ENTITY_ENABLED, AURORA_CACHE_ENTITY_TTL
+# entity_cache_enabled = true
+# entity_cache_ttl = 604800  # 7 days in seconds
+# entity_cache_max_size = 5000
+#
+# # Embedding Similarity Cache — caches embedding vectors with similarity matching
+# # Env: AURORA_CACHE_EMBEDDING_ENABLED, AURORA_CACHE_EMBEDDING_THRESHOLD
+# embedding_cache_enabled = true
+# embedding_cache_threshold = 0.95  # Cosine similarity threshold for cache hits
+# embedding_cache_use_llm_verify = false  # Optional LLM verification for similar queries
+# embedding_cache_max_size = 10000
+
+# ── Ollama-Compatible API ──
+# Exposes an Ollama-style REST API so that tools like Open WebUI,
+# Continue, and other Ollama-aware clients can connect directly to
+# Aurora's RAG knowledge base.
+#
+# Mounted at /api (not /api/v1) for Ollama client compatibility.
+# Env overrides: OLLAMA_EMULATING_MODEL_NAME, OLLAMA_EMULATING_MODEL_TAG,
+#                OLLAMA_DEFAULT_KB
+
+[ollama_compat]
+enabled = true
+default_model = "aurora"
+default_tag = "latest"
+default_kb = "default"
+
+# Map Ollama model names to Aurora knowledge base names.
+# Unmapped models fall back to ``default_kb``.
+[ollama_compat.model_mapping]
+"aurora" = "default"
+# "aurora-code" = "code_kb"
+# "aurora-docs" = "docs_kb"
+
+# ── Langfuse Observability Configuration ──
+#
+# Automatic tracing of LLM calls, embeddings, KG extraction, RAG
+# queries, and reranker operations via the Langfuse platform.
+#
+# When enabled, install the optional dependency:
+#   pip install aurora-ext[langfuse]
+#
+# All settings can be overridden via environment variables:
+#   LANGFUSE_ENABLED, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY,
+#   LANGFUSE_HOST, LANGFUSE_DEBUG, LANGFUSE_PROJECT_NAME,
+#   LANGFUSE_RELEASE, LANGFUSE_FLUSH_INTERVAL, LANGFUSE_SAMPLE_RATE
+#
+# [langfuse]
+# enabled = false  # Master toggle — default disabled
+# public_key = "pk-lf-xxx"
+# secret_key = "sk-lf-xxx"
+# host = "https://cloud.langfuse.com"  # Or self-hosted URL
+# project_name = "Aurora RAG"
+# release = ""  # Git SHA or version tag
+# debug = false  # Enable Langfuse SDK debug logging
+# flush_interval = 1.0  # Async upload queue flush interval (seconds)
+# sample_rate = 1.0  # 0.0–1.0, fraction of traces to upload
+# default_tags = ["aurora", "rag"]  # Tags applied to every trace
